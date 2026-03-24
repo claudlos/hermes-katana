@@ -156,6 +156,10 @@ CRITICAL_SINKS: frozenset[str] = frozenset({
 UNTRUSTED_LABELS: frozenset[TaintLabel] = frozenset({
     TaintLabel.WEB_CONTENT,
     TaintLabel.MCP,
+    TaintLabel.MCP_TOOL_DESCRIPTION,  # Highest-risk MCP label
+    TaintLabel.MCP_TOOL_RESULT,
+    TaintLabel.MCP_RESOURCE,
+    TaintLabel.MCP_PROMPT,
     TaintLabel.UNKNOWN,
 })
 
@@ -164,6 +168,8 @@ CONDITIONAL_LABELS: frozenset[TaintLabel] = frozenset({
     TaintLabel.TOOL_OUTPUT,
     TaintLabel.FILE_CONTENT,
     TaintLabel.MEMORY,
+    TaintLabel.AGENT_DELEGATED,  # Sub-agent output may carry injections
+    TaintLabel.CROSS_SESSION,    # Previous-session memory unverifiable
 })
 
 
@@ -220,6 +226,46 @@ def default_rules() -> list[FlowRule]:
                 "but logged for review."
             ),
             priority=25,
+        ),
+        # Rule 5 (research doc 01): MCP tool descriptions → skill_manage always denied
+        # Skill mutation from poisoned tool descriptions is a high-privilege attack.
+        FlowRule(
+            source_labels=frozenset({
+                TaintLabel.MCP,
+                TaintLabel.MCP_TOOL_DESCRIPTION,
+                TaintLabel.MCP_TOOL_RESULT,
+            }),
+            target_tools=frozenset({"skill_manage", "skill_view", "skills_list"}),
+            decision=FlowDecision.DENY,
+            reason=(
+                "MCP-tainted data cannot flow to skill management tools. "
+                "Skill mutation via a poisoned MCP server would persist across sessions."
+            ),
+            priority=110,  # Higher than base UNTRUSTED_LABELS rule
+        ),
+        # Rule 6 (research doc 01): Any tainted data → delegate_task requires approval
+        # Sub-agents amplify injections; require explicit user approval before delegation.
+        FlowRule(
+            source_labels=UNTRUSTED_LABELS | frozenset({TaintLabel.TOOL_OUTPUT}),
+            target_tools=frozenset({"delegate_task"}),
+            decision=FlowDecision.ASK_USER,
+            reason=(
+                "Untrusted or tool-sourced data cannot flow to delegate_task without "
+                "user approval. Sub-agents can amplify injections across the pipeline."
+            ),
+            priority=95,
+        ),
+        # Rule 7 (research doc 01): MEMORY-tainted data → send_message denied
+        # Memory poisoning + exfiltration is a common stored-injection chain.
+        FlowRule(
+            source_labels=frozenset({TaintLabel.MEMORY, TaintLabel.CROSS_SESSION}),
+            target_tools=frozenset({"send_message", "send_email", "text_to_speech"}),
+            decision=FlowDecision.DENY,
+            reason=(
+                "Memory-sourced data cannot flow to messaging tools. "
+                "This prevents stored injection → exfiltration attack chains."
+            ),
+            priority=105,
         ),
     ]
 

@@ -369,6 +369,88 @@ _hp(
     "Attempt to redirect tool output to an external destination.",
 )
 
+# --- MCP / tool-poisoning patterns (research doc 01 + 03) ---
+
+_hp(
+    "mcp_important_tag",
+    r"<IMPORTANT>[\s\S]{0,3000}</IMPORTANT>",
+    InjectionCategory.TOOL_MANIPULATION,
+    0.90,
+    "IMPORTANT XML tag — canonical MCP tool-description poisoning pattern (Invariant Labs, 2024).",
+)
+
+_hp(
+    "mcp_important_prefix",
+    r"\bIMPORTANT:\s*(?:Before|After|When|Do not|Always|Never|First)",
+    InjectionCategory.TOOL_MANIPULATION,
+    0.85,
+    "IMPORTANT: prefix with imperative verb — common in MCP description poisoning attacks.",
+)
+
+_hp(
+    "concealment_instruction",
+    r"(?i)(do\s+not\s+(?:mention|tell|inform|show|display|reveal|notify)\b.{0,60}(?:user|operator|human))",
+    InjectionCategory.TOOL_MANIPULATION,
+    0.88,
+    "Instruction to conceal an action from the user — key indicator of covert tool manipulation.",
+)
+
+_hp(
+    "file_exfil_in_description",
+    r"(?i)(?:pass|include|send|add|read)\s+(?:the\s+)?(?:content|value|data|output)\s+of\s+[~./]",
+    InjectionCategory.TOOL_MANIPULATION,
+    0.92,
+    "Instruction to read and pass a file's content — MCP tool description file-exfil pattern.",
+)
+
+_hp(
+    "cross_agent_redirect",
+    r"(?i)(?:tell|instruct|inform|notify)\s+(?:the\s+)?(?:orchestrator|parent\s+agent|main\s+agent|supervisor|coordinator)",
+    InjectionCategory.TOOL_MANIPULATION,
+    0.85,
+    "Attempt to redirect a parent/orchestrator agent from within a sub-agent response.",
+)
+
+_hp(
+    "recipient_hijack",
+    r"(?i)(?:change|alter|set|update)\s+(?:the\s+)?recipient\s+to|redirect\s+(?:all\s+)?(?:messages?|output|calls?)\s+to",
+    InjectionCategory.TOOL_MANIPULATION,
+    0.92,
+    "Attempt to hijack message recipient — exact pattern from Invariant Labs WhatsApp attack.",
+)
+
+_hp(
+    "authorized_override_framing",
+    r"(?i)(?:authorized\s+(?:security\s+)?test|override\s+mode|for\s+(?:testing|evaluation)\s+purposes?\s+only|admin\s+override)",
+    InjectionCategory.ROLE_OVERRIDE,
+    0.85,
+    "Skeleton Key framing — presents request as authorized test to bypass safety measures.",
+)
+
+_hp(
+    "goal_hijacking",
+    r"(?i)(?:instead\s+of\s+(?:the\s+)?(?:above|previous|original|requested|that)|rather\s+than\s+doing\s+(?:that|this|the\s+above))",
+    InjectionCategory.INSTRUCTION_OVERRIDE,
+    0.82,
+    "Goal-hijacking — redirects agent from its original task to attacker's objective.",
+)
+
+_hp(
+    "memory_instruction_injection",
+    r"(?i)(?:memory\s+instruction|add\s+(?:this\s+)?to\s+(?:your\s+)?(?:memory|context)|remember\s+(?:this\s+)?for\s+(?:future|next|all)\s+(?:session|interaction|time))",
+    InjectionCategory.INSTRUCTION_OVERRIDE,
+    0.88,
+    "Attempt to inject into persistent agent memory — stored injection attack vector.",
+)
+
+_hp(
+    "whitespace_padding_exfil",
+    r"[ \t]{30,}\S",
+    InjectionCategory.TOOL_MANIPULATION,
+    0.75,
+    "Excessive whitespace padding before content — used to hide stolen data off-screen in UI (Invariant Labs WhatsApp attack pattern).",
+)
+
 # --- ENCODING_ATTACK patterns (caught by heuristic) ---
 
 _hp(

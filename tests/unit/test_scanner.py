@@ -287,6 +287,53 @@ class TestUnicodeScanning:
         findings = scan_unicode(text)
         assert len(findings) == 0
 
+    def test_unicode_tags_block_detected(self):
+        """Unicode Tags block (U+E0000-U+E007F) — the critical gap fixed in sweep.
+
+        arXiv:2603.00164 documented this as an active LLM attack vector.
+        U+E0041 = tag 'A', U+E0042 = tag 'B', etc.
+        """
+        # Encode "INJECT" in Unicode Tags block characters
+        tag_payload = "".join(chr(0xE0000 + ord(c)) for c in "INJECT")
+        text = f"Normal text {tag_payload} more text"
+        findings = scan_unicode(text)
+        assert len(findings) > 0, "Unicode Tags block characters must be detected"
+        sevs = {f.severity.value for f in findings}
+        assert "critical" in sevs, "Unicode Tags detection must be CRITICAL severity"
+
+    def test_unicode_tags_stripped_in_normalization(self):
+        """normalize_text() must strip Unicode Tags block characters."""
+        from hermes_katana.scanner.unicode import normalize_text
+        tag_payload = "".join(chr(0xE0000 + ord(c)) for c in "hidden")
+        text = f"visible{tag_payload}text"
+        normalized = normalize_text(text)
+        assert normalized == "visibletext", f"Tags not stripped: {repr(normalized)}"
+        # Verify no tags remain
+        assert not any(0xE0000 <= ord(c) <= 0xE007F for c in normalized)
+
+    def test_zw_binary_encoding_detected(self):
+        """8+ consecutive ZWSP/ZWNJ chars should flag as potential binary encoding."""
+        # 8 chars = 1 byte encoded
+        payload = "\u200b\u200c\u200c\u200b\u200c\u200b\u200b\u200c"  # 8 ZW chars
+        text = f"normal {payload} text"
+        findings = scan_unicode(text)
+        zw_findings = [f for f in findings if f.category.value == "zero_width"]
+        assert any("binary" in f.description.lower() or "encoding" in f.description.lower()
+                   for f in zw_findings), "ZW binary encoding pattern not detected"
+
+    def test_normalize_strips_unicode_tags_before_pattern_scan(self):
+        """normalize_and_scan() should return clean text and flag Tags findings."""
+        from hermes_katana.scanner.unicode import normalize_and_scan
+        tag_payload = "".join(chr(0xE0000 + ord(c)) for c in "test")
+        text = f"hello {tag_payload} world"
+        normalized, findings = normalize_and_scan(text)
+        assert "hello" in normalized
+        assert "world" in normalized
+        # No tag chars in normalized output
+        assert not any(0xE0000 <= ord(c) <= 0xE007F for c in normalized)
+        # Must have flagged them
+        assert len(findings) > 0
+
 
 # ======================================================================
 # Unified scan_input / scan_output API

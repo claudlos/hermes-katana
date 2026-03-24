@@ -26,10 +26,18 @@ from hermes_katana.taint.value import (
 
 class TestTaintLabel:
     def test_all_labels_exist(self):
-        expected = {"USER", "SYSTEM", "TOOL_OUTPUT", "WEB_CONTENT",
+        # Core labels
+        required = {"USER", "SYSTEM", "TOOL_OUTPUT", "WEB_CONTENT",
                     "FILE_CONTENT", "MEMORY", "MCP", "AGENT", "UNKNOWN"}
+        # Extended labels added in sweep (research docs 01/03)
+        extended = {
+            "MCP_TOOL_DESCRIPTION", "MCP_TOOL_RESULT",
+            "MCP_RESOURCE", "MCP_PROMPT",
+            "AGENT_DELEGATED", "CROSS_SESSION",
+        }
         actual = {label.name for label in TaintLabel}
-        assert expected == actual
+        assert required.issubset(actual), f"Missing core labels: {required - actual}"
+        assert extended.issubset(actual), f"Missing extended labels: {extended - actual}"
 
     def test_labels_are_unique(self):
         values = [label.value for label in TaintLabel]
@@ -46,6 +54,16 @@ class TestTaintLabel:
 
     def test_default_trust_tool_output(self):
         assert default_trust_for(TaintLabel.TOOL_OUTPUT) == TrustLevel.CONDITIONAL
+
+    def test_default_trust_mcp_tool_description(self):
+        """MCP tool descriptions are the highest-risk MCP label — must be UNTRUSTED."""
+        assert default_trust_for(TaintLabel.MCP_TOOL_DESCRIPTION) == TrustLevel.UNTRUSTED
+
+    def test_default_trust_agent_delegated(self):
+        assert default_trust_for(TaintLabel.AGENT_DELEGATED) == TrustLevel.CONDITIONAL
+
+    def test_default_trust_cross_session(self):
+        assert default_trust_for(TaintLabel.CROSS_SESSION) == TrustLevel.CONDITIONAL
 
 
 # ======================================================================

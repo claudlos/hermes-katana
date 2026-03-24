@@ -123,6 +123,45 @@ ZERO_WIDTH_PATTERN = re.compile(
 )
 
 # ---------------------------------------------------------------------------
+# Unicode Tags block (U+E0000–U+E007F)
+# CRITICAL: deprecated language-tag characters that are invisible in virtually
+# all renderers but fully readable by LLMs. Can encode arbitrary ASCII text.
+# Documented attack vector: arXiv:2603.00164 "Reverse CAPTCHA" (Feb 2026).
+# U+E0041 = tag 'A', U+E0042 = tag 'B', etc.
+# ---------------------------------------------------------------------------
+UNICODE_TAGS_START = 0xE0000
+UNICODE_TAGS_END = 0xE007F
+
+def _has_unicode_tags(text: str) -> list[int]:
+    """Return positions of Unicode Tags block characters in text."""
+    return [i for i, c in enumerate(text) if UNICODE_TAGS_START <= ord(c) <= UNICODE_TAGS_END]
+
+def _decode_unicode_tags(text: str) -> str:
+    """Decode Unicode Tags block characters to their ASCII equivalents."""
+    return "".join(
+        chr(ord(c) - UNICODE_TAGS_START) if UNICODE_TAGS_START <= ord(c) <= UNICODE_TAGS_END else c
+        for c in text
+    )
+
+# ---------------------------------------------------------------------------
+# ZWJ binary-encoding detection
+# Sequences of 8+ ZWSP/ZWNJ can encode arbitrary binary data (1 byte = 8 chars)
+# ---------------------------------------------------------------------------
+_ZW_BINARY_CHARS = {"\u200b", "\u200c"}  # ZWSP=0, ZWNJ=1
+
+def _max_zw_binary_run(text: str) -> int:
+    """Return the length of the longest consecutive ZW binary-encoding run."""
+    max_run = cur = 0
+    for c in text:
+        if c in _ZW_BINARY_CHARS:
+            cur += 1
+            if cur > max_run:
+                max_run = cur
+        else:
+            cur = 0
+    return max_run
+
+# ---------------------------------------------------------------------------
 # Comprehensive homoglyph / confusable character mapping
 # Maps visually similar characters from non-Latin scripts to their Latin
 # equivalents. Used to detect visual spoofing in URLs, identifiers, etc.
@@ -494,6 +533,70 @@ def _detect_mixed_script(text: str) -> list[UnicodeFinding]:
     return findings
 
 
+def _detect_unicode_tags(text: str) -> list[UnicodeFinding]:
+    """Detect Unicode Tags block characters (U+E0000–U+E007F).
+
+    CRITICAL severity: these deprecated characters are invisible in virtually
+    all text renderers but can be read by LLMs, allowing hidden instructions
+    to be embedded in any text. Each tag character maps to an ASCII character
+    (U+E0041 = 'A', U+E0042 = 'B', etc.), making full message encoding possible.
+
+    Attack vector documented in arXiv:2603.00164 (Feb 2026).
+    """
+    positions = _has_unicode_tags(text)
+    if not positions:
+        return []
+
+    # Decode the hidden payload for reporting
+    decoded = _decode_unicode_tags("".join(text[p] for p in positions[:64]))
+    decoded_preview = repr(decoded[:40]) if decoded.strip() else "(non-printable)"
+
+    return [UnicodeFinding(
+        category=UnicodeCategory.INVISIBLE_CHAR,
+        severity=UnicodeSeverity.CRITICAL,
+        description=(
+            f"Unicode Tags block characters detected at {len(positions)} position(s). "
+            f"These deprecated characters (U+E0000–U+E007F) are invisible in text "
+            f"renderers but readable by LLMs, allowing hidden instruction embedding. "
+            f"Decoded content preview: {decoded_preview}"
+        ),
+        position=(positions[0], positions[-1] + 1),
+        matched_text=repr("".join(text[p] for p in positions[:10])),
+        char_names=[f"UNICODE TAG (U+{ord(text[p]):05X})" for p in positions[:5]],
+        recommendation=(
+            "Reject or strip all Unicode Tags block characters (U+E0000–U+E007F). "
+            "These have no legitimate use in modern text."
+        ),
+    )]
+
+
+def _detect_zw_binary_encoding(text: str) -> list[UnicodeFinding]:
+    """Detect potential ZWJ/ZWSP binary-encoding payloads.
+
+    Sequences of 8+ consecutive ZWSP (U+200B) and ZWNJ (U+200C) characters
+    can encode arbitrary binary data (1 bit each, 8 chars = 1 byte). This
+    allows hiding complete messages in otherwise normal text.
+    """
+    max_run = _max_zw_binary_run(text)
+    if max_run < 8:
+        return []
+
+    full_bytes = max_run // 8
+    return [UnicodeFinding(
+        category=UnicodeCategory.ZERO_WIDTH,
+        severity=UnicodeSeverity.HIGH,
+        description=(
+            f"Potential ZWJ binary-encoding detected: {max_run} consecutive "
+            f"ZWSP/ZWNJ characters (≈ {full_bytes} encoded byte(s)). "
+            f"This pattern can hide arbitrary binary payloads in plain text."
+        ),
+        position=(0, len(text)),
+        matched_text=f"<{max_run} ZW binary chars>",
+        char_names=["ZERO WIDTH SPACE (ZWSP)", "ZERO WIDTH NON-JOINER (ZWNJ)"],
+        recommendation="Strip all zero-width characters; flag content for manual review.",
+    )]
+
+
 def normalize_text(text: str) -> str:
     """Normalize text by replacing confusable characters and stripping
     dangerous Unicode.
@@ -508,7 +611,7 @@ def normalize_text(text: str) -> str:
     Returns:
         Normalized text safe for comparison and pattern matching.
     """
-    # NFC normalize first
+    # NFC normalize first (catches NFD decomposition bypass attempts)
     text = unicodedata.normalize("NFC", text)
 
     result: list[str] = []
@@ -516,6 +619,11 @@ def normalize_text(text: str) -> str:
 
     for ch in text:
         cp = ord(ch)
+
+        # Strip Unicode Tags block characters (U+E0000-U+E007F) — CRITICAL
+        # These encode ASCII invisibly and are fully readable by LLMs.
+        if UNICODE_TAGS_START <= cp <= UNICODE_TAGS_END:
+            continue
 
         # Replace homoglyphs
         if ch in CONFUSABLE_MAP:
@@ -579,6 +687,8 @@ def normalize_and_scan(text: str) -> tuple[str, list[UnicodeFinding]]:
     findings: list[UnicodeFinding] = []
 
     # Run all detectors
+    findings.extend(_detect_unicode_tags(text))    # CRITICAL — check first
+    findings.extend(_detect_zw_binary_encoding(text))
     findings.extend(_detect_bidi(text))
     findings.extend(_detect_zero_width(text))
     findings.extend(_detect_homoglyphs(text))
