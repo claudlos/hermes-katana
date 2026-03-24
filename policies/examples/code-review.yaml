@@ -1,0 +1,240 @@
+# =============================================================================
+# HermesKatana Example Policy: CODE REVIEW DOMAIN
+# =============================================================================
+# Domain-specific policies for code review workflows. Allows read operations
+# freely, blocks writes with web taint, escalates terminal with file content,
+# and prevents code leakage via messaging.
+#
+# Use case: AI code review assistants, PR reviewers, code analysis tools.
+# =============================================================================
+
+name: code-review
+version: "1.0.0"
+description: >
+  Code review policies: allow read operations freely for analysis,
+  block writes from web-sourced content, escalate terminal with
+  file content, prevent code exfiltration via messaging.
+extends: balanced
+author: HermesKatana
+metadata:
+  domain: software-development
+  recommended_for: code-review-agents
+
+policies:
+
+  # ---------------------------------------------------------------------------
+  # Read operations — allow freely for code analysis
+  # ---------------------------------------------------------------------------
+
+  # Rule 1: Allow read_file unconditionally
+  - name: codereview_allow_read_file
+    description: >
+      Allow all file reads for code analysis. Read operations are the
+      core of code review — no restrictions needed.
+    tool_pattern: read_file
+    conditions: []
+    action: allow
+    priority: 200
+    enabled: true
+    tags: [read-only, code-review]
+
+  # Rule 2: Allow search_files unconditionally
+  - name: codereview_allow_search_files
+    description: >
+      Allow all file searches for code navigation. Essential for
+      finding definitions, references, and patterns across codebase.
+    tool_pattern: search_files
+    conditions: []
+    action: allow
+    priority: 200
+    enabled: true
+    tags: [read-only, code-review]
+
+  # Rule 3: Allow browser_snapshot for documentation reference
+  - name: codereview_allow_browser_snapshot
+    description: >
+      Allow browser snapshots for reading documentation and references.
+      Read-only browser access helps with API doc lookup.
+    tool_pattern: browser_snapshot
+    conditions: []
+    action: allow
+    priority: 200
+    enabled: true
+    tags: [read-only, code-review]
+
+  # Rule 4: Allow browser_navigate for doc lookup
+  - name: codereview_allow_browser_navigate
+    description: >
+      Allow browser navigation for accessing documentation.
+      Needed to look up API references and library docs.
+    tool_pattern: browser_navigate
+    conditions: []
+    action: allow
+    priority: 200
+    enabled: true
+    tags: [read-only, code-review]
+
+  # ---------------------------------------------------------------------------
+  # Write operations — block web_content taint
+  # ---------------------------------------------------------------------------
+
+  # Rule 5: Block write_file with web_content taint
+  - name: codereview_block_write_web_taint
+    description: >
+      Block file writes when content carries web_content taint.
+      Web-scraped code could contain malicious payloads or license
+      violations. Only user-authored or AI-generated code should be written.
+    tool_pattern: write_file
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: web_content
+    action: deny
+    priority: 150
+    enabled: true
+    tags: [filesystem, security]
+
+  # Rule 6: Block patch with web_content taint
+  - name: codereview_block_patch_web_taint
+    description: >
+      Block file patches when replacement content carries web taint.
+      Prevents injection of web-sourced code into the codebase.
+      Copy-paste from untrusted web sources is a common attack vector.
+    tool_pattern: patch
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: web_content
+    action: deny
+    priority: 150
+    enabled: true
+    tags: [filesystem, security]
+
+  # Rule 7: Allow write_file with file_content taint (refactoring)
+  - name: codereview_allow_write_file_content
+    description: >
+      Allow file writes with file_content taint. During code review,
+      the agent often reads code from one file and suggests changes to
+      another — this is normal refactoring behavior.
+    tool_pattern: write_file
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: file_content
+    action: allow
+    priority: 140
+    enabled: true
+    tags: [filesystem, code-review]
+
+  # Rule 8: Allow patch with file_content taint (refactoring)
+  - name: codereview_allow_patch_file_content
+    description: >
+      Allow patches with file_content taint. Code patches sourced from
+      reading existing code files is standard refactoring.
+    tool_pattern: patch
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: file_content
+    action: allow
+    priority: 140
+    enabled: true
+    tags: [filesystem, code-review]
+
+  # ---------------------------------------------------------------------------
+  # Terminal — escalate with file_content taint
+  # ---------------------------------------------------------------------------
+
+  # Rule 9: Escalate terminal with file_content taint
+  - name: codereview_escalate_terminal_file_taint
+    description: >
+      Escalate terminal when command arguments carry file_content taint.
+      Running commands derived from file content could execute embedded
+      instructions — let the human verify the command is safe.
+    tool_pattern: terminal
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: file_content
+    action: escalate
+    priority: 130
+    enabled: true
+    tags: [side-effect, code-review]
+
+  # Rule 10: Allow clean terminal (build/test commands)
+  - name: codereview_allow_terminal_clean
+    description: >
+      Allow clean terminal calls for running builds and tests.
+      Standard development workflow operations with no taint.
+    tool_pattern: terminal
+    conditions: []
+    action: allow
+    priority: 50
+    enabled: true
+    tags: [side-effect, code-review]
+
+  # ---------------------------------------------------------------------------
+  # Messaging — prevent code leakage
+  # ---------------------------------------------------------------------------
+
+  # Rule 11: Block send_message with file_content taint
+  - name: codereview_block_message_file_content
+    description: >
+      Block outbound messages containing file_content taint.
+      Prevents code from being leaked via messaging channels.
+      Source code is intellectual property — must not be exfiltrated.
+    tool_pattern: send_message
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: file_content
+    action: deny
+    priority: 150
+    enabled: true
+    tags: [exfiltration, ip-protection]
+
+  # Rule 12: Block send_message with web_content taint
+  - name: codereview_block_message_web_content
+    description: >
+      Block outbound messages with web_content — prevents forwarding
+      of scraped content that might contain poisoned instructions.
+    tool_pattern: send_message
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: web_content
+    action: deny
+    priority: 150
+    enabled: true
+    tags: [exfiltration, security]
+
+  # ---------------------------------------------------------------------------
+  # Catch-all — log for review
+  # ---------------------------------------------------------------------------
+
+  # Rule 13: Log tainted operations
+  - name: codereview_log_tainted
+    description: >
+      Log any remaining tainted operation for code review audit.
+      Tracks all tainted data flow for later security analysis.
+    tool_pattern: "*"
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: log_only
+    priority: 5
+    enabled: true
+    tags: [catchall, audit]
+
+  # Rule 14: Allow all clean operations
+  - name: codereview_allow_clean
+    description: >
+      Allow all clean (untainted) operations. In code review mode,
+      most operations are safe when data provenance is clean.
+    tool_pattern: "*"
+    conditions: []
+    action: allow
+    priority: 1
+    enabled: true
+    tags: [catchall]

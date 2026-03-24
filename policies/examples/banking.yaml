@@ -1,0 +1,217 @@
+# =============================================================================
+# HermesKatana Example Policy: BANKING / FINANCIAL DOMAIN
+# =============================================================================
+# Domain-specific policies for financial applications. Extends the balanced
+# preset with strict controls around money transfers, credential changes,
+# and balance queries.
+#
+# Use case: AI assistants handling banking operations, fintech APIs,
+#           payment processing, or financial data access.
+# =============================================================================
+
+name: banking
+version: "1.0.0"
+description: >
+  Financial domain policies: strict controls on money transfers and
+  credential changes, escalation for balance queries from tool output,
+  comprehensive audit logging for compliance.
+extends: balanced
+author: HermesKatana
+metadata:
+  domain: financial
+  compliance: [PCI-DSS, SOX]
+  recommended_for: banking-agents
+
+policies:
+
+  # ---------------------------------------------------------------------------
+  # Money transfers — block any tainted transfer request
+  # ---------------------------------------------------------------------------
+
+  # Rule 1: Block money transfer tool with ANY untrusted taint
+  - name: banking_block_transfer_tainted
+    description: >
+      Block money transfers when any argument carries untrusted taint.
+      Financial transactions must never be influenced by external data.
+      Covers transfer, payment, send_money, and similar tool patterns.
+    tool_pattern: "*transfer*"
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: deny
+    priority: 200
+    enabled: true
+    tags: [financial, critical, compliance]
+
+  # Rule 2: Block payment tools with untrusted taint
+  - name: banking_block_payment_tainted
+    description: >
+      Block payment processing when data carries taint.
+      Prevents manipulated payment amounts or destinations.
+    tool_pattern: "*payment*"
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: deny
+    priority: 200
+    enabled: true
+    tags: [financial, critical, compliance]
+
+  # Rule 3: Block send_money with any taint
+  - name: banking_block_send_money_tainted
+    description: >
+      Block money sending operations with tainted data.
+      Amount, recipient, and memo fields must all be clean.
+    tool_pattern: "*send_money*"
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: deny
+    priority: 200
+    enabled: true
+    tags: [financial, critical, compliance]
+
+  # ---------------------------------------------------------------------------
+  # Credential changes — only pure user input allowed
+  # ---------------------------------------------------------------------------
+
+  # Rule 4: Block password changes with non-user taint
+  - name: banking_block_credential_change_tool_taint
+    description: >
+      Block credential/password changes when data carries tool_output taint.
+      Credential operations must originate directly from the user.
+    tool_pattern: "*password*"
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: tool_output
+    action: deny
+    priority: 200
+    enabled: true
+    tags: [credentials, critical]
+
+  # Rule 5: Block credential changes with web taint
+  - name: banking_block_credential_change_web_taint
+    description: >
+      Block credential changes when data carries web_content taint.
+      Web-sourced data must never influence authentication changes.
+    tool_pattern: "*password*"
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: web_content
+    action: deny
+    priority: 200
+    enabled: true
+    tags: [credentials, critical]
+
+  # Rule 6: Block credential changes with MCP taint
+  - name: banking_block_credential_change_mcp_taint
+    description: >
+      Block credential changes when data carries MCP-sourced taint.
+      External protocol data must never reach credential operations.
+    tool_pattern: "*password*"
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: mcp
+    action: deny
+    priority: 200
+    enabled: true
+    tags: [credentials, critical]
+
+  # Rule 7: Block API key changes with any non-user taint
+  - name: banking_block_apikey_change_tainted
+    description: >
+      Block API key rotation or changes when data is tainted.
+      API keys are high-value secrets — changes need clean provenance.
+    tool_pattern: "*api_key*"
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: deny
+    priority: 200
+    enabled: true
+    tags: [credentials, critical]
+
+  # ---------------------------------------------------------------------------
+  # Balance queries — escalate when from tool output
+  # ---------------------------------------------------------------------------
+
+  # Rule 8: Escalate balance queries with tool_output taint
+  - name: banking_escalate_balance_tool_output
+    description: >
+      Escalate balance queries when the account identifier comes from
+      tool_output. Could be an indirect prompt injection trying to
+      read a different account's balance.
+    tool_pattern: "*balance*"
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: tool_output
+    action: escalate
+    priority: 150
+    enabled: true
+    tags: [financial, review]
+
+  # Rule 9: Escalate account info queries with external taint
+  - name: banking_escalate_account_info_tainted
+    description: >
+      Escalate account information queries with any taint.
+      Account data is sensitive — ensure queries are intentional.
+    tool_pattern: "*account*"
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: escalate
+    priority: 150
+    enabled: true
+    tags: [financial, review]
+
+  # ---------------------------------------------------------------------------
+  # Audit logging — comprehensive trail for compliance
+  # ---------------------------------------------------------------------------
+
+  # Rule 10: Log all financial tool calls (even clean ones)
+  - name: banking_log_all_financial
+    description: >
+      Log every financial tool call for compliance audit trail.
+      Required by PCI-DSS and SOX regulations.
+    tool_pattern: "*transfer*"
+    conditions: []
+    action: log_only
+    priority: 10
+    enabled: true
+    tags: [compliance, audit]
+
+  # Rule 11: Log all payment operations
+  - name: banking_log_all_payments
+    description: >
+      Log every payment operation regardless of taint status.
+      Maintains complete financial transaction records.
+    tool_pattern: "*payment*"
+    conditions: []
+    action: log_only
+    priority: 10
+    enabled: true
+    tags: [compliance, audit]
+
+  # Rule 12: Log all tainted operations for review
+  - name: banking_log_tainted_catchall
+    description: >
+      Log any remaining tainted operation for security review.
+      Ensures no tainted interaction goes unrecorded in financial context.
+    tool_pattern: "*"
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: log_only
+    priority: 5
+    enabled: true
+    tags: [catchall, audit]

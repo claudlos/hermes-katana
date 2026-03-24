@@ -1,0 +1,267 @@
+# =============================================================================
+# HermesKatana Policy Set: BALANCED
+# =============================================================================
+# Smart defaults — block dangerous tools with web/MCP taint, escalate
+# ambiguous cases with tool_output taint, allow read-only tools freely.
+# Recommended for: development, daily usage, general-purpose agents.
+# =============================================================================
+
+name: balanced
+version: "1.0.0"
+description: >
+  Smart defaults: block dangerous tools with untrusted taint (web_content,
+  mcp), escalate edge cases with tool_output taint, allow read-only tools.
+  Good balance between security and usability.
+author: HermesKatana
+metadata:
+  security_level: moderate
+  recommended_for: development
+
+policies:
+
+  # ---------------------------------------------------------------------------
+  # Terminal — nuanced handling by taint source
+  # ---------------------------------------------------------------------------
+
+  # Rule 1: Block terminal with web/MCP taint (injection attack vector)
+  - name: balanced_terminal_web_mcp_taint
+    description: >
+      Block terminal when arguments carry web_content or mcp taint.
+      These are high-risk sources that could inject malicious commands.
+    tool_pattern: terminal
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: web_content
+    action: deny
+    priority: 110
+    enabled: true
+    tags: [side-effect, critical]
+
+  # Rule 2: Block terminal with MCP taint separately for clarity
+  - name: balanced_terminal_mcp_taint
+    description: >
+      Block terminal when arguments carry MCP-sourced taint.
+      External protocol data must never reach command execution.
+    tool_pattern: terminal
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: mcp
+    action: deny
+    priority: 110
+    enabled: true
+    tags: [side-effect, critical]
+
+  # Rule 3: Escalate terminal with tool_output taint (might be safe)
+  - name: balanced_terminal_tool_output_taint
+    description: >
+      Escalate terminal when arguments carry tool_output taint.
+      Tool output is conditionally trusted — let the human decide.
+    tool_pattern: terminal
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: tool_output
+    action: escalate
+    priority: 95
+    enabled: true
+    tags: [side-effect, needs-review]
+
+  # Rule 4: Block terminal exfiltration patterns even without taint
+  - name: balanced_terminal_exfil_pattern
+    description: >
+      Block terminal commands matching exfiltration patterns when tainted.
+      Catches curl|sh, wget piping, and similar attack patterns.
+    tool_pattern: terminal
+    conditions:
+      - field: command
+        operator: matches_pattern
+        value: ".*(curl|wget|nc|ncat|ssh|scp|ftp)\\s+.*"
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: deny
+    priority: 115
+    enabled: true
+    tags: [exfiltration, critical]
+
+  # ---------------------------------------------------------------------------
+  # Messaging — exfiltration defense
+  # ---------------------------------------------------------------------------
+
+  # Rule 5: Block send_message with ANY untrusted taint
+  - name: balanced_send_message_tainted
+    description: >
+      Block outbound messages containing any tainted data.
+      Messaging is a primary exfiltration vector — always block when tainted.
+    tool_pattern: send_message
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: deny
+    priority: 100
+    enabled: true
+    tags: [side-effect, exfiltration]
+
+  # ---------------------------------------------------------------------------
+  # Memory — protect against poisoning
+  # ---------------------------------------------------------------------------
+
+  # Rule 6: Block memory writes with web/MCP taint
+  - name: balanced_memory_web_mcp_taint
+    description: >
+      Block memory mutations when data carries web_content or mcp taint.
+      Prevents memory poisoning from untrusted external sources.
+    tool_pattern: memory
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: web_content
+    action: deny
+    priority: 100
+    enabled: true
+    tags: [side-effect, persistence]
+
+  # Rule 7: Block memory writes with MCP taint
+  - name: balanced_memory_mcp_taint
+    description: >
+      Block memory mutations when data carries MCP-sourced taint.
+      External protocol outputs must not poison agent memory.
+    tool_pattern: memory
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: mcp
+    action: deny
+    priority: 100
+    enabled: true
+    tags: [side-effect, persistence]
+
+  # ---------------------------------------------------------------------------
+  # File writes — escalate for review
+  # ---------------------------------------------------------------------------
+
+  # Rule 8: Escalate write_file with tool_output taint
+  - name: balanced_write_file_tool_taint
+    description: >
+      Escalate file writes when content carries tool_output taint.
+      Tool output might be legitimate — let the human verify.
+    tool_pattern: write_file
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: tool_output
+    action: escalate
+    priority: 95
+    enabled: true
+    tags: [side-effect, filesystem]
+
+  # Rule 9: Escalate patch with tool_output taint
+  - name: balanced_patch_tool_taint
+    description: >
+      Escalate file patches when replacement text carries tool_output taint.
+      Code modifications from tool output deserve human review.
+    tool_pattern: patch
+    conditions:
+      - field: "*"
+        operator: has_label
+        value: tool_output
+    action: escalate
+    priority: 95
+    enabled: true
+    tags: [side-effect, filesystem]
+
+  # ---------------------------------------------------------------------------
+  # Skill management and delegation — deny tainted
+  # ---------------------------------------------------------------------------
+
+  # Rule 10: Block skill modifications with tainted data
+  - name: balanced_skill_manage_tainted
+    description: >
+      Block skill installation/modification with any tainted data.
+      Skill changes affect agent capabilities — high-risk operation.
+    tool_pattern: skill_manage
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: deny
+    priority: 100
+    enabled: true
+    tags: [side-effect, code-execution]
+
+  # Rule 11: Escalate delegation with tainted instructions
+  - name: balanced_delegate_tainted
+    description: >
+      Escalate task delegation when instructions carry taint.
+      Sub-agents could propagate tainted instructions laterally.
+    tool_pattern: delegate_task
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: escalate
+    priority: 95
+    enabled: true
+    tags: [side-effect, lateral-movement]
+
+  # ---------------------------------------------------------------------------
+  # Read-only tools — allow freely (no side effects)
+  # ---------------------------------------------------------------------------
+
+  # Rule 12: Allow read_file always
+  - name: balanced_read_file_allow
+    description: >
+      Allow read_file unconditionally — reading files has no side effects.
+      Taint from file content is tracked by the taint engine separately.
+    tool_pattern: read_file
+    conditions: []
+    action: allow
+    priority: 50
+    enabled: true
+    tags: [read-only, safe]
+
+  # Rule 13: Allow search_files always
+  - name: balanced_search_files_allow
+    description: >
+      Allow search_files unconditionally — search is read-only.
+      Useful for code navigation and analysis without risk.
+    tool_pattern: search_files
+    conditions: []
+    action: allow
+    priority: 50
+    enabled: true
+    tags: [read-only, safe]
+
+  # Rule 14: Allow browser_snapshot always
+  - name: balanced_browser_snapshot_allow
+    description: >
+      Allow browser snapshots — read-only observation of page state.
+      No interaction with the page, so no side-effect risk.
+    tool_pattern: browser_snapshot
+    conditions: []
+    action: allow
+    priority: 50
+    enabled: true
+    tags: [read-only, browser, safe]
+
+  # ---------------------------------------------------------------------------
+  # Catch-all — log for audit trail
+  # ---------------------------------------------------------------------------
+
+  # Rule 15: Log any remaining tainted call
+  - name: balanced_catchall_log
+    description: >
+      Log any tool call with taint not matched by a specific rule above.
+      Provides an audit trail without blocking productivity.
+    tool_pattern: "*"
+    conditions:
+      - field: "*"
+        operator: contains_taint
+        value: true
+    action: log_only
+    priority: 5
+    enabled: true
+    tags: [catchall, audit]
