@@ -25,7 +25,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -40,6 +39,8 @@ from hermes_katana.installer.patches import (
     PatchStatus,
     apply_patches,
     get_patch_status,
+    preview_apply_patches,
+    preview_revert_patches,
     revert_patches,
 )
 
@@ -55,19 +56,14 @@ KATANA_CA_DIR = "certs"
 KATANA_CA_CERT = "katana-ca.pem"
 KATANA_CA_KEY = "katana-ca-key.pem"
 KATANA_INSTALL_MARKER = ".katana-installed"
+KATANA_BACKUP_DIR = ".katana-backups"
+KATANA_BACKUP_MANIFEST = "manifest.json"
 
-# Files that indicate a Hermes checkout
+# Files required for a checkout to be patchable by this installer.
 HERMES_MARKERS = [
     "hermes/__init__.py",
     "hermes/tools/dispatch.py",
-    "pyproject.toml",
-]
-
-# Alternative markers (some Hermes forks use different layouts)
-HERMES_ALT_MARKERS = [
-    "src/hermes/__init__.py",
-    "hermes/core/agent.py",
-    "hermes/agent.py",
+    "hermes/tools/terminal.py",
 ]
 
 # Default configuration template
@@ -174,6 +170,39 @@ class VerifyResult(BaseModel):
         return len(self.patches_applied)
 
 
+@dataclass(frozen=True)
+class BackupManifest:
+    """Metadata for a checkout backup created before install or uninstall."""
+
+    operation: str
+    target: str
+    backup_root: str
+    created_at: str
+    files: list[str] = field(default_factory=list)
+    missing_paths: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "operation": self.operation,
+            "target": self.target,
+            "backup_root": self.backup_root,
+            "created_at": self.created_at,
+            "files": list(self.files),
+            "missing_paths": list(self.missing_paths),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BackupManifest":
+        return cls(
+            operation=str(data["operation"]),
+            target=str(data["target"]),
+            backup_root=str(data["backup_root"]),
+            created_at=str(data["created_at"]),
+            files=list(data.get("files", [])),
+            missing_paths=list(data.get("missing_paths", [])),
+        )
+
+
 # ---------------------------------------------------------------------------
 # KatanaInstaller
 # ---------------------------------------------------------------------------
@@ -203,6 +232,14 @@ class KatanaInstaller:
             installer.uninstall("/path/to/hermes")
     """
 
+    def __init__(self) -> None:
+        self._last_backup_manifest: Optional[Path] = None
+
+    @property
+    def last_backup_manifest_path(self) -> Optional[Path]:
+        """Return the last backup manifest written by this installer."""
+        return self._last_backup_manifest
+
     def detect_hermes(self, path: str | Path) -> bool:
         """Check if the given path is a Hermes checkout.
 
@@ -221,24 +258,25 @@ class KatanaInstaller:
             logger.debug("Not a directory: %s", target)
             return False
 
-        # Check standard markers
-        for marker in HERMES_MARKERS:
-            if (target / marker).exists():
-                logger.info("Hermes detected via %s in %s", marker, target)
-                return True
+        # The installer can only safely operate on checkouts that expose the
+        # files required by the critical Katana patches.
+        missing_markers = [marker for marker in HERMES_MARKERS if not (target / marker).exists()]
+        if not missing_markers:
+            logger.info("Hermes detected via required markers in %s", target)
+            return True
 
-        # Check alternative layouts
-        for marker in HERMES_ALT_MARKERS:
-            if (target / marker).exists():
-                logger.info("Hermes (alt layout) detected via %s in %s", marker, target)
-                return True
-
-        # Check pyproject.toml for hermes package name
+        # A pyproject named "hermes" is not sufficient on its own; keep the
+        # package-name check only as a secondary signal when the patch targets
+        # are present under the expected layout.
         pyproject = target / "pyproject.toml"
         if pyproject.exists():
             try:
                 content = pyproject.read_text(encoding="utf-8")
-                if 'name = "hermes"' in content or "name = 'hermes'" in content:
+                if (
+                    ('name = "hermes"' in content or "name = 'hermes'" in content)
+                    and (target / "hermes/tools/dispatch.py").exists()
+                    and (target / "hermes/tools/terminal.py").exists()
+                ):
                     logger.info("Hermes detected via pyproject.toml in %s", target)
                     return True
             except OSError:
@@ -247,7 +285,14 @@ class KatanaInstaller:
         logger.debug("Hermes not detected in %s", target)
         return False
 
-    def install(self, target: str | Path) -> list[PatchResult]:
+    def install(
+        self,
+        target: str | Path,
+        *,
+        dry_run: bool = False,
+        backup: bool = False,
+        backup_dir: str | Path | None = None,
+    ) -> list[PatchResult]:
         """Install Katana protection on a Hermes checkout.
 
         Performs the following steps:
@@ -260,6 +305,9 @@ class KatanaInstaller:
 
         Args:
             target: Path to the Hermes checkout root.
+            dry_run: Preview the operation without modifying the checkout.
+            backup: Create a pre-change backup manifest and file snapshot.
+            backup_dir: Optional explicit backup directory.
 
         Returns:
             List of :class:`PatchResult` for each patch.
@@ -269,6 +317,7 @@ class KatanaInstaller:
             ValueError: If the target is not a Hermes checkout.
         """
         target = Path(target).resolve()
+        self._last_backup_manifest = None
 
         if not target.exists():
             raise FileNotFoundError(f"Target path does not exist: {target}")
@@ -280,6 +329,19 @@ class KatanaInstaller:
             )
 
         logger.info("Installing Katana on %s", target)
+
+        if dry_run:
+            return preview_apply_patches(target)
+
+        if backup:
+            manifest = self._create_backup(
+                target,
+                operation="install",
+                paths=self._paths_to_backup_for_install(target),
+                backup_dir=backup_dir,
+            )
+            self._last_backup_manifest = Path(manifest.backup_root) / KATANA_BACKUP_MANIFEST
+            logger.info("Created install backup at %s", manifest.backup_root)
 
         # 1. Create .katana directory
         katana_dir = target / KATANA_CONFIG_DIR
@@ -312,7 +374,14 @@ class KatanaInstaller:
 
         return results
 
-    def uninstall(self, target: str | Path) -> list[PatchResult]:
+    def uninstall(
+        self,
+        target: str | Path,
+        *,
+        dry_run: bool = False,
+        backup: bool = False,
+        backup_dir: str | Path | None = None,
+    ) -> list[PatchResult]:
         """Remove Katana protection from a Hermes checkout.
 
         Performs the following steps:
@@ -322,16 +391,33 @@ class KatanaInstaller:
 
         Args:
             target: Path to the Hermes checkout root.
+            dry_run: Preview the operation without modifying the checkout.
+            backup: Create a pre-change backup manifest and file snapshot.
+            backup_dir: Optional explicit backup directory.
 
         Returns:
             List of :class:`PatchResult` for each reverted patch.
         """
         target = Path(target).resolve()
+        self._last_backup_manifest = None
 
         if not target.exists():
             raise FileNotFoundError(f"Target path does not exist: {target}")
 
         logger.info("Uninstalling Katana from %s", target)
+
+        if dry_run:
+            return preview_revert_patches(target)
+
+        if backup:
+            manifest = self._create_backup(
+                target,
+                operation="uninstall",
+                paths=self._paths_to_backup_for_uninstall(target),
+                backup_dir=backup_dir,
+            )
+            self._last_backup_manifest = Path(manifest.backup_root) / KATANA_BACKUP_MANIFEST
+            logger.info("Created uninstall backup at %s", manifest.backup_root)
 
         # 1. Revert patches
         results = revert_patches(target)
@@ -352,6 +438,91 @@ class KatanaInstaller:
         logger.info("Uninstallation complete: %d patches reverted", reverted)
 
         return results
+
+    def preview_install_actions(self, target: str | Path) -> list[str]:
+        """Describe non-patch install actions for dry-run output."""
+        target = Path(target).resolve()
+        actions: list[str] = []
+        katana_dir = target / KATANA_CONFIG_DIR
+        config_file = katana_dir / KATANA_CONFIG_FILE
+        cert_path = katana_dir / KATANA_CA_DIR / KATANA_CA_CERT
+        marker_path = target / KATANA_INSTALL_MARKER
+
+        if not katana_dir.exists():
+            actions.append(f"Would create {KATANA_CONFIG_DIR}/")
+        if config_file.exists():
+            actions.append(f"Would preserve {config_file.relative_to(target)}")
+        else:
+            actions.append(f"Would write {config_file.relative_to(target)}")
+        if cert_path.exists():
+            actions.append(f"Would preserve {cert_path.relative_to(target)}")
+        else:
+            actions.append(f"Would generate {cert_path.relative_to(target)}")
+        if marker_path.exists():
+            actions.append(f"Would overwrite {marker_path.relative_to(target)}")
+        else:
+            actions.append(f"Would write {marker_path.relative_to(target)}")
+        return actions
+
+    def preview_uninstall_actions(self, target: str | Path) -> list[str]:
+        """Describe non-patch uninstall actions for dry-run output."""
+        target = Path(target).resolve()
+        actions: list[str] = []
+        katana_dir = target / KATANA_CONFIG_DIR
+        marker_path = target / KATANA_INSTALL_MARKER
+
+        if katana_dir.exists():
+            actions.append(f"Would remove {katana_dir.relative_to(target)}/")
+        if marker_path.exists():
+            actions.append(f"Would remove {marker_path.relative_to(target)}")
+        if not actions:
+            actions.append("No checkout-local Katana state to remove")
+        return actions
+
+    def restore(self, manifest_path: str | Path, *, dry_run: bool = False) -> list[str]:
+        """Restore a checkout from a backup manifest."""
+        manifest_file = Path(manifest_path).expanduser().resolve()
+        if not manifest_file.exists():
+            raise FileNotFoundError(f"Backup manifest does not exist: {manifest_file}")
+
+        try:
+            raw = json.loads(manifest_file.read_text(encoding="utf-8"))
+            manifest = BackupManifest.from_dict(raw)
+        except (json.JSONDecodeError, OSError, KeyError) as exc:
+            raise ValueError(f"Invalid backup manifest: {manifest_file}") from exc
+
+        target = Path(manifest.target).resolve()
+        backup_root = Path(manifest.backup_root).resolve()
+        actions: list[str] = []
+
+        for relative_raw in manifest.files:
+            relative = Path(relative_raw)
+            source = backup_root / relative
+            destination = target / relative
+            actions.append(f"Restore {relative.as_posix()}")
+
+            if dry_run:
+                continue
+
+            if source.is_dir():
+                shutil.copytree(source, destination, dirs_exist_ok=True)
+            else:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+
+        for relative_raw in manifest.missing_paths:
+            relative = Path(relative_raw)
+            destination = target / relative
+            if destination.exists():
+                actions.append(f"Remove {relative.as_posix()}")
+                if dry_run:
+                    continue
+                if destination.is_dir():
+                    shutil.rmtree(destination)
+                else:
+                    destination.unlink()
+
+        return actions
 
     def verify(self, target: str | Path) -> VerifyResult:
         """Verify the integrity of a Katana installation.
@@ -452,6 +623,91 @@ class KatanaInstaller:
 
     # -- Private helpers ----------------------------------------------------
 
+    def _paths_to_backup_for_install(self, target: Path) -> list[Path]:
+        """Collect files and directories to snapshot before install."""
+        paths: list[Path] = []
+        seen: set[Path] = set()
+
+        for patch in CORE_PATCHES:
+            candidate = target / patch.target_file
+            if candidate.exists() and candidate not in seen:
+                paths.append(candidate)
+                seen.add(candidate)
+
+        for candidate in (
+            target / KATANA_CONFIG_DIR,
+            target / KATANA_INSTALL_MARKER,
+        ):
+            if candidate.exists() and candidate not in seen:
+                paths.append(candidate)
+                seen.add(candidate)
+
+        return paths
+
+    def _paths_to_backup_for_uninstall(self, target: Path) -> list[Path]:
+        """Collect files and directories to snapshot before uninstall."""
+        return self._paths_to_backup_for_install(target)
+
+    def _create_backup(
+        self,
+        target: Path,
+        *,
+        operation: str,
+        paths: list[Path],
+        backup_dir: str | Path | None = None,
+    ) -> BackupManifest:
+        """Create a file snapshot and manifest for install or uninstall."""
+        if backup_dir is None:
+            timestamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+            root = target / KATANA_BACKUP_DIR / f"{operation}-{timestamp}"
+        else:
+            root = Path(backup_dir).expanduser().resolve()
+
+        if root.exists() and any(root.iterdir()):
+            raise FileExistsError(f"Backup directory is not empty: {root}")
+
+        root.mkdir(parents=True, exist_ok=True)
+        copied: list[str] = []
+
+        for source in paths:
+            relative = source.relative_to(target)
+            destination = root / relative
+
+            if source.is_dir():
+                shutil.copytree(source, destination, dirs_exist_ok=True)
+            else:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+
+            copied.append(relative.as_posix())
+
+        manifest = BackupManifest(
+            operation=operation,
+            target=str(target),
+            backup_root=str(root),
+            created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            files=sorted(copied),
+            missing_paths=sorted(self._missing_paths_for_backup(target, operation)),
+        )
+        manifest_path = root / KATANA_BACKUP_MANIFEST
+        manifest_path.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
+        return manifest
+
+    def _missing_paths_for_backup(self, target: Path, operation: str) -> list[str]:
+        """Describe paths that did not exist when the backup was taken."""
+        if operation != "install":
+            return []
+
+        expected = [
+            target / KATANA_CONFIG_DIR,
+            target / KATANA_INSTALL_MARKER,
+        ]
+        return [
+            path.relative_to(target).as_posix()
+            for path in expected
+            if not path.exists()
+        ]
+
     def _generate_config(self, target: Path) -> None:
         """Generate the default Katana configuration file.
 
@@ -465,8 +721,8 @@ class KatanaInstaller:
             logger.debug("Config file already exists, skipping: %s", config_file)
             return
 
-        ca_cert_path = str(config_dir / KATANA_CA_DIR / KATANA_CA_CERT)
-        audit_dir = str(config_dir / "audit")
+        ca_cert_path = (Path(KATANA_CONFIG_DIR) / KATANA_CA_DIR / KATANA_CA_CERT).as_posix()
+        audit_dir = (Path(KATANA_CONFIG_DIR) / "audit").as_posix()
 
         content = DEFAULT_CONFIG_TEMPLATE.format(
             ca_cert_path=ca_cert_path,
@@ -591,5 +847,7 @@ class KatanaInstaller:
             },
             "target": str(target),
         }
+        if self._last_backup_manifest is not None:
+            data["backup_manifest"] = str(self._last_backup_manifest)
         marker.write_text(json.dumps(data, indent=2), encoding="utf-8")
         logger.debug("Wrote install marker: %s", marker)

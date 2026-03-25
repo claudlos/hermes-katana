@@ -16,23 +16,23 @@ Patch lifecycle
 All patches are non-destructive — the original code is preserved in the
 replacement (the patch adds *around* the original, not replaces it).
 
-The five core patches
+The core patches
 ---------------------
 1. **tool_dispatch_hook** — injects Katana middleware before tool execution.
-2. **proxy_env_vars** — injects HTTP_PROXY / HTTPS_PROXY into subprocess envs.
-3. **banner_integration** — shows Katana status in the Hermes startup banner.
-4. **docker_proxy_forwarding** — translates proxy address for containers.
-5. **gateway_command_scanning** — scans commands in non-interactive (gateway) mode.
+2. **dispatcher_bootstrap** — attaches checkout-driven runtime state to Hermes dispatchers.
+3. **dispatcher_escalation_audit** — records denied escalation outcomes.
+4. **proxy_env_vars** — injects HTTP_PROXY / HTTPS_PROXY into subprocess envs.
+5. **banner_integration** — shows Katana status in the Hermes startup banner.
+6. **docker_proxy_forwarding** — translates proxy address for containers.
+7. **gateway_command_scanning** — scans commands in non-interactive (gateway) mode.
 """
 
 from __future__ import annotations
 
 import logging
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ class PatchStatus(str, Enum):
 
     APPLIED = "applied"
     REVERTED = "reverted"
+    PLANNED = "planned"
     SKIPPED = "skipped"
     ERROR = "error"
 
@@ -163,7 +164,66 @@ CORE_PATCHES: list[Patch] = [
     ),
 
     # -----------------------------------------------------------------------
-    # 2. Proxy environment variables
+    # 2. Dispatcher bootstrap
+    # -----------------------------------------------------------------------
+    Patch(
+        name="dispatcher_bootstrap",
+        description="Attach checkout-driven runtime state to Hermes dispatchers",
+        target_file="hermes/tools/dispatch.py",
+        search_text="""\
+            _katana_chain = getattr(self, '_katana_chain', None)""",
+        replace_text="""\
+            {sentinel}
+            try:
+                from hermes_katana.bootstrap import ensure_dispatcher_bootstrap
+                ensure_dispatcher_bootstrap(self)
+            except Exception:
+                pass
+            _katana_chain = getattr(self, '_katana_chain', None)""".format(
+            sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap"
+        ),
+        sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap",
+        critical=True,
+    ),
+
+    # -----------------------------------------------------------------------
+    # 3. Escalation denial audit finalization
+    # -----------------------------------------------------------------------
+    Patch(
+        name="dispatcher_escalation_audit",
+        description="Record denied escalation outcomes before raising",
+        target_file="hermes/tools/dispatch.py",
+        search_text="""\
+                if _katana_decision == DispatchDecision.ESCALATE:
+                    if not await self._katana_escalate(_katana_ctx):
+                        raise PermissionError(
+                            f"Katana escalation denied for '{tool_name}'"
+                        )""",
+        replace_text="""\
+                if _katana_decision == DispatchDecision.ESCALATE:
+                    {sentinel}
+                    if not await self._katana_escalate(_katana_ctx):
+                        _katana_ctx.deny(
+                            f"Human denied Katana escalation for '{{tool_name}}'"
+                        )
+                        _katana_ctx.tool_error = (
+                            f"Katana escalation denied for '{{tool_name}}'"
+                        )
+                        try:
+                            _katana_chain.execute_post(_katana_ctx)
+                        except Exception:
+                            pass
+                        raise PermissionError(
+                            f"Katana escalation denied for '{{tool_name}}'"
+                        )""".format(
+            sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit"
+        ),
+        sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit",
+        critical=True,
+    ),
+
+    # -----------------------------------------------------------------------
+    # 4. Proxy environment variables
     # -----------------------------------------------------------------------
     Patch(
         name="proxy_env_vars",
@@ -201,7 +261,7 @@ CORE_PATCHES: list[Patch] = [
     ),
 
     # -----------------------------------------------------------------------
-    # 3. Banner integration
+    # 5. Banner integration
     # -----------------------------------------------------------------------
     Patch(
         name="banner_integration",
@@ -232,7 +292,7 @@ CORE_PATCHES: list[Patch] = [
     ),
 
     # -----------------------------------------------------------------------
-    # 4. Docker proxy forwarding
+    # 6. Docker proxy forwarding
     # -----------------------------------------------------------------------
     Patch(
         name="docker_proxy_forwarding",
@@ -279,7 +339,7 @@ CORE_PATCHES: list[Patch] = [
     ),
 
     # -----------------------------------------------------------------------
-    # 5. Gateway command scanning
+    # 7. Gateway command scanning
     # -----------------------------------------------------------------------
     Patch(
         name="gateway_command_scanning",
@@ -433,6 +493,79 @@ def apply_patches(
     return results
 
 
+def preview_apply_patches(
+    target: str | Path,
+    patches: list[Patch] | None = None,
+) -> list[PatchResult]:
+    """Preview patch application without modifying the checkout."""
+    target = Path(target)
+    patches = patches or CORE_PATCHES
+    results: list[PatchResult] = []
+    virtual_contents: dict[Path, str] = {}
+
+    for patch in patches:
+        target_file = target / patch.target_file
+
+        if not target_file.exists():
+            msg = f"Target file not found: {patch.target_file}"
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR if patch.critical else PatchStatus.SKIPPED,
+                    message=msg,
+                )
+            )
+            continue
+
+        try:
+            content = virtual_contents.get(target_file)
+            if content is None:
+                content = target_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR,
+                    message=f"Cannot read {patch.target_file}: {exc}",
+                )
+            )
+            continue
+
+        if patch.sentinel in content:
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.SKIPPED,
+                    message=f"Already applied (sentinel found in {patch.target_file})",
+                )
+            )
+            virtual_contents[target_file] = content
+            continue
+
+        if patch.search_text not in content:
+            msg = f"Search text not found in {patch.target_file} (file may have changed)"
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR if patch.critical else PatchStatus.SKIPPED,
+                    message=msg,
+                )
+            )
+            virtual_contents[target_file] = content
+            continue
+
+        results.append(
+            PatchResult(
+                name=patch.name,
+                status=PatchStatus.PLANNED,
+                message=f"Would apply to {patch.target_file}",
+            )
+        )
+        virtual_contents[target_file] = content.replace(patch.search_text, patch.replace_text, 1)
+
+    return results
+
+
 def revert_patches(
     target: str | Path,
     patches: list[Patch] | None = None,
@@ -453,7 +586,7 @@ def revert_patches(
     patches = patches or CORE_PATCHES
     results: list[PatchResult] = []
 
-    for patch in patches:
+    for patch in reversed(patches):
         target_file = target / patch.target_file
 
         # Check if patch is actually applied
@@ -500,6 +633,66 @@ def revert_patches(
                 status=PatchStatus.ERROR,
                 message=f"Write failed for {patch.target_file}: {exc}",
             ))
+
+    return results
+
+
+def preview_revert_patches(
+    target: str | Path,
+    patches: list[Patch] | None = None,
+) -> list[PatchResult]:
+    """Preview patch reversion without modifying the checkout."""
+    target = Path(target)
+    patches = patches or CORE_PATCHES
+    results: list[PatchResult] = []
+    virtual_contents: dict[Path, str] = {}
+
+    for patch in reversed(patches):
+        target_file = target / patch.target_file
+
+        if not target_file.exists():
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.SKIPPED,
+                    message=f"Not applied (sentinel not found in {patch.target_file})",
+                )
+            )
+            continue
+
+        try:
+            content = virtual_contents.get(target_file)
+            if content is None:
+                content = target_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR,
+                    message=f"Cannot read {patch.target_file}: {exc}",
+                )
+            )
+            continue
+
+        if patch.sentinel not in content:
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.SKIPPED,
+                    message=f"Not applied (sentinel not found in {patch.target_file})",
+                )
+            )
+            virtual_contents[target_file] = content
+            continue
+
+        results.append(
+            PatchResult(
+                name=patch.name,
+                status=PatchStatus.PLANNED,
+                message=f"Would revert in {patch.target_file}",
+            )
+        )
+        virtual_contents[target_file] = content.replace(patch.replace_text, patch.search_text, 1)
 
     return results
 

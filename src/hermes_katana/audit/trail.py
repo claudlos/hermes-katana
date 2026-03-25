@@ -25,7 +25,6 @@ import os
 import platform
 import shutil
 import threading
-import time
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -244,9 +243,14 @@ class AuditEntry(BaseModel):
 # Audit trail
 # ---------------------------------------------------------------------------
 
+def default_audit_path() -> Path:
+    """Return the default audit log file path without creating it."""
+    return Path.home() / ".config" / "hermes-katana" / "audit" / "audit.jsonl"
+
+
 def _default_audit_path() -> Path:
     """Return the default audit log file path."""
-    log_dir = Path.home() / ".config" / "hermes-katana" / "audit"
+    log_dir = default_audit_path().parent
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir / "audit.jsonl"
 
@@ -614,6 +618,24 @@ class AuditTrail:
             result["rotated_files"] = len(rotated)
 
         return result
+
+    def clear(self, *, include_rotations: bool = False) -> None:
+        """Clear the current audit trail and optionally rotated files."""
+        with self._rlock:
+            with self._file_lock:
+                if self._path.exists():
+                    self._path.unlink()
+
+            if include_rotations and self._path.parent.exists():
+                pattern = f"{self._path.stem}_*{self._path.suffix}"
+                for rotated_path in self._path.parent.glob(pattern):
+                    try:
+                        rotated_path.unlink()
+                    except OSError:
+                        logger.debug("Could not delete rotated log %s", rotated_path, exc_info=True)
+
+            self._last_hash = _GENESIS_HASH
+            self._entry_count = 0
 
     @property
     def path(self) -> Path:

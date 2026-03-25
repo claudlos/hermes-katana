@@ -38,7 +38,6 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -197,6 +196,17 @@ class KatanaMiddleware(ABC):
             ctx: The call context, now including ``tool_output`` / ``tool_error``.
         """
 
+    def on_short_circuit(self, ctx: CallContext) -> None:
+        """Observe a pre-dispatch short-circuit decision.
+
+        Called when another middleware denies the call before this middleware
+        would normally run in ``pre_dispatch``. The default implementation is
+        a no-op; observer-style middleware such as audit can override it.
+
+        Args:
+            ctx: The denied call context.
+        """
+
     def __repr__(self) -> str:
         state = "enabled" if self.enabled else "disabled"
         return f"<{self.__class__.__name__}({self.name!r}, {state}, pri={self.priority})>"
@@ -334,12 +344,35 @@ class MiddlewareChain:
                     ctx.deny_reasons[-1] if ctx.deny_reasons else "no reason",
                 )
                 ctx.decision = DispatchDecision.DENY
+                ctx.extras["short_circuit_middleware"] = mw.name
+                self._notify_short_circuit(ctx, chain)
                 return DispatchDecision.DENY
 
             if decision == DispatchDecision.ESCALATE:
                 ctx.decision = DispatchDecision.ESCALATE
 
         return ctx.decision
+
+    def _notify_short_circuit(
+        self,
+        ctx: CallContext,
+        chain: list[KatanaMiddleware],
+    ) -> None:
+        """Notify middleware that a pre-dispatch denial has short-circuited."""
+        ctx.extras["short_circuit_notified"] = True
+
+        for mw in reversed(chain):
+            if not mw.enabled:
+                continue
+
+            start = time.monotonic()
+            try:
+                mw.on_short_circuit(ctx)
+            except Exception:
+                logger.exception("Middleware %r raised during on_short_circuit", mw.name)
+
+            elapsed_ms = (time.monotonic() - start) * 1000
+            ctx.timestamps.append((f"{mw.name}:short", elapsed_ms))
 
     def execute_post(self, ctx: CallContext) -> None:
         """Run post-dispatch hooks on all middleware in reverse order.

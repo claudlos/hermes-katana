@@ -26,7 +26,6 @@ import hmac
 import json
 import logging
 import os
-import platform
 import secrets
 import tempfile
 import threading
@@ -223,9 +222,14 @@ def _delete_master_key() -> None:
 # Vault class
 # ---------------------------------------------------------------------------
 
+def default_vault_path() -> Path:
+    """Return the default vault file path without creating it."""
+    return Path.home() / ".config" / "hermes-katana" / "vault.json"
+
+
 def _default_vault_path() -> Path:
     """Return the default vault file path."""
-    config_dir = Path.home() / ".config" / "hermes-katana"
+    config_dir = default_vault_path().parent
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / "vault.json"
 
@@ -574,3 +578,8 @@ class Vault:
             return len(self.list_keys())
         except VaultError:
             return 0
+
+    @property
+    def path(self) -> Path:
+        """Return the vault file path."""
+        return self._path

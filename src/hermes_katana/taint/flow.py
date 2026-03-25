@@ -352,7 +352,6 @@ class FlowAnalyzer:
         # Collect all sources, including from nested structures
         all_sources = collect_sources(value) | value.sources
         labels = frozenset(s.label for s in all_sources)
-        trust_levels = {s.trust_level for s in all_sources}
 
         matched: list[FlowRule] = []
         reasoning_parts: list[str] = []
@@ -362,7 +361,7 @@ class FlowAnalyzer:
             if rule.matches_tool(tool_name) and rule.matches_labels(labels):
                 matched.append(rule)
                 intersecting = rule.source_labels & labels
-                label_names = ", ".join(sorted(l.name for l in intersecting))
+                label_names = ", ".join(sorted(lbl.name for lbl in intersecting))
                 reasoning_parts.append(
                     f"[P{rule.priority}] {rule.decision.name}: "
                     f"labels {{{label_names}}} → {tool_name}. {rule.reason}"
@@ -375,7 +374,7 @@ class FlowAnalyzer:
             decision = self._default
             reasoning_parts.append(
                 f"No rule matched for labels "
-                f"{{{', '.join(sorted(l.name for l in labels))}}} → {tool_name}. "
+                f"{{{', '.join(sorted(lbl.name for lbl in labels))}}} → {tool_name}. "
                 f"Applying default: {decision.name}."
             )
 
@@ -405,7 +404,7 @@ class FlowAnalyzer:
         self._history.append(result)
         logger.debug(
             "Flow analysis: %s → %s = %s",
-            sorted(l.name for l in labels),
+            sorted(lbl.name for lbl in labels),
             tool_name,
             decision.name,
         )

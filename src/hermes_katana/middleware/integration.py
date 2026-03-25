@@ -26,14 +26,17 @@ Usage::
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 from hermes_katana.middleware.chain import (
     CallContext,
     DispatchDecision,
     KatanaMiddleware,
+    MiddlewareChain,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,7 +89,7 @@ class KatanaTaintMiddleware(KatanaMiddleware):
         Also populates ``ctx.taint_context`` with structured taint metadata
         for downstream policy evaluation.
         """
-        from hermes_katana.taint import TaintedValue, FlowDecision, Source, TaintLabel
+        from hermes_katana.taint import TaintedValue, FlowDecision
 
         tracker = self.tracker
         tainted_fields: dict[str, Any] = {}
@@ -98,7 +101,6 @@ class KatanaTaintMiddleware(KatanaMiddleware):
                 sources = arg_val.sources
                 labels = [s.label.name for s in sources]
                 origins = [s.origin for s in sources]
-                trust_levels = [s.trust.name for s in sources]
 
                 tainted_fields[arg_name] = {
                     "is_tainted": True,
@@ -188,12 +190,20 @@ class KatanaScanMiddleware(KatanaMiddleware):
         *,
         block_threshold: float = 0.7,
         warn_threshold: float = 0.4,
+        check_injection: bool = True,
+        check_secrets: bool = True,
+        check_unicode: bool = True,
+        check_content: bool = True,
         enabled: bool = True,
     ) -> None:
         super().__init__(name="katana.scan", enabled=enabled, priority=80)
         self._vault_values = vault_values or set()
         self._block_threshold = block_threshold
         self._warn_threshold = warn_threshold
+        self._check_injection = check_injection
+        self._check_secrets = check_secrets
+        self._check_unicode = check_unicode
+        self._check_content = check_content
 
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         """Scan all string arguments for attacks.
@@ -201,7 +211,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
         Uses ``scan_input()`` for general text and ``scan_command()`` for
         command-type arguments.
         """
-        from hermes_katana.scanner import scan_input, scan_command, ScanVerdict
+        from hermes_katana.scanner import scan_input, scan_command
 
         worst_score = 0.0
         all_results = []
@@ -213,9 +223,20 @@ class KatanaScanMiddleware(KatanaMiddleware):
 
             # Use command scanner for command-like arguments
             if arg_name in ("command", "cmd", "shell_command", "script"):
-                result = scan_command(text, vault_values=self._vault_values)
+                result = scan_command(
+                    text,
+                    check_secrets=self._check_secrets,
+                    vault_values=self._vault_values,
+                )
             else:
-                result = scan_input(text, vault_values=self._vault_values)
+                result = scan_input(
+                    text,
+                    vault_values=self._vault_values,
+                    check_injection=self._check_injection,
+                    check_secrets=self._check_secrets,
+                    check_unicode=self._check_unicode,
+                    check_content=self._check_content,
+                )
 
             all_results.append(result)
             worst_score = max(worst_score, result.risk_score)
@@ -254,7 +275,14 @@ class KatanaScanMiddleware(KatanaMiddleware):
 
             output_text = str(ctx.tool_output)
             if output_text:
-                result = scan_output(output_text, vault_values=self._vault_values)
+                result = scan_output(
+                    output_text,
+                    vault_values=self._vault_values,
+                    check_injection=self._check_injection,
+                    check_secrets=self._check_secrets,
+                    check_unicode=self._check_unicode,
+                    check_content=self._check_content,
+                )
                 ctx.extras["output_scan_result"] = result
                 if result.has_findings:
                     logger.warning(
@@ -383,8 +411,8 @@ class KatanaAuditMiddleware(KatanaMiddleware):
             try:
                 from hermes_katana.audit import AuditTrail
 
-                self._audit_trail = AuditTrail.get_instance()
-            except (ImportError, AttributeError):
+                self._audit_trail = AuditTrail()
+            except ImportError:
                 # Audit module not yet available — will use logging fallback
                 pass
         return self._audit_trail
@@ -418,6 +446,9 @@ class KatanaAuditMiddleware(KatanaMiddleware):
 
     def post_dispatch(self, ctx: CallContext) -> None:
         """Log the post-dispatch result including tool output metadata."""
+        if ctx.is_denied and ctx.extras.get("katana.audit_short_circuit_logged"):
+            return
+
         event = {
             "type": "tool_dispatch",
             "phase": "post",
@@ -433,12 +464,43 @@ class KatanaAuditMiddleware(KatanaMiddleware):
 
         self._record_event(event, ctx)
 
+    def on_short_circuit(self, ctx: CallContext) -> None:
+        """Log a denied pre-dispatch call that short-circuited the chain."""
+        event = {
+            "type": "tool_dispatch",
+            "phase": "short_circuit",
+            "call_id": ctx.call_id,
+            "tool_name": ctx.tool_name,
+            "decision": ctx.decision.value,
+            "deny_reasons": ctx.deny_reasons,
+            "escalate_reasons": ctx.escalate_reasons,
+            "scan_risk_score": ctx.extras.get("scan_risk_score", 0.0),
+            "policy_action": ctx.extras.get("policy_action"),
+            "policy_name": ctx.extras.get("policy_name"),
+            "short_circuit_middleware": ctx.extras.get("short_circuit_middleware"),
+            "timestamp": time.time(),
+        }
+        self._record_event(event, ctx)
+        ctx.extras["katana.audit_short_circuit_logged"] = True
+
     def _record_event(self, event: dict[str, Any], ctx: CallContext) -> None:
         """Write an event to the audit trail or fall back to logging."""
         trail = self.audit_trail
         if trail is not None:
             try:
-                trail.record(event)
+                from hermes_katana.audit import AuditEntry, AuditEventType
+
+                args_hash = hashlib.sha256(
+                    f"{ctx.call_id}|{event.get('phase', '')}|{event.get('tool_name', '')}".encode("utf-8")
+                ).hexdigest()[:16]
+                entry = AuditEntry(
+                    event_type=AuditEventType.TOOL_CALL,
+                    tool_name=str(event.get("tool_name", "")),
+                    args_hash=args_hash,
+                    decision=str(event.get("decision", "")),
+                    details=json.dumps(event, sort_keys=True, default=str),
+                )
+                trail.log(entry)
                 return
             except Exception:
                 logger.debug("Audit trail record failed, falling back to logging", exc_info=True)
@@ -514,6 +576,10 @@ def create_default_chain(
         vault_values=cfg.get("scan.vault_values"),
         block_threshold=cfg.get("scan.block_threshold", 0.7),
         warn_threshold=cfg.get("scan.warn_threshold", 0.4),
+        check_injection=cfg.get("scan.check_injection", True),
+        check_secrets=cfg.get("scan.check_secrets", True),
+        check_unicode=cfg.get("scan.check_unicode", True),
+        check_content=cfg.get("scan.check_content", True),
         enabled=cfg.get("scan.enabled", True),
     )
     chain.add(scan_mw)

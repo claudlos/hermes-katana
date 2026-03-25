@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "fixtures": [
+    {
+      "id": "hermes-v0.1.0-core-snapshot",
+      "directory": "hermes-v0.1.0-core-snapshot",
+      "hermes_version": "0.1.0",
+      "profile": "core",
+      "support_tier": "supported",
+      "source": "pinned_release_snapshot",
+      "description": "Pinned Hermes 0.1.0 core checkout layout with only required patch targets.",
+      "expected": {
+        "critical_patches": "applied",
+        "optional_patches": "skipped_cleanly"
+      },
+      "provenance": {
+        "verification_mode": "tree_sha256",
+        "source_tree_sha256": "6735c450d095e678ad936696c5c03e5bb57581501ecb9c038051c57d266fb922",
+        "source_tree_origin": "pinned_snapshot_directory"
+      }
+    },
+    {
+      "id": "hermes-v0.1.0-extended-snapshot",
+      "directory": "hermes-v0.1.0-extended-snapshot",
+      "hermes_version": "0.1.0",
+      "profile": "extended",
+      "support_tier": "supported",
+      "source": "pinned_release_snapshot",
+      "description": "Pinned Hermes 0.1.0 extended checkout layout with optional UI, Docker, and gateway patch targets.",
+      "expected": {
+        "all_patches": "applied"
+      },
+      "provenance": {
+        "verification_mode": "tree_sha256",
+        "source_tree_sha256": "4ccfb4eae5b3f609229383b0e2424b46f1bd6a54f30327eacfb7f69f5bbcf111",
+        "source_tree_origin": "pinned_snapshot_directory"
+      }
+    }
+  ]
+}

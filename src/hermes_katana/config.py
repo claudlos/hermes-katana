@@ -383,6 +383,11 @@ def get_default_config() -> KatanaConfig:
     return KatanaConfig()
 
 
+def config_path() -> Path:
+    """Return the default HermesKatana config file path."""
+    return _CONFIG_FILE
+
+
 def config_dir() -> Path:
     """Return the HermesKatana configuration directory path.
 

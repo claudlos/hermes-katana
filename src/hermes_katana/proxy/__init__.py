@@ -17,9 +17,10 @@ Usage:
 """
 
 from hermes_katana.proxy.config import ProxyConfig
-from hermes_katana.proxy.runner import KatanaProxy
+from hermes_katana.proxy.runner import KatanaProxy, default_pid_path
 
 __all__ = [
     "KatanaProxy",
     "ProxyConfig",
+    "default_pid_path",
 ]

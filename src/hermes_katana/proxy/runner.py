@@ -64,9 +64,14 @@ def _unlock_file(fp: Any) -> None:
 # PID file management
 # ---------------------------------------------------------------------------
 
-def _default_pid_path() -> Path:
+def default_pid_path() -> Path:
     """Return the default PID file path."""
     return Path(tempfile.gettempdir()) / "hermes_katana_proxy.pid"
+
+
+def _default_pid_path() -> Path:
+    """Return the default PID file path."""
+    return default_pid_path()
 
 
 def _compute_vault_hash(vault: Optional["Vault"]) -> str:
@@ -86,11 +91,13 @@ class _PidInfo:
     def __init__(
         self,
         pid: int,
+        host: str,
         port: int,
         vault_hash: str,
         started_at: float,
     ) -> None:
         self.pid = pid
+        self.host = host
         self.port = port
         self.vault_hash = vault_hash
         self.started_at = started_at
@@ -98,6 +105,7 @@ class _PidInfo:
     def to_dict(self) -> dict[str, Any]:
         return {
             "pid": self.pid,
+            "host": self.host,
             "port": self.port,
             "vault_hash": self.vault_hash,
             "started_at": self.started_at,
@@ -107,6 +115,7 @@ class _PidInfo:
     def from_dict(cls, data: dict[str, Any]) -> "_PidInfo":
         return cls(
             pid=data["pid"],
+            host=data.get("host", "127.0.0.1"),
             port=data["port"],
             vault_hash=data.get("vault_hash", "unknown"),
             started_at=data.get("started_at", 0.0),
@@ -122,6 +131,7 @@ class _PidInfo:
 
 def _write_pid_file(path: Path, info: _PidInfo) -> None:
     """Atomically write a PID file with file locking."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".tmp")
     try:
         with open(tmp_path, "w") as fp:
@@ -323,6 +333,8 @@ class KatanaProxy:
 
     def _start_proxy(self) -> int:
         """Internal: start the mitmproxy process."""
+        addon_script = Path(__file__).with_name("addon_script.py")
+
         # Build the mitmdump command
         cmd = [
             sys.executable,
@@ -337,6 +349,8 @@ class KatanaProxy:
             f"ssl_insecure={'true' if not self.config.tls_verify else 'false'}",
         ]
 
+        cmd.extend(["-s", str(addon_script)])
+
         # Add ignore hosts
         for host in self.config.ignore_hosts:
             cmd.extend(["--ignore-hosts", host])
@@ -350,12 +364,35 @@ class KatanaProxy:
             self.config.port,
         )
 
+        env = os.environ.copy()
+        env["KATANA_PROXY_CONFIG_JSON"] = self.config.model_dump_json()
+        env["KATANA_PROXY_ENABLE_VAULT"] = "1" if self.config.inject_credentials else "0"
+        env["KATANA_PROXY_ENABLE_AUDIT"] = "1"
+
+        vault_path = getattr(self.vault, "path", None)
+        if vault_path:
+            env["KATANA_PROXY_VAULT_PATH"] = str(vault_path)
+
+        audit_path = getattr(self.audit, "path", None)
+        if audit_path:
+            env["KATANA_PROXY_AUDIT_PATH"] = str(audit_path)
+
         try:
             self._process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env,
             )
+            # Fail fast when mitmproxy is missing or startup aborts immediately.
+            time.sleep(0.2)
+            returncode = self._process.poll()
+            if returncode is not None:
+                self._process = None
+                raise RuntimeError(
+                    "Proxy process exited during startup "
+                    f"(exit code {returncode}). Check that mitmproxy is installed."
+                )
             pid = self._process.pid
         except FileNotFoundError:
             # mitmproxy not installed - use a simulated PID for testing
@@ -368,6 +405,7 @@ class KatanaProxy:
         vault_hash = _compute_vault_hash(self.vault)
         info = _PidInfo(
             pid=pid,
+            host=self.config.host,
             port=self.config.port,
             vault_hash=vault_hash,
             started_at=time.time(),
@@ -436,7 +474,10 @@ class KatanaProxy:
         info = _read_pid_file(self._pid_path)
         if info is None:
             return False
-        return _is_process_running(info.pid)
+        running = _is_process_running(info.pid)
+        if not running:
+            _remove_pid_file(self._pid_path)
+        return running
 
     def status(self) -> dict[str, Any]:
         """Get comprehensive proxy status.
@@ -448,12 +489,15 @@ class KatanaProxy:
         running = False
         if info:
             running = _is_process_running(info.pid)
+            if not running:
+                _remove_pid_file(self._pid_path)
+                info = None
 
         result: dict[str, Any] = {
             "running": running,
             "config": {
-                "host": self.config.host,
-                "port": self.config.port,
+                "host": info.host if info else self.config.host,
+                "port": info.port if info else self.config.port,
                 "tls_verify": self.config.tls_verify,
                 "inject_credentials": self.config.inject_credentials,
             },
@@ -461,6 +505,7 @@ class KatanaProxy:
 
         if info:
             result["pid"] = info.pid
+            result["host"] = info.host
             result["port"] = info.port
             result["vault_hash"] = info.vault_hash
             result["started_at"] = info.started_at

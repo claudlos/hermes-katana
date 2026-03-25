@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import json
 
-import pytest
 
 from hermes_katana.middleware.chain import (
     CallContext,
@@ -320,3 +319,35 @@ class TestCreateDefaultChain:
         assert "katana.scan" in names
         assert "katana.policy" in names
         assert "katana.audit" in names
+
+    def test_audit_middleware_writes_structured_entries(self, tmp_dir):
+        from hermes_katana.audit.trail import AuditTrail
+        from hermes_katana.middleware.integration import KatanaAuditMiddleware
+
+        trail = AuditTrail(path=tmp_dir / "audit.jsonl")
+        middleware = KatanaAuditMiddleware(audit_trail=trail)
+        ctx = CallContext(tool_name="terminal", args={"command": "ls"})
+
+        middleware.pre_dispatch(ctx)
+        middleware.post_dispatch(ctx)
+
+        entries = trail.query(limit=10)
+        assert len(entries) == 2
+        assert all(entry.tool_name == "terminal" for entry in entries)
+
+    def test_denied_pre_dispatch_is_audit_visible(self, tmp_dir):
+        from hermes_katana.audit.trail import AuditTrail
+        from hermes_katana.middleware.integration import create_default_chain
+
+        trail = AuditTrail(path=tmp_dir / "audit.jsonl")
+        chain = create_default_chain({"audit.trail": trail})
+
+        ctx = CallContext(tool_name="terminal", args={"command": "rm -rf /"})
+        decision = chain.execute_pre(ctx)
+
+        assert decision == DispatchDecision.DENY
+        entries = trail.query(limit=10)
+        assert len(entries) == 1
+        payload = json.loads(entries[0].details)
+        assert payload["phase"] == "short_circuit"
+        assert payload["decision"] == "deny"
