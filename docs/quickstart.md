@@ -6,7 +6,7 @@ fastest path to a working local install.
 ## Install
 
 ```bash
-git clone https://github.com/Tranquil-Flow/hermes-katana.git
+git clone https://github.com/claudlos/hermes-katana.git
 cd hermes-katana
 pip install -e ".[dev]"
 ```
