@@ -112,7 +112,7 @@ Start with the operator docs that match the current CLI:
 
 ```bash
 # From source
-git clone https://github.com/Tranquil-Flow/hermes-katana.git
+git clone https://github.com/claudlos/hermes-katana.git
 cd hermes-katana
 pip install -e ".[dev]"
 
