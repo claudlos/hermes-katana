@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 
-from hermes_katana.taint.labels import Source, TaintLabel, TrustLevel
+from hermes_katana.taint.labels import Source, TaintLabel
 from hermes_katana.taint.tracker import TaintTracker
 from hermes_katana.taint.flow import FlowDecision
-from hermes_katana.taint.value import TaintedStr, TaintedValue
+from hermes_katana.taint.value import TaintedValue
 
 
 # ======================================================================

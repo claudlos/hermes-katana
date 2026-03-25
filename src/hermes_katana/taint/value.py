@@ -18,7 +18,6 @@ from typing import (
     Any,
     Generic,
     Iterator,
-    Mapping,
     MutableMapping,
     MutableSequence,
     Optional,
@@ -141,7 +140,7 @@ class TaintedValue(Generic[T]):
         return self.value
 
     def __repr__(self) -> str:
-        labels = ", ".join(sorted(l.name for l in self.labels))
+        labels = ", ".join(sorted(lbl.name for lbl in self.labels))
         trusted = "trusted" if self.is_trusted() else "untrusted"
         vr = repr(self.value)
         if len(vr) > 60:
@@ -367,7 +366,7 @@ class TaintedStr(TaintedValue[str]):
         return self.value
 
     def __repr__(self) -> str:
-        labels = ", ".join(sorted(l.name for l in self.labels))
+        labels = ", ".join(sorted(lbl.name for lbl in self.labels))
         vr = repr(self.value)
         if len(vr) > 60:
             vr = vr[:57] + "..."
@@ -594,7 +593,7 @@ class TaintedList(TaintedValue[list[T]], MutableSequence[T]):
         return frozenset(result)
 
     def __repr__(self) -> str:
-        labels = ", ".join(sorted(l.name for l in self.labels))
+        labels = ", ".join(sorted(lbl.name for lbl in self.labels))
         return f"TaintedList(len={len(self.value)}, labels={{{labels}}})"
 
 
@@ -670,7 +669,7 @@ class TaintedDict(TaintedValue[dict[K, V]], MutableMapping[K, V]):
         return frozenset(result)
 
     def __repr__(self) -> str:
-        labels = ", ".join(sorted(l.name for l in self.labels))
+        labels = ", ".join(sorted(lbl.name for lbl in self.labels))
         return f"TaintedDict(len={len(self.value)}, labels={{{labels}}})"
 
 

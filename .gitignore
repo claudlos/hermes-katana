@@ -7,7 +7,9 @@ build/
 .eggs/
 *.egg
 .pytest_cache/
+.pytest_tmp/
 .ruff_cache/
+.tmp/
 .venv/
 venv/
 *.lock

@@ -20,9 +20,10 @@ Usage:
     vault.rotate_key()
 """
 
-from hermes_katana.vault.store import Vault, VaultError
+from hermes_katana.vault.store import Vault, VaultError, default_vault_path
 
 __all__ = [
     "Vault",
     "VaultError",
+    "default_vault_path",
 ]

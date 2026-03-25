@@ -23,7 +23,7 @@ import codecs
 import math
 import re
 import urllib.parse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 

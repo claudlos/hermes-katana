@@ -27,10 +27,12 @@ from hermes_katana.audit.trail import (
     AuditEntry,
     AuditEventType,
     AuditTrail,
+    default_audit_path,
 )
 
 __all__ = [
     "AuditTrail",
     "AuditEntry",
     "AuditEventType",
+    "default_audit_path",
 ]

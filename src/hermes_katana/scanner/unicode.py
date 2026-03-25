@@ -363,7 +363,6 @@ def _detect_zero_width(text: str) -> list[UnicodeFinding]:
     # Group consecutive zero-width chars for cleaner reporting
     runs: list[tuple[int, int, list[str]]] = []
     current_start = -1
-    current_names: list[str] = []
 
     for match in ZERO_WIDTH_PATTERN.finditer(text):
         cp = ord(match.group())

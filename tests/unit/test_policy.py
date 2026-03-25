@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 
 import pytest
 
-from hermes_katana.policy.engine import EvaluationResult, PolicyEngine
+from hermes_katana.policy.engine import PolicyEngine
 from hermes_katana.policy.models import (
     Condition,
     ConditionOperator,

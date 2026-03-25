@@ -33,7 +33,6 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 from rich import box
 
 console = Console()
@@ -71,20 +70,43 @@ def _format_katana_status() -> Optional[Panel]:
         A Rich Panel or None if status cannot be determined.
     """
     try:
+        from hermes_katana.config import load_config
+        from hermes_katana.proxy import KatanaProxy
+
         lines = []
-        lines.append("[bold green]⛩  HermesKatana Protection Active[/bold green]")
+        lines.append("[bold green]HermesKatana Protection Active[/bold green]")
         lines.append(f"   Version: {VERSION}")
 
-        # Check proxy
-        proxy_url = os.environ.get("KATANA_PROXY_URL")
-        if proxy_url:
-            lines.append(f"   Proxy: {proxy_url}")
-        else:
-            lines.append("   Proxy: [dim]not running[/dim]")
+        checkout_root = os.environ.get("KATANA_CHECKOUT_ROOT")
+        if checkout_root:
+            lines.append(f"   Checkout: {checkout_root}")
 
-        # Check policy preset
-        preset = os.environ.get("KATANA_POLICY_PRESET", "balanced")
-        lines.append(f"   Policy: {preset}")
+        proxy_status = KatanaProxy().status()
+        if proxy_status.get("running"):
+            lines.append(
+                "   Proxy: "
+                + _build_proxy_url(
+                    str(proxy_status.get("host", proxy_status["config"]["host"])),
+                    int(proxy_status.get("port", proxy_status["config"]["port"])),
+                )
+            )
+        else:
+            proxy_url = os.environ.get("KATANA_PROXY_URL")
+            if proxy_url:
+                lines.append(f"   Proxy: {proxy_url}")
+            else:
+                lines.append("   Proxy: [dim]not running[/dim]")
+
+        config = load_config()
+        runtime_policy_source = os.environ.get("KATANA_POLICY_SOURCE")
+        policy_path = config.effective_policy_path()
+        if runtime_policy_source:
+            lines.append(f"   Policy: {runtime_policy_source}")
+        elif policy_path is not None:
+            lines.append(f"   Policy: custom file {policy_path}")
+        else:
+            preset = os.environ.get("KATANA_POLICY_PRESET", config.policy_preset)
+            lines.append(f"   Policy: {preset}")
 
         return Panel(
             "\n".join(lines),
@@ -135,6 +157,39 @@ def _resolve_target(target: str | None) -> Path:
     return Path.cwd()
 
 
+def _load_policy_engine() -> tuple[Any, str]:
+    """Load the active policy engine from persisted config or environment."""
+    from hermes_katana.config import load_config
+    from hermes_katana.policy import PolicyEngine
+
+    config = load_config()
+    policy_path = config.effective_policy_path()
+    if policy_path is not None:
+        return PolicyEngine.from_file(policy_path), f"custom file {policy_path}"
+
+    preset = os.environ.get("KATANA_POLICY_PRESET", config.policy_preset)
+    return PolicyEngine.with_defaults(preset), f"preset {preset}"
+
+
+def _open_vault(*, auto_create: bool) -> Any:
+    """Open the vault backend."""
+    from hermes_katana.vault import Vault
+
+    return Vault(auto_create=auto_create)
+
+
+def _open_audit_trail() -> Any:
+    """Open the default audit trail."""
+    from hermes_katana.audit import AuditTrail
+
+    return AuditTrail()
+
+
+def _build_proxy_url(host: str, port: int) -> str:
+    """Build the proxy URL string for display and environment export."""
+    return f"http://{host}:{port}"
+
+
 # ---------------------------------------------------------------------------
 # Main CLI group
 # ---------------------------------------------------------------------------
@@ -145,7 +200,7 @@ def _resolve_target(target: str | None) -> Path:
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
 @click.pass_context
 def main(ctx: click.Context, quiet: bool, verbose: bool) -> None:
-    """⛩  HermesKatana — defense-in-depth security for Hermes Agent.
+    """HermesKatana - defense-in-depth security for Hermes Agent.
 
     Taint tracking, proxy-based secret guard, policy engine, and
     red-team benchmarking for LLM agent tool use.
@@ -180,12 +235,21 @@ def version() -> None:
 
 
 @main.command()
-def doctor() -> None:
+@click.option("--target", "-t", type=click.Path(), default=None, help="Optional Hermes checkout to inspect.")
+def doctor(target: str | None) -> None:
     """Check prerequisites and system health."""
-    console.print("\n[bold]⛩  Katana Doctor[/bold]\n")
+    from importlib import metadata
+
+    from hermes_katana.audit import AuditTrail, default_audit_path
+    from hermes_katana.config import config_path, load_config
+    from hermes_katana.installer import KatanaInstaller
+    from hermes_katana.proxy import KatanaProxy, default_pid_path
+    from hermes_katana.vault import Vault, default_vault_path
+
+    console.print("\n[bold]Katana Doctor[/bold]\n")
 
     checks = [
-        ("Python", "python3", ">=3.10"),
+        ("Python executable", sys.executable, ">=3.10"),
         ("Git", "git", "any"),
         ("mitmproxy", "mitmdump", ">=10.0"),
         ("Docker", "docker", "optional"),
@@ -202,48 +266,175 @@ def doctor() -> None:
         available, version_info = _check_command(cmd)
 
         if available:
-            status = "[green]✓ OK[/green]"
+            status = "[green]OK[/green]"
         elif required == "optional":
-            status = "[yellow]○ Optional[/yellow]"
+            status = "[yellow]Optional[/yellow]"
         else:
-            status = "[red]✗ Missing[/red]"
+            status = "[red]Missing[/red]"
             all_ok = False
 
         table.add_row(label, status, version_info, required)
 
-    # Check Python version
     py_version = sys.version_info
     if py_version < (3, 10):
         table.add_row(
             "Python Version",
-            "[red]✗ Too old[/red]",
+            "[red]Too old[/red]",
             f"{py_version.major}.{py_version.minor}.{py_version.micro}",
             ">=3.10",
         )
         all_ok = False
 
-    # Check key Python packages
     packages = [
         ("pydantic", "pydantic"),
         ("click", "click"),
         ("rich", "rich"),
         ("cryptography", "cryptography"),
-        ("yaml", "pyyaml"),
+        ("keyring", "keyring"),
+        ("mitmproxy", "mitmproxy"),
+        ("requests", "requests"),
+        ("pyyaml", "PyYAML"),
     ]
 
-    for label, pkg in packages:
+    for label, distribution in packages:
         try:
-            mod = __import__(label if label != "yaml" else "yaml")
-            ver = getattr(mod, "__version__", "installed")
-            table.add_row(f"  {pkg}", "[green]✓[/green]", str(ver), "required")
-        except ImportError:
-            table.add_row(f"  {pkg}", "[red]✗ Missing[/red]", "not installed", "required")
+            ver = metadata.version(distribution)
+            table.add_row(f"  {label}", "[green]OK[/green]", str(ver), "required")
+        except metadata.PackageNotFoundError:
+            table.add_row(f"  {label}", "[red]Missing[/red]", "not installed", "required")
             all_ok = False
 
     console.print(table)
 
+    config = load_config()
+    runtime_table = Table(title="Runtime State", box=box.ROUNDED)
+    runtime_table.add_column("Component", style="bold")
+    runtime_table.add_column("Status")
+    runtime_table.add_column("Details")
+    runtime_table.add_column("Path")
+
+    config_file = config_path()
+    runtime_table.add_row(
+        "Config file",
+        "[green]Present[/green]" if config_file.exists() else "[yellow]Defaults[/yellow]",
+        "persisted config" if config_file.exists() else "using built-in defaults",
+        str(config_file),
+    )
+
+    policy_path = config.effective_policy_path()
+    runtime_table.add_row(
+        "Policy source",
+        "[green]Custom[/green]" if policy_path is not None else "[green]Preset[/green]",
+        str(policy_path) if policy_path is not None else config.policy_preset,
+        str(config_file),
+    )
+
+    vault = Vault(auto_create=False)
+    if vault.is_locked():
+        vault_status = "[yellow]Locked[/yellow]"
+        vault_details = "circuit breaker active"
+    elif vault.path.exists():
+        vault_status = "[green]Ready[/green]"
+        vault_details = "encrypted vault file present"
+    else:
+        vault_status = "[yellow]Not initialized[/yellow]"
+        vault_details = "run `katana vault set KEY VALUE` to create it"
+    runtime_table.add_row("Vault", vault_status, vault_details, str(default_vault_path()))
+
+    audit = AuditTrail()
+    audit_stats = audit.stats()
+    runtime_table.add_row(
+        "Audit trail",
+        "[green]Ready[/green]" if audit_stats["file_exists"] else "[yellow]Empty[/yellow]",
+        (
+            f"{audit_stats['total_entries']} entries, {audit_stats['file_size']} bytes"
+            if audit_stats["file_exists"]
+            else "no audit entries yet"
+        ),
+        str(default_audit_path()),
+    )
+
+    proxy = KatanaProxy()
+    proxy_status = proxy.status()
+    runtime_table.add_row(
+        "Proxy",
+        "[green]Running[/green]" if proxy_status["running"] else "[yellow]Stopped[/yellow]",
+        (
+            _build_proxy_url(
+                str(proxy_status.get("host", proxy_status["config"]["host"])),
+                int(proxy_status.get("port", proxy_status["config"]["port"])),
+            )
+            if proxy_status["running"]
+            else _build_proxy_url(
+                str(proxy_status["config"]["host"]),
+                int(proxy_status["config"]["port"]),
+            )
+        ),
+        str(default_pid_path()),
+    )
+
+    console.print()
+    console.print(runtime_table)
+
+    if target is not None:
+        target_path = _resolve_target(target)
+        installer = KatanaInstaller()
+        install_status = installer.status(target_path)
+
+        target_table = Table(title=f"Target Checkout: {target_path}", box=box.ROUNDED)
+        target_table.add_column("Component", style="bold")
+        target_table.add_column("Status")
+        target_table.add_column("Details")
+
+        target_table.add_row(
+            "Hermes checkout",
+            "[green]Detected[/green]" if install_status["hermes_detected"] else "[red]Missing[/red]",
+            "patch targets present" if install_status["hermes_detected"] else "required Hermes files not found",
+        )
+        target_table.add_row(
+            "Katana install",
+            "[green]Installed[/green]" if install_status["installed"] else "[yellow]Not installed[/yellow]",
+            f"{install_status['patches']['applied']}/{install_status['patches']['total']} patches applied",
+        )
+        target_table.add_row(
+            "Config file",
+            "[green]Present[/green]" if install_status["config_exists"] else "[yellow]Missing[/yellow]",
+            ".katana/katana.yaml",
+        )
+        target_table.add_row(
+            "CA cert",
+            "[green]Present[/green]" if install_status["ca_cert_exists"] else "[yellow]Missing[/yellow]",
+            ".katana/certs/katana-ca.pem",
+        )
+
+        console.print()
+        console.print(target_table)
+
+        if not install_status["hermes_detected"]:
+            if install_status["issues"]:
+                console.print("\n   [red]Target issues:[/red]")
+                for issue in install_status["issues"]:
+                    console.print(f"   - {issue}")
+            all_ok = False
+        elif not install_status["installed"]:
+            console.print("\n   [yellow]Target note:[/yellow]")
+            console.print("   - Hermes checkout detected but Katana is not installed yet.")
+        elif install_status["installed"] and install_status["issues"]:
+            console.print("\n   [red]Target issues:[/red]")
+            for issue in install_status["issues"]:
+                console.print(f"   - {issue}")
+            if install_status["warnings"]:
+                console.print("\n   [yellow]Target warnings:[/yellow]")
+                for warning in install_status["warnings"]:
+                    console.print(f"   - {warning}")
+            all_ok = False
+        elif install_status["warnings"]:
+            console.print("\n   [yellow]Target warnings:[/yellow]")
+            for warning in install_status["warnings"]:
+                console.print(f"   - {warning}")
+
     if all_ok:
-        console.print("\n[bold green]All checks passed! ✓[/bold green]\n")
+        console.print("\n[bold green]All checks passed.[/bold green]\n")
     else:
         console.print("\n[bold yellow]Some checks failed. Install missing components.[/bold yellow]\n")
         raise SystemExit(EXIT_ERROR)
@@ -256,25 +447,39 @@ def doctor() -> None:
 
 @main.command()
 @click.option("--target", "-t", type=click.Path(), default=None, help="Path to Hermes checkout.")
+@click.option("--dry-run", is_flag=True, help="Preview the install without writing files.")
+@click.option("--backup", is_flag=True, help="Create a pre-change backup snapshot.")
+@click.option("--backup-dir", type=click.Path(), default=None, help="Optional backup directory.")
 @click.pass_context
-def install(ctx: click.Context, target: str | None) -> None:
+def install(
+    ctx: click.Context,
+    target: str | None,
+    dry_run: bool,
+    backup: bool,
+    backup_dir: str | None,
+) -> None:
     """Install Katana protection on a Hermes checkout."""
-    from hermes_katana.installer import KatanaInstaller
+    from hermes_katana.installer import HERMES_MARKERS, KatanaInstaller
 
     target_path = _resolve_target(target)
     installer = KatanaInstaller()
 
-    console.print(f"\n[bold]⛩  Installing Katana on[/bold] {target_path}\n")
+    console.print(f"\n[bold]Installing Katana on[/bold] {target_path}\n")
 
     if not installer.detect_hermes(target_path):
         err_console.print(
             f"[red]Error:[/red] {target_path} does not appear to be a Hermes checkout.\n"
-            f"Expected marker files: {', '.join(['hermes/__init__.py', 'hermes/tools/dispatch.py'])}"
+            f"Expected marker files: {', '.join(HERMES_MARKERS)}"
         )
         raise SystemExit(EXIT_ERROR)
 
     try:
-        results = installer.install(target_path)
+        results = installer.install(
+            target_path,
+            dry_run=dry_run,
+            backup=backup and not dry_run,
+            backup_dir=backup_dir,
+        )
     except Exception as exc:
         err_console.print(f"[red]Installation failed:[/red] {exc}")
         raise SystemExit(EXIT_ERROR)
@@ -287,36 +492,64 @@ def install(ctx: click.Context, target: str | None) -> None:
 
     for r in results:
         if r.status.value == "applied":
-            status = "[green]✓ Applied[/green]"
+            status = "[green]Applied[/green]"
+        elif r.status.value == "planned":
+            status = "[cyan]Planned[/cyan]"
         elif r.status.value == "skipped":
-            status = "[yellow]○ Skipped[/yellow]"
+            status = "[yellow]Skipped[/yellow]"
         else:
-            status = "[red]✗ Error[/red]"
+            status = "[red]Error[/red]"
         table.add_row(r.name, status, r.message)
 
     console.print(table)
+
+    if dry_run:
+        console.print("   [bold]Dry-run actions:[/bold]")
+        for action in installer.preview_install_actions(target_path):
+            console.print(f"   - {action}")
+        if backup:
+            console.print("   [yellow]Backup note:[/yellow] dry-run does not write backups.")
+        console.print("\n[bold green]Dry run complete.[/bold green]\n")
+        return
+
+    if installer.last_backup_manifest_path is not None:
+        console.print(f"   Backup manifest: {installer.last_backup_manifest_path}")
 
     errors = sum(1 for r in results if r.status.value == "error")
     if errors:
         console.print(f"\n[yellow]Warning: {errors} patch(es) had errors.[/yellow]\n")
     else:
-        console.print("\n[bold green]Installation complete! ✓[/bold green]\n")
+        console.print("\n[bold green]Installation complete.[/bold green]\n")
 
 
 @main.command()
 @click.option("--target", "-t", type=click.Path(), default=None, help="Path to Hermes checkout.")
+@click.option("--dry-run", is_flag=True, help="Preview the uninstall without writing files.")
+@click.option("--backup", is_flag=True, help="Create a pre-change backup snapshot.")
+@click.option("--backup-dir", type=click.Path(), default=None, help="Optional backup directory.")
 @click.pass_context
-def uninstall(ctx: click.Context, target: str | None) -> None:
+def uninstall(
+    ctx: click.Context,
+    target: str | None,
+    dry_run: bool,
+    backup: bool,
+    backup_dir: str | None,
+) -> None:
     """Remove Katana protection from a Hermes checkout."""
     from hermes_katana.installer import KatanaInstaller
 
     target_path = _resolve_target(target)
     installer = KatanaInstaller()
 
-    console.print(f"\n[bold]⛩  Uninstalling Katana from[/bold] {target_path}\n")
+    console.print(f"\n[bold]Uninstalling Katana from[/bold] {target_path}\n")
 
     try:
-        results = installer.uninstall(target_path)
+        results = installer.uninstall(
+            target_path,
+            dry_run=dry_run,
+            backup=backup and not dry_run,
+            backup_dir=backup_dir,
+        )
     except Exception as exc:
         err_console.print(f"[red]Uninstall failed:[/red] {exc}")
         raise SystemExit(EXIT_ERROR)
@@ -328,15 +561,59 @@ def uninstall(ctx: click.Context, target: str | None) -> None:
 
     for r in results:
         if r.status.value == "reverted":
-            status = "[green]✓ Reverted[/green]"
+            status = "[green]Reverted[/green]"
+        elif r.status.value == "planned":
+            status = "[cyan]Planned[/cyan]"
         elif r.status.value == "skipped":
-            status = "[dim]○ Not applied[/dim]"
+            status = "[dim]Not applied[/dim]"
         else:
-            status = "[red]✗ Error[/red]"
+            status = "[red]Error[/red]"
         table.add_row(r.name, status, r.message)
 
     console.print(table)
+
+    if dry_run:
+        console.print("   [bold]Dry-run actions:[/bold]")
+        for action in installer.preview_uninstall_actions(target_path):
+            console.print(f"   - {action}")
+        if backup:
+            console.print("   [yellow]Backup note:[/yellow] dry-run does not write backups.")
+        console.print("\n[bold green]Dry run complete.[/bold green]\n")
+        return
+
+    if installer.last_backup_manifest_path is not None:
+        console.print(f"   Backup manifest: {installer.last_backup_manifest_path}")
+
     console.print("\n[bold green]Uninstallation complete.[/bold green]\n")
+
+
+@main.command()
+@click.option("--manifest", type=click.Path(exists=True), required=True, help="Path to a backup manifest.json file.")
+@click.option("--dry-run", is_flag=True, help="Preview the restore without writing files.")
+def restore(manifest: str, dry_run: bool) -> None:
+    """Restore a checkout from a backup manifest."""
+    from hermes_katana.installer import KatanaInstaller
+
+    installer = KatanaInstaller()
+
+    console.print(f"\n[bold]Restoring from backup manifest[/bold] {manifest}\n")
+
+    try:
+        actions = installer.restore(manifest, dry_run=dry_run)
+    except Exception as exc:
+        err_console.print(f"[red]Restore failed:[/red] {exc}")
+        raise SystemExit(EXIT_ERROR)
+
+    if not actions:
+        console.print("   [dim]No restore actions were needed.[/dim]")
+    else:
+        for action in actions:
+            console.print(f"   - {action}")
+
+    if dry_run:
+        console.print("\n[bold green]Dry run complete.[/bold green]\n")
+    else:
+        console.print("\n[bold green]Restore complete.[/bold green]\n")
 
 
 # ---------------------------------------------------------------------------
@@ -347,8 +624,9 @@ def uninstall(ctx: click.Context, target: str | None) -> None:
 @main.command(
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
+@click.option("--target", "-t", type=click.Path(), default=None, help="Path to an installed Hermes checkout.")
 @click.pass_context
-def run(ctx: click.Context) -> None:
+def run(ctx: click.Context, target: str | None) -> None:
     """Run Hermes with Katana protection.
 
     Pass Hermes arguments after --.
@@ -356,12 +634,40 @@ def run(ctx: click.Context) -> None:
     Example: katana run -- --model gpt-4 --task "hello"
     """
     hermes_args = ctx.args or []
+    explicit_target = _resolve_target(target) if target is not None else None
 
-    console.print("\n[bold]⛩  Starting Hermes with Katana protection[/bold]\n")
+    console.print("\n[bold]Starting Hermes with Katana protection[/bold]\n")
 
-    # Set environment variables for Katana integration
     env = os.environ.copy()
     env["KATANA_ACTIVE"] = "1"
+
+    runtime_state = None
+    try:
+        from hermes_katana.bootstrap import compose_runtime_env, load_checkout_state
+
+        runtime_state = load_checkout_state(explicit_target) if explicit_target else load_checkout_state()
+        if explicit_target is not None and runtime_state is None:
+            err_console.print(
+                f"[red]Error:[/red] No installed Katana checkout state found at {explicit_target}.\n"
+                "Run `katana install --target ...` first."
+            )
+            raise SystemExit(EXIT_ERROR)
+
+        if runtime_state is not None:
+            env = compose_runtime_env(
+                env,
+                checkout_root=runtime_state.checkout_root,
+                start_proxy=True,
+            )
+            console.print(f"   Checkout: {runtime_state.checkout_root}")
+            console.print(f"   Policy: {runtime_state.policy_source}")
+        else:
+            console.print("   Checkout: [dim]no installed checkout discovered[/dim]")
+    except SystemExit:
+        raise
+    except Exception as exc:
+        err_console.print(f"[red]Runtime bootstrap failed:[/red] {exc}")
+        raise SystemExit(EXIT_ERROR)
 
     # Check if proxy should be started
     proxy_url = env.get("KATANA_PROXY_URL")
@@ -454,7 +760,7 @@ def _display_scan_result(result: Any, title: str) -> None:
     }
     color = verdict_colors.get(result.verdict.value, "white")
 
-    console.print(f"\n[bold]⛩  Scan Results[/bold]")
+    console.print("\n[bold]Scan Results[/bold]")
     console.print(f"   {title}")
     console.print(f"   Verdict: [{color}][bold]{result.verdict.value.upper()}[/bold][/{color}]")
     console.print(f"   Risk Score: {result.risk_score:.2f}")
@@ -528,9 +834,7 @@ def policy() -> None:
 @policy.command("list")
 def policy_list() -> None:
     """Show loaded policies."""
-    from hermes_katana.policy import PolicyEngine
-
-    engine = PolicyEngine.with_defaults("balanced")
+    engine, source = _load_policy_engine()
     policies = engine.list_policies()
 
     table = Table(title="Loaded Policies", box=box.ROUNDED)
@@ -549,7 +853,7 @@ def policy_list() -> None:
             "log_only": "cyan",
         }
         color = action_colors.get(p.action.value, "white")
-        enabled = "[green]✓[/green]" if p.enabled else "[red]✗[/red]"
+        enabled = "[green]yes[/green]" if p.enabled else "[red]no[/red]"
 
         table.add_row(
             p.name,
@@ -562,6 +866,7 @@ def policy_list() -> None:
 
     console.print(table)
     console.print(f"\n   Total: {len(policies)} policies\n")
+    console.print(f"   Source: {source}\n")
 
 
 @policy.command("use")
@@ -571,40 +876,46 @@ def policy_use(preset: str) -> None:
     console.print(f"\n[bold]Switching to '{preset}' policy preset...[/bold]")
 
     # Validate the preset loads correctly
+    from hermes_katana.config import load_config
     from hermes_katana.policy import PolicyEngine
 
     engine = PolicyEngine.with_defaults(preset)
     count = len(engine.list_policies())
 
-    # Set environment variable for other components
+    config = load_config()
+    config.policy_preset = preset
+    config.policy_path = None
+    saved_path = config.save()
+
+    # Set environment variable for the current process as well.
     os.environ["KATANA_POLICY_PRESET"] = preset
 
     console.print(f"   Loaded {count} policies from '{preset}' preset.")
-    console.print(f"   [green]Active preset: {preset}[/green]\n")
+    console.print(f"   [green]Active preset: {preset}[/green]")
+    console.print(f"   Saved to: {saved_path}\n")
 
 
 @policy.command("export")
 @click.argument("path", type=click.Path())
 def policy_export(path: str) -> None:
     """Export current policies to a YAML file."""
-    from hermes_katana.policy import PolicyEngine, export_policy_set
+    from hermes_katana.policy import export_policy_set
     from hermes_katana.policy.models import PolicySet
 
-    preset = os.environ.get("KATANA_POLICY_PRESET", "balanced")
-    engine = PolicyEngine.with_defaults(preset)
+    engine, source = _load_policy_engine()
     policies = engine.list_policies()
 
     policy_set = PolicySet(
-        name=f"katana-{preset}-export",
+        name="katana-export",
         version="1.0.0",
-        description=f"Exported from {preset} preset",
+        description=f"Exported from {source}",
         policies=policies,
     )
 
     export_path = Path(path)
     export_policy_set(policy_set, export_path)
 
-    console.print(f"\n   Exported {len(policies)} policies to {export_path}\n")
+    console.print(f"\n   Exported {len(policies)} policies from {source} to {export_path}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -621,9 +932,9 @@ def vault() -> None:
 def vault_list() -> None:
     """List vault entries."""
     try:
-        from hermes_katana.vault import SecretVault
+        from hermes_katana.vault import VaultError
 
-        v = SecretVault.get_instance()
+        v = _open_vault(auto_create=False)
         entries = v.list_keys()
 
         if not entries:
@@ -632,20 +943,16 @@ def vault_list() -> None:
 
         table = Table(title="Vault Entries", box=box.ROUNDED)
         table.add_column("Key", style="bold")
-        table.add_column("Created")
-        table.add_column("Rotated")
 
         for key in entries:
-            meta = v.get_metadata(key) if hasattr(v, "get_metadata") else {}
-            table.add_row(
-                key,
-                str(meta.get("created", "unknown")),
-                str(meta.get("last_rotated", "never")),
-            )
+            table.add_row(key)
 
         console.print(table)
     except ImportError:
-        console.print("\n   [yellow]Vault module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Vault module not available.[/yellow]\n")
+    except VaultError as exc:
+        err_console.print(f"\n   [red]Vault error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @vault.command("set")
@@ -654,13 +961,16 @@ def vault_list() -> None:
 def vault_set(key: str, value: str) -> None:
     """Set a vault secret."""
     try:
-        from hermes_katana.vault import SecretVault
+        from hermes_katana.vault import VaultError
 
-        v = SecretVault.get_instance()
+        v = _open_vault(auto_create=True)
         v.set(key, value)
         console.print(f"\n   [green]Secret '{key}' stored.[/green]\n")
     except ImportError:
-        console.print("\n   [yellow]Vault module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Vault module not available.[/yellow]\n")
+    except VaultError as exc:
+        err_console.print(f"\n   [red]Vault error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @vault.command("remove")
@@ -668,82 +978,87 @@ def vault_set(key: str, value: str) -> None:
 def vault_remove(key: str) -> None:
     """Remove a vault secret."""
     try:
-        from hermes_katana.vault import SecretVault
+        from hermes_katana.vault import VaultError
 
-        v = SecretVault.get_instance()
+        v = _open_vault(auto_create=False)
         v.remove(key)
         console.print(f"\n   [green]Secret '{key}' removed.[/green]\n")
     except ImportError:
-        console.print("\n   [yellow]Vault module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Vault module not available.[/yellow]\n")
+    except VaultError as exc:
+        err_console.print(f"\n   [red]Vault error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @vault.command("rotate")
-@click.argument("key")
-def vault_rotate(key: str) -> None:
-    """Rotate a vault secret."""
+@click.argument("key", required=False)
+def vault_rotate(key: str | None) -> None:
+    """Rotate the vault master key."""
     try:
-        from hermes_katana.vault import SecretVault
+        from hermes_katana.vault import VaultError
 
-        v = SecretVault.get_instance()
-        if hasattr(v, "rotate"):
-            v.rotate(key)
-            console.print(f"\n   [green]Secret '{key}' rotated.[/green]\n")
-        else:
-            console.print("\n   [yellow]Rotation not supported by current vault backend.[/yellow]\n")
+        v = _open_vault(auto_create=False)
+        if key:
+            console.print("\n   [yellow]Ignoring key argument; rotation applies to the entire vault.[/yellow]")
+        v.rotate_key()
+        console.print("\n   [green]Vault master key rotated.[/green]\n")
     except ImportError:
-        console.print("\n   [yellow]Vault module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Vault module not available.[/yellow]\n")
+    except VaultError as exc:
+        err_console.print(f"\n   [red]Vault error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @vault.command("lock")
 def vault_lock() -> None:
     """Lock the vault."""
     try:
-        from hermes_katana.vault import SecretVault
+        from hermes_katana.vault import VaultError
 
-        v = SecretVault.get_instance()
-        if hasattr(v, "lock"):
-            v.lock()
-            console.print("\n   [green]Vault locked.[/green]\n")
-        else:
-            console.print("\n   [yellow]Lock not supported by current vault backend.[/yellow]\n")
+        v = _open_vault(auto_create=False)
+        v.lock()
+        console.print("\n   [green]Vault locked.[/green]\n")
     except ImportError:
-        console.print("\n   [yellow]Vault module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Vault module not available.[/yellow]\n")
+    except VaultError as exc:
+        err_console.print(f"\n   [red]Vault error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @vault.command("unlock")
 def vault_unlock() -> None:
     """Unlock the vault."""
     try:
-        from hermes_katana.vault import SecretVault
+        from hermes_katana.vault import VaultError
 
-        v = SecretVault.get_instance()
-        if hasattr(v, "unlock"):
-            v.unlock()
-            console.print("\n   [green]Vault unlocked.[/green]\n")
-        else:
-            console.print("\n   [yellow]Unlock not supported by current vault backend.[/yellow]\n")
+        v = _open_vault(auto_create=False)
+        v.unlock()
+        console.print("\n   [green]Vault unlocked.[/green]\n")
     except ImportError:
-        console.print("\n   [yellow]Vault module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Vault module not available.[/yellow]\n")
+    except VaultError as exc:
+        err_console.print(f"\n   [red]Vault error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @vault.command("verify")
 def vault_verify() -> None:
     """Verify vault integrity."""
     try:
-        from hermes_katana.vault import SecretVault
+        from hermes_katana.vault import VaultError
 
-        v = SecretVault.get_instance()
-        if hasattr(v, "verify"):
-            ok = v.verify()
-            if ok:
-                console.print("\n   [green]Vault integrity verified. ✓[/green]\n")
-            else:
-                console.print("\n   [red]Vault integrity check failed! ✗[/red]\n")
-                raise SystemExit(EXIT_ERROR)
+        v = _open_vault(auto_create=False)
+        ok = v.verify_integrity()
+        if ok:
+            console.print("\n   [green]Vault integrity verified.[/green]\n")
         else:
-            console.print("\n   [yellow]Verify not supported by current vault backend.[/yellow]\n")
+            console.print("\n   [red]Vault integrity check failed.[/red]\n")
+            raise SystemExit(EXIT_ERROR)
     except ImportError:
-        console.print("\n   [yellow]Vault module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Vault module not available.[/yellow]\n")
+    except VaultError as exc:
+        err_console.print(f"\n   [red]Vault error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 # ---------------------------------------------------------------------------
@@ -761,10 +1076,7 @@ def audit() -> None:
 def audit_show(limit: int) -> None:
     """Show recent audit entries."""
     try:
-        from hermes_katana.audit import AuditTrail
-
-        trail = AuditTrail.get_instance()
-        entries = trail.recent(limit) if hasattr(trail, "recent") else []
+        entries = _open_audit_trail().query(limit=limit)
 
         if not entries:
             console.print("\n   [dim]No audit entries found.[/dim]\n")
@@ -778,41 +1090,41 @@ def audit_show(limit: int) -> None:
         table.add_column("Details")
 
         for entry in entries:
-            decision = entry.get("decision", "?")
+            decision = entry.decision or "?"
             dec_colors = {"allow": "green", "deny": "red", "escalate": "yellow"}
             dec_color = dec_colors.get(decision, "white")
 
             table.add_row(
-                str(entry.get("timestamp", "?")),
-                entry.get("type", "?"),
-                entry.get("tool_name", "?"),
+                entry.timestamp.isoformat(),
+                entry.event_type.value,
+                entry.tool_name or "?",
                 f"[{dec_color}]{decision}[/{dec_color}]",
-                str(entry.get("details", "")),
+                entry.details,
             )
 
         console.print(table)
     except ImportError:
-        console.print("\n   [yellow]Audit module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Audit module not available.[/yellow]\n")
+    except Exception as exc:
+        err_console.print(f"\n   [red]Audit error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @audit.command("verify")
 def audit_verify() -> None:
     """Verify audit trail integrity."""
     try:
-        from hermes_katana.audit import AuditTrail
-
-        trail = AuditTrail.get_instance()
-        if hasattr(trail, "verify"):
-            ok = trail.verify()
-            if ok:
-                console.print("\n   [green]Audit trail integrity verified. ✓[/green]\n")
-            else:
-                console.print("\n   [red]Audit trail integrity check failed! ✗[/red]\n")
-                raise SystemExit(EXIT_ERROR)
+        ok = _open_audit_trail().verify_chain()
+        if ok:
+            console.print("\n   [green]Audit trail integrity verified.[/green]\n")
         else:
-            console.print("\n   [dim]Verify not implemented for current audit backend.[/dim]\n")
+            console.print("\n   [red]Audit trail integrity check failed.[/red]\n")
+            raise SystemExit(EXIT_ERROR)
     except ImportError:
-        console.print("\n   [yellow]Audit module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Audit module not available.[/yellow]\n")
+    except Exception as exc:
+        err_console.print(f"\n   [red]Audit error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @audit.command("clear")
@@ -820,26 +1132,20 @@ def audit_verify() -> None:
 def audit_clear() -> None:
     """Clear the audit trail."""
     try:
-        from hermes_katana.audit import AuditTrail
-
-        trail = AuditTrail.get_instance()
-        if hasattr(trail, "clear"):
-            trail.clear()
-            console.print("\n   [green]Audit trail cleared.[/green]\n")
-        else:
-            console.print("\n   [dim]Clear not implemented for current audit backend.[/dim]\n")
+        _open_audit_trail().clear()
+        console.print("\n   [green]Audit trail cleared.[/green]\n")
     except ImportError:
-        console.print("\n   [yellow]Audit module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Audit module not available.[/yellow]\n")
+    except Exception as exc:
+        err_console.print(f"\n   [red]Audit error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @audit.command("stats")
 def audit_stats() -> None:
     """Show audit trail statistics."""
     try:
-        from hermes_katana.audit import AuditTrail
-
-        trail = AuditTrail.get_instance()
-        stats = trail.stats() if hasattr(trail, "stats") else {}
+        stats = _open_audit_trail().stats()
 
         if not stats:
             console.print("\n   [dim]No audit statistics available.[/dim]\n")
@@ -854,7 +1160,10 @@ def audit_stats() -> None:
 
         console.print(table)
     except ImportError:
-        console.print("\n   [yellow]Audit module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Audit module not available.[/yellow]\n")
+    except Exception as exc:
+        err_console.print(f"\n   [red]Audit error:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 # ---------------------------------------------------------------------------
@@ -873,17 +1182,18 @@ def proxy() -> None:
 def proxy_start(host: str, port: int) -> None:
     """Start the MITM proxy."""
     try:
-        from hermes_katana.proxy import KatanaProxy
+        from hermes_katana.proxy import KatanaProxy, ProxyConfig
 
-        console.print(f"\n[bold]⛩  Starting Katana proxy on {host}:{port}[/bold]\n")
+        console.print(f"\n[bold]Starting Katana proxy on {host}:{port}[/bold]\n")
 
-        proxy_instance = KatanaProxy(host=host, port=port)
+        proxy_instance = KatanaProxy(config=ProxyConfig(host=host, port=port))
         proxy_instance.start()
 
-        os.environ["KATANA_PROXY_URL"] = f"http://{host}:{port}"
-        console.print(f"   [green]Proxy started: http://{host}:{port}[/green]\n")
+        proxy_url = _build_proxy_url(host, port)
+        os.environ["KATANA_PROXY_URL"] = proxy_url
+        console.print(f"   [green]Proxy started: {proxy_url}[/green]\n")
     except ImportError:
-        console.print("\n   [yellow]Proxy module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Proxy module not available.[/yellow]\n")
     except Exception as exc:
         err_console.print(f"\n   [red]Failed to start proxy:[/red] {exc}\n")
         raise SystemExit(EXIT_ERROR)
@@ -895,35 +1205,44 @@ def proxy_stop() -> None:
     try:
         from hermes_katana.proxy import KatanaProxy
 
-        proxy_instance = KatanaProxy.get_instance()
-        if proxy_instance:
+        proxy_instance = KatanaProxy()
+        if proxy_instance.is_running():
             proxy_instance.stop()
             console.print("\n   [green]Proxy stopped.[/green]\n")
         else:
             console.print("\n   [dim]No proxy instance running.[/dim]\n")
     except ImportError:
-        console.print("\n   [yellow]Proxy module not yet available.[/yellow]\n")
+        console.print("\n   [yellow]Proxy module not available.[/yellow]\n")
+    except Exception as exc:
+        err_console.print(f"\n   [red]Failed to stop proxy:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
 
 @proxy.command("status")
 def proxy_status() -> None:
     """Show proxy status."""
-    proxy_url = os.environ.get("KATANA_PROXY_URL")
-    if proxy_url:
-        console.print(f"\n   Proxy URL: [green]{proxy_url}[/green]")
-    else:
-        console.print("\n   Proxy: [dim]not configured[/dim]")
-
     try:
         from hermes_katana.proxy import KatanaProxy
 
-        instance = KatanaProxy.get_instance()
-        if instance and hasattr(instance, "stats"):
-            stats = instance.stats()
-            for key, value in stats.items():
+        stats = KatanaProxy().status()
+        if stats.get("running"):
+            host = str(stats.get("host", stats["config"]["host"]))
+            port = int(stats.get("port", stats["config"]["port"]))
+            console.print(f"\n   Proxy URL: [green]{_build_proxy_url(host, port)}[/green]")
+        else:
+            console.print("\n   Proxy: [dim]not running[/dim]")
+
+        for key, value in stats.items():
+            if key == "config":
+                for config_key, config_value in value.items():
+                    console.print(f"   config.{config_key}: {config_value}")
+            else:
                 console.print(f"   {key}: {value}")
     except ImportError:
-        pass
+        console.print("\n   [yellow]Proxy module not available.[/yellow]")
+    except Exception as exc:
+        err_console.print(f"\n   [red]Failed to read proxy status:[/red] {exc}\n")
+        raise SystemExit(EXIT_ERROR)
 
     console.print()
 
@@ -937,7 +1256,7 @@ def proxy_status() -> None:
 @click.option("--target", "-t", type=click.Path(), default=None, help="Path to Hermes checkout.")
 def status(target: str | None) -> None:
     """Show comprehensive system status."""
-    console.print("\n[bold]⛩  HermesKatana Status[/bold]\n")
+    console.print("\n[bold]HermesKatana Status[/bold]\n")
 
     # Version
     console.print(f"   Version: {VERSION}")
@@ -960,19 +1279,19 @@ def status(target: str | None) -> None:
         hermes_ok = install_status["hermes_detected"]
         table.add_row(
             "Hermes detected",
-            "[green]✓[/green]" if hermes_ok else "[red]✗[/red]",
+            "[green]OK[/green]" if hermes_ok else "[red]NO[/red]",
         )
         table.add_row(
             "Katana installed",
-            "[green]✓[/green]" if install_status["installed"] else "[red]✗[/red]",
+            "[green]OK[/green]" if install_status["installed"] else "[red]NO[/red]",
         )
         table.add_row(
             "Config exists",
-            "[green]✓[/green]" if install_status["config_exists"] else "[red]✗[/red]",
+            "[green]OK[/green]" if install_status["config_exists"] else "[red]NO[/red]",
         )
         table.add_row(
             "CA cert exists",
-            "[green]✓[/green]" if install_status["ca_cert_exists"] else "[yellow]○[/yellow]",
+            "[green]OK[/green]" if install_status["ca_cert_exists"] else "[yellow]WARN[/yellow]",
         )
 
         patches = install_status["patches"]
@@ -986,12 +1305,12 @@ def status(target: str | None) -> None:
         if install_status["issues"]:
             console.print("\n   [red]Issues:[/red]")
             for issue in install_status["issues"]:
-                console.print(f"     ✗ {issue}")
+                console.print(f"     - {issue}")
 
         if install_status["warnings"]:
             console.print("\n   [yellow]Warnings:[/yellow]")
             for warning in install_status["warnings"]:
-                console.print(f"     ○ {warning}")
+                console.print(f"     - {warning}")
 
     # Module status
     console.print()
@@ -1014,9 +1333,9 @@ def status(target: str | None) -> None:
     for name, module_path in module_checks:
         try:
             __import__(module_path)
-            modules_table.add_row(name, "[green]✓ Loaded[/green]", "")
+            modules_table.add_row(name, "[green]Loaded[/green]", "")
         except ImportError as exc:
-            modules_table.add_row(name, "[yellow]○ Not available[/yellow]", str(exc))
+            modules_table.add_row(name, "[yellow]Not available[/yellow]", str(exc))
 
     console.print(modules_table)
 
@@ -1028,8 +1347,11 @@ def status(target: str | None) -> None:
 
     env_vars = [
         "KATANA_ACTIVE",
+        "KATANA_CHECKOUT_ROOT",
+        "KATANA_CHECKOUT_CONFIG",
         "KATANA_PROXY_URL",
         "KATANA_POLICY_PRESET",
+        "KATANA_POLICY_SOURCE",
         "KATANA_CA_CERT",
     ]
     for var in env_vars:
@@ -1052,10 +1374,10 @@ def status(target: str | None) -> None:
 @click.option("--suite", "-s", default="basic", help="Benchmark suite to run.")
 def benchmark(suite: str) -> None:
     """Run security benchmarks."""
-    console.print(f"\n[bold]⛩  Running benchmark suite: {suite}[/bold]\n")
+    console.print(f"\n[bold]Running benchmark suite: {suite}[/bold]\n")
 
     try:
-        from hermes_katana.scanner import scan_input, scan_command, scan_output
+        from hermes_katana.scanner import scan_input, scan_command
 
         # Built-in basic benchmark
         test_cases = [

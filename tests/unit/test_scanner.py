@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 
-import pytest
 
 from hermes_katana.scanner import (
     ScanResult,
@@ -253,7 +252,7 @@ class TestContentScanning:
 class TestUnicodeScanning:
     def test_bidi_override(self):
         # RIGHT-TO-LEFT OVERRIDE character
-        text = f"normal \u202e hidden\u202c text"
+        text = "normal \u202e hidden\u202c text"
         findings = scan_unicode(text)
         assert len(findings) > 0
         cats = {f.category for f in findings}

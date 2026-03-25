@@ -23,13 +23,12 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator, Optional, TypeVar
 
 from hermes_katana.taint.flow import FlowAnalysis, FlowAnalyzer, FlowDecision
-from hermes_katana.taint.labels import Reader, Source, TaintLabel, TrustLevel
+from hermes_katana.taint.labels import Reader, Source, TaintLabel
 from hermes_katana.taint.value import (
     TaintedDict,
     TaintedList,
     TaintedStr,
     TaintedValue,
-    collect_sources,
 )
 
 logger = logging.getLogger(__name__)

@@ -103,11 +103,16 @@ exfiltration, and tool-use attacks.
 
 ## Quick Start
 
+Start with the operator docs that match the current CLI:
+
+- [docs/quickstart.md](docs/quickstart.md) for the fastest local setup path
+- [docs/runbook.md](docs/runbook.md) for day-2 operations and recovery steps
+
 ### Installation
 
 ```bash
 # From source
-git clone https://github.com/yourorg/hermes-katana.git
+git clone https://github.com/Tranquil-Flow/hermes-katana.git
 cd hermes-katana
 pip install -e ".[dev]"
 
@@ -118,24 +123,30 @@ pip install -e ".[all]"
 ### Verify Installation
 
 ```bash
-katana --version
-katana status
+katana doctor
+katana --help
 ```
 
 ### Basic Setup
 
 ```bash
-# Initialize vault (stores master key in OS keyring)
-katana vault init
+# Persist the default policy preset
+katana policy use balanced
 
-# Store a secret
+# Create the encrypted vault on first write
 katana vault set OPENAI_API_KEY "sk-..."
+katana vault verify
 
-# Install proxy protection into Hermes
-katana install
+# Inspect a Hermes checkout before patching it
+katana doctor --target /path/to/hermes
+katana install --target /path/to/hermes --dry-run
+katana install --target /path/to/hermes --backup
+katana status --target /path/to/hermes
+katana run --target /path/to/hermes -- --task "hello"
 
-# Start the proxy
-katana proxy start
+# Start and inspect the proxy
+katana proxy start --host 127.0.0.1 --port 8443
+katana proxy status
 ```
 
 ### Quick Security Check
@@ -165,29 +176,43 @@ assert decision == FlowDecision.ALLOW  # allowed: trusted source
 HermesKatana provides the `katana` (or `hermes-katana`) CLI with these
 commands:
 
-| Command                | Description                                    |
-|------------------------|------------------------------------------------|
-| `katana status`        | Show overall security status and configuration |
-| `katana install`       | Install HermesKatana into Hermes agent runtime |
-| `katana uninstall`     | Remove HermesKatana patches from Hermes        |
-| `katana proxy start`   | Start the mitmproxy-based HTTPS proxy          |
-| `katana proxy stop`    | Stop the running proxy                         |
-| `katana proxy status`  | Show proxy status and connection info          |
-| `katana vault init`    | Initialize the encrypted vault                 |
-| `katana vault set`     | Store a secret in the vault                    |
-| `katana vault get`     | Retrieve a secret from the vault               |
-| `katana vault list`    | List all stored secret names                   |
-| `katana vault remove`  | Remove a secret from the vault                 |
-| `katana vault lock`    | Activate the circuit breaker (emergency lock)  |
-| `katana vault unlock`  | Deactivate the circuit breaker                 |
-| `katana vault rotate`  | Rotate the master encryption key               |
-| `katana policy list`   | List active policies                           |
-| `katana policy load`   | Load policies from YAML file or directory      |
-| `katana policy export` | Export current policies to YAML                |
-| `katana scan`          | Scan text for injections, secrets, commands     |
-| `katana audit show`    | Show recent audit trail entries                |
-| `katana audit verify`  | Verify audit trail hash chain integrity        |
-| `katana audit stats`   | Show audit trail statistics                    |
+| Command | Description |
+|---------|-------------|
+| `katana doctor` | Check prerequisites, runtime state, and optionally a Hermes checkout |
+| `katana status` | Show overall security status and environment details |
+| `katana install --target PATH [--dry-run] [--backup]` | Patch a Hermes checkout, preview changes, or create a backup first |
+| `katana uninstall --target PATH [--dry-run] [--backup]` | Remove Katana patches and optionally preview or back up the checkout |
+| `katana restore --manifest PATH [--dry-run]` | Restore a checkout from a backup manifest |
+| `katana run --target PATH -- ...` | Run Hermes with runtime behavior derived from the installed checkout state |
+| `katana scan` | Scan text for injections, secrets, and dangerous content |
+| `katana scan-file` | Scan a file on disk |
+| `katana scan-command` | Scan a shell command for dangerous patterns |
+| `katana policy list` | Show the active policy set |
+| `katana policy use PRESET` | Persist the active preset to config |
+| `katana policy export PATH` | Export the current policy set to YAML |
+| `katana vault list` | List stored secret names |
+| `katana vault set KEY VALUE` | Create or update a secret |
+| `katana vault remove KEY` | Delete a secret |
+| `katana vault rotate` | Rotate the vault master key |
+| `katana vault lock` | Activate the vault circuit breaker |
+| `katana vault unlock` | Clear the vault circuit breaker |
+| `katana vault verify` | Verify vault integrity |
+| `katana audit show --limit N` | Show recent audit entries |
+| `katana audit verify` | Verify the audit hash chain |
+| `katana audit stats` | Show audit statistics |
+| `katana audit clear` | Clear the current audit file |
+| `katana proxy start` | Start the proxy and load the Katana mitmproxy addon |
+| `katana proxy stop` | Stop the running proxy |
+| `katana proxy status` | Show live proxy state from pidfile-backed status |
+| `katana benchmark` | Run benchmark suites |
+| `katana version` | Print version details |
+
+The installer regression surface is pinned in versioned Hermes snapshots under
+`tests/fixtures/hermes_compat/`, the supported snapshot registry lives in
+`tests/fixtures/hermes_compat/fixtures.json`, and the adversarial dispatch eval
+pack lives in `evals/adversarial_dispatch.yaml`. Refresh those pinned snapshots
+from a real Hermes release checkout with verified provenance, for example:
+`python scripts/refresh_compat_snapshots.py --source /path/to/hermes-release --source-archive /path/to/hermes-vX.Y.Z.tar.gz --archive-sha256 <published_sha256> --source-ref vX.Y.Z --replace-existing`.
 
 ---
 
