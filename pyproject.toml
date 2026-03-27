@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hermes-katana"
-version = "0.1.0"
+version = "0.2.0"
 description = "Defense-in-depth security toolkit for Hermes Agent — CaMeL taint tracking, proxy-based secret guard, policy engine, and red-team benchmarking"
 authors = [{name = "Carlos", email = "lmfcfmf@gmail.com"}]
 requires-python = ">=3.10"
@@ -50,6 +50,9 @@ all = ["hermes-katana[container,benchmark,ml,dev]"]
 [project.scripts]
 hermes-katana = "hermes_katana.cli.main:main"
 katana = "hermes_katana.cli.main:main"
+
+[project.entry-points."hermes_agent.plugins"]
+katana = "hermes_katana.hermes_plugin"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hermes_katana"]
