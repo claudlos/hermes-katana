@@ -421,6 +421,124 @@ def scan_command(
 
 
 # ---------------------------------------------------------------------------
+# Context-aware scanning (combines all scanner layers)
+# ---------------------------------------------------------------------------
+
+
+def scan_with_context(
+    text: str,
+    *,
+    tool_name: str = "",
+    vault_values: Optional[set[str]] = None,
+    analyzer: Optional[Any] = None,
+    allowlist: Optional[Any] = None,
+    ensemble: Optional[Any] = None,
+    check_injection: bool = True,
+    check_secrets: bool = True,
+    check_unicode: bool = True,
+    check_content: bool = False,
+    turn_index: int = -1,
+) -> ScanResult:
+    """Scan text using all available scanner layers.
+
+    Combines the standard scanner pipeline with optional ensemble ML
+    classification, multi-turn context analysis, and false-positive
+    suppression.
+
+    Args:
+        text: The input text to scan.
+        tool_name: Name of the tool context (used for allowlist matching).
+        vault_values: Optional set of known secret values.
+        analyzer: Optional ConversationAnalyzer for multi-turn context.
+        allowlist: Optional AllowlistManager for FP suppression.
+        ensemble: Optional EnsembleClassifier for ML-boosted scoring.
+        check_injection: Whether to check for prompt injections.
+        check_secrets: Whether to check for secrets.
+        check_unicode: Whether to check for Unicode attacks.
+        check_content: Whether to check for content attacks.
+        turn_index: Turn index for context analyzer (-1 = auto).
+
+    Returns:
+        ScanResult with findings (after suppression) and verdict.
+    """
+    # Run the standard scan pipeline
+    result = scan_input(
+        text,
+        vault_values=vault_values,
+        check_injection=check_injection,
+        check_secrets=check_secrets,
+        check_unicode=check_unicode,
+        check_content=check_content,
+    )
+
+    # Boost injection score with ensemble classifier
+    if ensemble is not None and check_injection:
+        try:
+            from hermes_katana.scanner.ensemble import combined_score
+
+            ml_score = ensemble.predict(text)
+            if result.risk_score > 0 or ml_score > 0.3:
+                result.risk_score = combined_score(result.risk_score, ml_score)
+                result.metadata["ensemble_score"] = ml_score
+        except Exception:
+            pass  # Ensemble failure is non-fatal
+
+    # Run context analysis
+    if analyzer is not None:
+        try:
+            ctx_analysis = analyzer.analyze_turn(text, turn_index)
+            result.metadata["context_analysis"] = {
+                "topic_drift": ctx_analysis.topic_drift_score,
+                "instruction_density": ctx_analysis.instruction_density,
+                "persona_shift": ctx_analysis.persona_shift,
+                "cumulative_risk": ctx_analysis.cumulative_risk,
+                "turn_risk": ctx_analysis.turn_risk,
+                "alert_count": len(ctx_analysis.alerts),
+            }
+            # Boost risk if context analysis detects sustained risk
+            if ctx_analysis.cumulative_risk > 0.5:
+                context_boost = min(ctx_analysis.cumulative_risk * 0.2, 0.15)
+                result.risk_score = min(result.risk_score + context_boost, 1.0)
+                result.metadata["context_boost"] = context_boost
+        except Exception:
+            pass  # Context analysis failure is non-fatal
+
+    # Apply allowlist suppression
+    if allowlist is not None:
+        result.injection_findings = [
+            f for f in result.injection_findings
+            if not allowlist.is_suppressed(f, tool_name=tool_name)
+        ]
+        result.secret_findings = [
+            f for f in result.secret_findings
+            if not allowlist.is_suppressed(f, tool_name=tool_name)
+        ]
+        result.command_findings = [
+            f for f in result.command_findings
+            if not allowlist.is_suppressed(f, tool_name=tool_name)
+        ]
+        result.content_findings = [
+            f for f in result.content_findings
+            if not allowlist.is_suppressed(f, tool_name=tool_name)
+        ]
+        result.unicode_findings = [
+            f for f in result.unicode_findings
+            if not allowlist.is_suppressed(f, tool_name=tool_name)
+        ]
+
+        # Recalculate verdict after suppression
+        if not result.has_findings:
+            result.risk_score = 0.0
+        result.verdict = _compute_verdict(result.risk_score)
+
+    else:
+        # Recompute verdict with any boosted score
+        result.verdict = _compute_verdict(result.risk_score)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Public API exports
 # ---------------------------------------------------------------------------
 
@@ -429,6 +547,7 @@ __all__ = [
     "scan_input",
     "scan_output",
     "scan_command",
+    "scan_with_context",
     # Result type
     "ScanResult",
     "ScanVerdict",
