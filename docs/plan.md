@@ -1,22 +1,34 @@
-# Current Slice
+# HermesKatana v0.2.0 Plan
 
-Date: 2026-03-24
+Date: 2026-03-26
 
-Goal: require provenance verification when refreshing the pinned Hermes
-compatibility snapshots so the support matrix can only be updated from a
-verified release archive or a verified source tree.
+## Track 1: Native Hermes Integration (COMPLETE)
 
-Acceptance criteria:
+Katana now integrates with Hermes as a first-class plugin using the
+existing plugin system, eliminating the need for source-patching.
 
-- Non-dry-run snapshot refreshes are rejected without provenance verification.
-- Archive checksum verification and source-tree checksum verification are both supported.
-- The refresh workflow and refusal path are covered by unit tests.
-- Docs and handoff explain the verified refresh contract.
+### Delivered
 
-Checklist:
+- `hermes_katana.hermes_plugin`: Native plugin with `pre_tool_call`,
+  `post_tool_call`, `on_session_start`, `on_session_end` hooks.
+  Registers via pip entry point `hermes_agent.plugins`.
+- `hermes_katana.exceptions`: Exception hierarchy for security decisions
+  (KatanaSecurityError, EscalationRequired, TaintFlowDenied, ScanBlocked,
+  PolicyDenied).
+- `hermes_katana.taint.registrar`: Convenience functions for tainting data
+  at agent entry points (user input, tool output, web content, file content,
+  MCP results, LLM responses, memory, delegated tasks).
+- `katana_status` tool registered by the plugin for runtime introspection.
+- 63 new tests covering all new modules.
 
-- [x] Add provenance verification helpers to the snapshot refresh module.
-- [x] Require verified provenance for non-dry-run snapshot refreshes.
-- [x] Extend snapshot-refresh tests for verified and rejected flows.
-- [x] Update maintainer docs and handoff for the verified refresh workflow.
-- [x] Run the full validation suite.
+## Track 2: Scanner Improvements (PLANNED)
+
+- Ensemble classifier (TF-IDF + regex confidence boosting)
+- Context-aware multi-turn analysis
+- False-positive suppression and allowlisting
+
+## Track 3: Runtime Hardening (PLANNED)
+
+- Proxy connection pooling, graceful shutdown, body size limits
+- Vault secret expiry, access auditing
+- Runtime metrics collection and reporting
