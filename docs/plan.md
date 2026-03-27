@@ -1,34 +1,41 @@
-# HermesKatana v0.2.0 Plan
+# HermesKatana v0.2.0 — Completed
 
 Date: 2026-03-26
 
-## Track 1: Native Hermes Integration (COMPLETE)
+## Track 1: Native Hermes Integration — COMPLETE
 
-Katana now integrates with Hermes as a first-class plugin using the
-existing plugin system, eliminating the need for source-patching.
+- `hermes_katana.hermes_plugin`: Native plugin with pre/post tool call
+  hooks, session lifecycle, katana_status tool. Registers via pip entry
+  point `hermes_agent.plugins`.
+- `hermes_katana.exceptions`: Exception hierarchy (KatanaSecurityError,
+  EscalationRequired, TaintFlowDenied, ScanBlocked, PolicyDenied).
+- `hermes_katana.taint.registrar`: Tainting at entry points (user input,
+  tool output, web, file, MCP, LLM, memory, delegated tasks).
+- 63 tests.
 
-### Delivered
+## Track 2: Scanner Improvements — COMPLETE
 
-- `hermes_katana.hermes_plugin`: Native plugin with `pre_tool_call`,
-  `post_tool_call`, `on_session_start`, `on_session_end` hooks.
-  Registers via pip entry point `hermes_agent.plugins`.
-- `hermes_katana.exceptions`: Exception hierarchy for security decisions
-  (KatanaSecurityError, EscalationRequired, TaintFlowDenied, ScanBlocked,
-  PolicyDenied).
-- `hermes_katana.taint.registrar`: Convenience functions for tainting data
-  at agent entry points (user input, tool output, web content, file content,
-  MCP results, LLM responses, memory, delegated tasks).
-- `katana_status` tool registered by the plugin for runtime introspection.
-- 63 new tests covering all new modules.
+- `scanner/ensemble.py`: TF-IDF + logistic regression injection classifier
+  with hand-crafted feature fallback. 60 labeled examples.
+- `scanner/context_analyzer.py`: Multi-turn conversation analyzer (topic
+  drift, instruction density, persona shifts, cumulative risk with decay).
+- `scanner/allowlist.py`: FP suppression with regex/glob patterns, expiry,
+  hit counts. 6 built-in suppressions.
+- `scanner/__init__.py`: scan_with_context() combining all layers.
+- 80 tests.
 
-## Track 2: Scanner Improvements (PLANNED)
+## Track 3: Runtime Hardening — COMPLETE
 
-- Ensemble classifier (TF-IDF + regex confidence boosting)
-- Context-aware multi-turn analysis
-- False-positive suppression and allowlisting
+- `metrics.py`: Thread-safe runtime metrics (tool calls, scan hits, taint
+  flows, policy evals, latency). Prometheus export.
+- `vault/access_log.py`: JSONL access audit for all vault operations.
+- `vault/expiry.py`: TTL-based secret expiry management.
+- `proxy/config.py`: Body size limits, graceful shutdown timeout.
+- `proxy/runner.py`: Runtime counters, graceful shutdown.
+- 43 tests.
 
-## Track 3: Runtime Hardening (PLANNED)
+## Totals
 
-- Proxy connection pooling, graceful shutdown, body size limits
-- Vault secret expiry, access auditing
-- Runtime metrics collection and reporting
+- 3 commits, 4,387 lines added
+- 186 new tests (443 total passing)
+- Version bumped to 0.2.0
