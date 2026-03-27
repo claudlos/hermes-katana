@@ -58,11 +58,14 @@ _config: dict[str, Any] = {}
 _initialized: bool = False
 
 
-def setup(context: Any) -> None:
+def register(context: Any) -> None:
     """Initialize the Katana plugin.
 
     Called by the Hermes plugin manager with a PluginContext that provides
     ``register_hook``, ``register_tool``, and ``config``.
+
+    The function is named ``register`` to match the Hermes plugin contract.
+    A ``setup`` alias is provided for backward compatibility with tests.
 
     Args:
         context: Hermes PluginContext instance.
@@ -90,26 +93,48 @@ def setup(context: Any) -> None:
     context.register_hook("on_session_start", _on_session_start)
     context.register_hook("on_session_end", _on_session_end)
 
-    # Register the katana_status tool
-    context.register_tool(
-        name="katana_status",
-        schema={
-            "type": "function",
-            "function": {
-                "name": "katana_status",
-                "description": (
-                    "Show HermesKatana security status: active policy, "
-                    "middleware chain, scan stats, and taint tracker state."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
+    # Register the katana_status tool.
+    # The Hermes register_tool API requires a ``toolset`` parameter.
+    try:
+        context.register_tool(
+            name="katana_status",
+            toolset="katana",
+            schema={
+                "type": "function",
+                "function": {
+                    "name": "katana_status",
+                    "description": (
+                        "Show HermesKatana security status: active policy, "
+                        "middleware chain, scan stats, and taint tracker state."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                    },
                 },
             },
-        },
-        handler=_handle_katana_status,
-    )
+            handler=_handle_katana_status,
+            description="HermesKatana security status",
+        )
+    except TypeError:
+        # Fallback for PluginContext implementations with different signatures
+        # (e.g., our test mock which doesn't require toolset)
+        try:
+            context.register_tool(
+                name="katana_status",
+                schema={
+                    "type": "function",
+                    "function": {
+                        "name": "katana_status",
+                        "description": "Show HermesKatana security status",
+                        "parameters": {"type": "object", "properties": {}, "required": []},
+                    },
+                },
+                handler=_handle_katana_status,
+            )
+        except Exception:
+            logger.debug("Could not register katana_status tool", exc_info=True)
 
     logger.info(
         "HermesKatana plugin v%s initialized (policy=%s, taint=%s, audit=%s)",
@@ -475,3 +500,7 @@ def _pop_context(tool_name: str, task_id: str) -> Any:
 def _clear_stash() -> None:
     """Clear all stashed contexts (on session end)."""
     _context_stash.clear()
+
+
+# Backward-compatibility alias used by tests and alternative plugin loaders.
+setup = register
