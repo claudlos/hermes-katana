@@ -118,6 +118,21 @@ class ProxyConfig(BaseModel):
         le=65535,
         description="Port for health check HTTP endpoint (None = disabled).",
     )
+    max_request_body_size: int = Field(
+        default=10_485_760,  # 10 MB
+        ge=0,
+        description="Maximum request body size in bytes (0 = unlimited).",
+    )
+    max_response_body_size: int = Field(
+        default=52_428_800,  # 50 MB
+        ge=0,
+        description="Maximum response body size in bytes (0 = unlimited).",
+    )
+    graceful_shutdown_timeout: float = Field(
+        default=10.0,
+        ge=0.0,
+        description="Seconds to wait for in-flight requests during shutdown.",
+    )
 
     model_config = {"frozen": False, "extra": "forbid"}
 

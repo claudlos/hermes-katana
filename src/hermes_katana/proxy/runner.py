@@ -299,6 +299,10 @@ class KatanaProxy:
         self._watchdog_stop = threading.Event()
         self._health_server: Optional[_HealthCheckServer] = None
         self._lock = threading.Lock()
+        # Runtime counters for enhanced health/status reporting
+        self._request_count = 0
+        self._started_at: Optional[float] = None
+        self._shutting_down = threading.Event()
 
     def start(self) -> int:
         """Start the proxy process.
@@ -411,6 +415,8 @@ class KatanaProxy:
             started_at=time.time(),
         )
         _write_pid_file(self._pid_path, info)
+        self._started_at = time.time()
+        self._shutting_down.clear()
         logger.info("Proxy started with PID %d", pid)
 
         # Start watchdog
@@ -435,9 +441,16 @@ class KatanaProxy:
 
         return pid
 
-    def stop(self) -> None:
-        """Stop the proxy process and clean up."""
+    def stop(self, *, graceful: bool = True) -> None:
+        """Stop the proxy process and clean up.
+
+        Args:
+            graceful: If True, send SIGTERM and wait for the configured
+                graceful_shutdown_timeout before force-killing.
+        """
         with self._lock:
+            self._shutting_down.set()
+
             # Stop watchdog
             self._watchdog_stop.set()
 
@@ -445,6 +458,8 @@ class KatanaProxy:
             if self._health_server:
                 self._health_server.stop()
                 self._health_server = None
+
+            timeout = self.config.graceful_shutdown_timeout if graceful else 1.0
 
             # Stop proxy process
             info = _read_pid_file(self._pid_path)
@@ -454,7 +469,7 @@ class KatanaProxy:
             if self._process:
                 try:
                     self._process.terminate()
-                    self._process.wait(timeout=5)
+                    self._process.wait(timeout=timeout)
                 except Exception:
                     try:
                         self._process.kill()
@@ -462,6 +477,7 @@ class KatanaProxy:
                         pass
                 self._process = None
 
+            self._started_at = None
             _remove_pid_file(self._pid_path)
             logger.info("Proxy stopped")
 
