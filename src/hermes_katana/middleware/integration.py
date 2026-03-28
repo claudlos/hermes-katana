@@ -153,7 +153,7 @@ class KatanaTaintMiddleware(KatanaMiddleware):
             source = Source(
                 label=TaintLabel.TOOL_OUTPUT,
                 origin=f"tool:{ctx.tool_name}",
-                trust=TrustLevel.CONDITIONAL,
+                trust_level=TrustLevel.CONDITIONAL,
                 metadata={"call_id": ctx.call_id, "tool": ctx.tool_name},
             )
             tainted_output = self.tracker.register(ctx.tool_output, source)

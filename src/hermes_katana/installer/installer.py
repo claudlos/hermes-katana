@@ -422,11 +422,14 @@ class KatanaInstaller:
         # 1. Revert patches
         results = revert_patches(target)
 
-        # 2. Remove .katana directory
+        # 2. Remove .katana directory (reject if it's a symlink to prevent traversal)
         katana_dir = target / KATANA_CONFIG_DIR
         if katana_dir.exists():
-            shutil.rmtree(katana_dir)
-            logger.debug("Removed config dir: %s", katana_dir)
+            if katana_dir.is_symlink():
+                logger.warning("Refusing to remove symlinked config dir: %s", katana_dir)
+            else:
+                shutil.rmtree(katana_dir)
+                logger.debug("Removed config dir: %s", katana_dir)
 
         # 3. Remove install marker
         marker = target / KATANA_INSTALL_MARKER
@@ -806,9 +809,13 @@ class KatanaInstaller:
             # Write certificate
             cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
 
-            # Write private key (encrypted with a passphrase derived from install path)
+            # Write private key (encrypted with a passphrase derived from install path + random salt)
+            import secrets as _secrets
+            ca_salt = _secrets.token_hex(16)
+            salt_path = cert_dir / "ca_salt.txt"
+            salt_path.write_text(ca_salt, encoding="utf-8")
             passphrase = hashlib.sha256(
-                f"katana-{target}".encode()
+                f"katana-{target}-{ca_salt}".encode()
             ).hexdigest()[:32].encode()
 
             key_path.write_bytes(

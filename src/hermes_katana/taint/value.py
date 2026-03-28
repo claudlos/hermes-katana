@@ -704,10 +704,20 @@ def collect_sources(value: Any) -> frozenset[Source]:
     if isinstance(value, TaintedValue):
         result.update(value.sources)
         if isinstance(value, (TaintedDict, TaintedList)):
-            if isinstance(value, TaintedDict):
-                result.update(value.all_sources())
-            else:
-                result.update(value.all_sources())
+            result.update(value.all_sources())
+            # Also recurse into the inner unwrapped collection
+            # to catch any nested TaintedValue items
+            inner = value.value
+            if isinstance(inner, dict):
+                for k, v in inner.items():
+                    result.update(collect_sources(k))
+                    result.update(collect_sources(v))
+            elif isinstance(inner, (list, tuple)):
+                for item in inner:
+                    result.update(collect_sources(item))
+            return frozenset(result)
+        # For non-container TaintedValues, recurse into the inner value
+        return frozenset(result | collect_sources(value.value))
     if isinstance(value, dict):
         for k, v in value.items():
             result.update(collect_sources(k))

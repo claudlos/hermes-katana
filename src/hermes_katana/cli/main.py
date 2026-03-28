@@ -957,9 +957,11 @@ def vault_list() -> None:
 
 @vault.command("set")
 @click.argument("key")
-@click.argument("value")
-def vault_set(key: str, value: str) -> None:
-    """Set a vault secret."""
+@click.argument("value", required=False, default=None)
+def vault_set(key: str, value: str | None) -> None:
+    """Store a secret in the Katana vault."""
+    if value is None:
+        value = click.prompt("Secret value", hide_input=True)
     try:
         from hermes_katana.vault import VaultError
 
