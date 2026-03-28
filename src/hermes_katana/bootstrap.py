@@ -398,7 +398,14 @@ def _build_default_escalator(dispatcher: Any):
                 result = await result
             return bool(result)
 
-        return os.environ.get("KATANA_AUTO_APPROVE_ESCALATIONS", "0").lower() in _TRUTHY
+        auto_approve = os.environ.get("KATANA_AUTO_APPROVE_ESCALATIONS", "0").lower() in _TRUTHY
+        if auto_approve:
+            logger.warning(
+                "KATANA_AUTO_APPROVE_ESCALATIONS is set — auto-approving "
+                "escalation for tool '%s'. Disable this env var in production.",
+                getattr(ctx, "tool_name", "unknown"),
+            )
+        return auto_approve
 
     return _katana_escalate
 

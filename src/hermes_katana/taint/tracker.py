@@ -99,6 +99,8 @@ class TaintTracker:
     _instance: Optional[TaintTracker] = None
     _lock: threading.Lock = threading.Lock()
 
+    _MAX_REGISTRY_SIZE = 10_000
+
     def __init__(self, analyzer: Optional[FlowAnalyzer] = None) -> None:
         self._analyzer = analyzer or FlowAnalyzer()
         self._registry: dict[int, TaintedValue[Any]] = {}
@@ -193,6 +195,7 @@ class TaintTracker:
         with self._mutex:
             self._registry[id(tv)] = tv
             self._stats.values_registered += 1
+            self._evict_if_needed()
 
         logger.debug(
             "Registered tainted value: label=%s origin=%s type=%s",
@@ -231,6 +234,7 @@ class TaintTracker:
         with self._mutex:
             self._registry[id(tv)] = tv
             self._stats.values_registered += 1
+            self._evict_if_needed()
 
         return tv  # type: ignore[return-value]
 
@@ -300,6 +304,7 @@ class TaintTracker:
         with self._mutex:
             self._registry[id(tv)] = tv
             self._stats.values_propagated += 1
+            self._evict_if_needed()
 
         return tv  # type: ignore[return-value]
 
@@ -373,8 +378,8 @@ class TaintTracker:
     ) -> FlowDecision:
         """Check all keyword arguments for taint violations against *tool_name*.
 
-        Scans each kwarg; if any is a :class:`TaintedValue`, checks its flow.
-        Returns the *most restrictive* decision across all arguments.
+        Scans each kwarg recursively; if any is a :class:`TaintedValue`,
+        checks its flow.  Returns the *most restrictive* decision.
         """
         worst = FlowDecision.ALLOW
         priority = {
@@ -383,12 +388,46 @@ class TaintTracker:
             FlowDecision.ASK_USER: 2,
             FlowDecision.DENY: 3,
         }
-        for _key, val in kwargs.items():
+
+        def _walk(val: Any) -> None:
+            nonlocal worst
             if isinstance(val, TaintedValue):
                 decision = self.check_flow(val, tool_name)
                 if priority[decision] > priority[worst]:
                     worst = decision
+            if isinstance(val, dict):
+                for v in val.values():
+                    _walk(v)
+            elif isinstance(val, (list, tuple)):
+                for item in val:
+                    _walk(item)
+
+        for _key, val in kwargs.items():
+            _walk(val)
+            if worst == FlowDecision.DENY:
+                break  # Short-circuit on DENY
         return worst
+
+    # -- Internal helpers -----------------------------------------------------
+
+    def _evict_if_needed(self) -> None:
+        """Evict oldest entries when registry exceeds size cap.
+
+        Must be called while holding ``self._mutex``.
+        Drops the oldest half of entries (by insertion order) to amortize
+        the eviction cost.
+        """
+        if len(self._registry) <= self._MAX_REGISTRY_SIZE:
+            return
+        # dict preserves insertion order in Python 3.7+; drop the oldest half
+        keys = list(self._registry.keys())
+        evict_count = len(keys) // 2
+        for k in keys[:evict_count]:
+            del self._registry[k]
+        logger.debug(
+            "Evicted %d entries from taint registry (size was %d, now %d)",
+            evict_count, len(keys), len(self._registry),
+        )
 
     # -- Session management ---------------------------------------------------
 

@@ -406,8 +406,7 @@ class AuditTrail:
                 with self._file_lock:
                     shutil.move(str(self._path), str(rotated_path))
 
-                # Reset in-memory state for the new file
-                self._last_hash = _GENESIS_HASH
+                # Reset entry count but preserve _last_hash for chain continuity
                 self._entry_count = 0
 
                 logger.info("Rotated audit log to %s", rotated_path)

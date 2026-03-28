@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -199,9 +200,10 @@ def _set_master_key(key: bytes) -> None:
         keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, encoded)
     except ImportError:
         logger.warning(
-            "keyring package not installed. Set HERMES_KATANA_VAULT_KEY "
-            "environment variable to: %s",
-            encoded,
+            "keyring package not installed. Master key generated but could "
+            "not be stored in keyring. Run 'hermes-katana vault show-key' "
+            "or set HERMES_KATANA_VAULT_KEY env var manually. "
+            "Store the key securely."
         )
     except Exception as exc:
         raise VaultError(f"Failed to store master key in keyring: {exc}")
@@ -351,6 +353,9 @@ class Vault:
                     os.fsync(fp.fileno())
                 # Atomic replace
                 Path(tmp_path).replace(self._path)
+                # Restrict file permissions on Unix (owner read/write only)
+                if sys.platform != "win32":
+                    os.chmod(self._path, 0o600)
             except Exception:
                 os.unlink(tmp_path)
                 raise
@@ -376,6 +381,16 @@ class Vault:
             master_key = self._get_key()
             vault = self._read_vault()
             entries = vault.get("entries", {})
+            stored_hmac = vault.get("hmac", "")
+
+            # Verify HMAC integrity before returning any data
+            if entries and stored_hmac:
+                expected_hmac = _compute_hmac(entries, master_key)
+                if not hmac.compare_digest(stored_hmac, expected_hmac):
+                    raise VaultIntegrityError(
+                        "Vault integrity check failed: HMAC mismatch. "
+                        "The vault file may have been tampered with."
+                    )
 
             if key not in entries:
                 raise VaultKeyError(f"Key not found: {key}")

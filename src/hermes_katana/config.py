@@ -236,7 +236,7 @@ class KatanaConfig(BaseModel):
                 "# Documentation: https://github.com/HermesKatana/hermes-katana\n"
                 "\n"
             )
-            yaml.dump(
+            yaml.safe_dump(
                 data,
                 fh,
                 default_flow_style=False,

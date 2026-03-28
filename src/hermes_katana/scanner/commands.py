@@ -656,7 +656,7 @@ _cp(
 
 _cp(
     "crontab_install",
-    r"(?:\bcrontab\s+|/etc/cron|echo\s+.*\|\s*crontab)",
+    r"(?:\bcrontab\s+(?!-l\b)|/etc/cron|echo\s+.*\|\s*crontab)",
     CommandCategory.CODE_EXECUTION,
     CommandSeverity.MEDIUM,
     "Crontab modification - potential persistence mechanism.",
@@ -676,10 +676,10 @@ _cp(
 
 _cp(
     "env_dump",
-    r"\b(?:env|printenv|set)\s*\|\s*(?:grep|sort|tee|nc|curl|wget)",
+    r"\b(?:env|printenv|set)\s*\|\s*(?:tee|nc|ncat|curl|wget)",
     CommandCategory.INFORMATION_GATHERING,
     CommandSeverity.HIGH,
-    "Dumping environment variables (may contain secrets) to pipe.",
+    "Dumping environment variables (may contain secrets) to network/file tool.",
 )
 
 _cp(

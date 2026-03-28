@@ -25,6 +25,7 @@ The engine supports:
 from __future__ import annotations
 
 import fnmatch
+import functools
 import logging
 import re
 import threading
@@ -154,6 +155,26 @@ def _field_level(taint_context: dict[str, Any], field_name: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Regex cache with compile-time validation
+# ---------------------------------------------------------------------------
+
+@functools.lru_cache(maxsize=256)
+def _safe_compile(pattern: str) -> re.Pattern | None:
+    """Compile a regex with length limit and error handling.
+
+    Returns None for invalid or overly long patterns.
+    """
+    if len(pattern) > 2000:
+        logger.warning("Policy regex too long (%d chars), rejecting", len(pattern))
+        return None
+    try:
+        return re.compile(pattern)
+    except re.error as exc:
+        logger.warning("Invalid policy regex %r: %s", pattern[:80], exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Condition evaluator
 # ---------------------------------------------------------------------------
 
@@ -187,13 +208,16 @@ def evaluate_condition(
 
     elif op == ConditionOperator.MATCHES_PATTERN:
         # Match the *argument value* against a regex
+        pat = _safe_compile(str(val))
+        if pat is None:
+            return False
         if fld == "*":
             return any(
-                re.search(str(val), str(v)) is not None
+                pat.search(str(v)) is not None
                 for v in tool_args.values()
             )
         arg_val = tool_args.get(fld, "")
-        return re.search(str(val), str(arg_val)) is not None
+        return pat.search(str(arg_val)) is not None
 
     elif op == ConditionOperator.ARGUMENT_MATCHES:
         # Exact or glob match on the raw argument value

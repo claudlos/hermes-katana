@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -191,12 +193,26 @@ class SecretExpiry:
             return {}
 
     def _write(self, data: dict) -> None:
-        """Atomically write the expiry metadata file."""
+        """Atomically write the expiry metadata file.
+
+        Uses temp file + os.replace to prevent partial writes.
+        """
+        content = json.dumps(data, indent=2, default=str)
         try:
-            self._path.write_text(
-                json.dumps(data, indent=2, default=str),
-                encoding="utf-8",
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self._path.parent),
+                prefix=".expiry_",
+                suffix=".tmp",
             )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fp:
+                    fp.write(content)
+                    fp.flush()
+                    os.fsync(fp.fileno())
+                os.replace(tmp_path, str(self._path))
+            except Exception:
+                os.unlink(tmp_path)
+                raise
         except OSError:
             logger.warning("Failed to write expiry metadata", exc_info=True)
 

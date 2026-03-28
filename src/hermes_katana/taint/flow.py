@@ -15,6 +15,7 @@ approval.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto, unique
@@ -302,7 +303,9 @@ class FlowAnalyzer:
         )
         self._default = FlowDecision.ASK_USER if strict_mode else default_decision
         self._strict = strict_mode
+        self._lock = threading.Lock()
         self._history: list[FlowAnalysis] = []
+        self._MAX_HISTORY = 1000
 
     @property
     def rules(self) -> list[FlowRule]:
@@ -316,16 +319,18 @@ class FlowAnalyzer:
 
     def add_rule(self, rule: FlowRule) -> None:
         """Add a rule and re-sort by priority."""
-        self._rules.append(rule)
-        self._rules.sort(key=lambda r: -r.priority)
+        with self._lock:
+            self._rules.append(rule)
+            self._rules.sort(key=lambda r: -r.priority)
 
     def remove_rule(self, rule: FlowRule) -> bool:
         """Remove a rule. Returns ``True`` if it was found and removed."""
-        try:
-            self._rules.remove(rule)
-            return True
-        except ValueError:
-            return False
+        with self._lock:
+            try:
+                self._rules.remove(rule)
+                return True
+            except ValueError:
+                return False
 
     def analyze(
         self,
@@ -356,8 +361,11 @@ class FlowAnalyzer:
         matched: list[FlowRule] = []
         reasoning_parts: list[str] = []
 
+        with self._lock:
+            rules_snapshot = list(self._rules)
+
         # Evaluate rules in priority order
-        for rule in self._rules:
+        for rule in rules_snapshot:
             if rule.matches_tool(tool_name) and rule.matches_labels(labels):
                 matched.append(rule)
                 intersecting = rule.source_labels & labels
@@ -378,12 +386,13 @@ class FlowAnalyzer:
                 f"Applying default: {decision.name}."
             )
 
-        # Special case: if all sources are trusted, always allow regardless
+        # Special case: if all sources are trusted, downgrade escalation to allow
+        # (but never override an explicit DENY from a matched rule)
         if all_sources and all(s.trust_level is TrustLevel.TRUSTED for s in all_sources):
-            if decision in (FlowDecision.DENY, FlowDecision.ASK_USER):
+            if decision == FlowDecision.ASK_USER:
                 decision = FlowDecision.ALLOW
                 reasoning_parts.append(
-                    "Override: all sources are TRUSTED — allowing flow."
+                    "Override: all sources are TRUSTED — downgrading escalation to allow."
                 )
 
         # Special case: no sources at all — treat as clean
@@ -401,7 +410,10 @@ class FlowAnalyzer:
             reasoning=reasoning,
         )
 
-        self._history.append(result)
+        with self._lock:
+            self._history.append(result)
+            if len(self._history) > self._MAX_HISTORY:
+                self._history = self._history[-self._MAX_HISTORY // 2:]
         logger.debug(
             "Flow analysis: %s → %s = %s",
             sorted(lbl.name for lbl in labels),

@@ -46,6 +46,7 @@ class RateTracker:
     max_requests: int = 50
     window_seconds: float = 1.0
     escalation_factor: float = 2.0
+    _MAX_CLIENTS: int = 10_000
 
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _windows: dict[str, deque[float]] = field(
@@ -92,6 +93,14 @@ class RateTracker:
             # Decay violations over time
             if violations > 0 and len(window) < effective_limit // 2:
                 self._violations[client_id] = max(0, violations - 1)
+
+            # Evict stale clients when tracking too many
+            if len(self._windows) > self._MAX_CLIENTS:
+                # Remove clients with empty windows (already pruned)
+                stale = [k for k, v in self._windows.items() if not v]
+                for k in stale:
+                    del self._windows[k]
+                    self._violations.pop(k, None)
 
             return True, len(window)
 

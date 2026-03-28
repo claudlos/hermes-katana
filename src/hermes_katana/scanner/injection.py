@@ -131,7 +131,7 @@ _hp(
     "new_instructions",
     r"(?:new|updated|revised|real|actual|true)\s+instructions?\s*[:=]",
     InjectionCategory.INSTRUCTION_OVERRIDE,
-    0.85,
+    0.55,
     "Presentation of 'new instructions' to override existing ones.",
 )
 
@@ -187,9 +187,9 @@ _hp(
 
 _hp(
     "you_are_now",
-    r"you\s+are\s+now\s+(?:a\s+)?(?:new|different|my|an?\s+)",
+    r"you\s+are\s+now\s+(?:a\s+)?(?:new|different|my|an?\s+)(?:\w+\s+){0,3}(?:AI|assistant|bot|chatbot|model|persona|character|agent)",
     InjectionCategory.ROLE_OVERRIDE,
-    0.90,
+    0.80,
     "Direct role reassignment - 'you are now X'.",
 )
 
@@ -203,10 +203,18 @@ _hp(
 
 _hp(
     "jailbreak_dan",
-    r"(?:DAN|Do\s+Anything\s+Now|DUDE|AIM|STAN|KEVIN)\s*(?:mode|prompt|jailbreak)?",
+    r"\b(?:Do\s+Anything\s+Now|DUDE)\b\s*(?:mode|prompt|jailbreak)?",
     InjectionCategory.ROLE_OVERRIDE,
     0.95,
-    "Known jailbreak persona names (DAN, DUDE, AIM, etc.).",
+    "Known jailbreak persona names (Do Anything Now, DUDE).",
+)
+
+_hp(
+    "jailbreak_dan_contextual",
+    r"\b(?:DAN|AIM|STAN|KEVIN)\b\s+(?:mode|prompt|jailbreak)",
+    InjectionCategory.ROLE_OVERRIDE,
+    0.90,
+    "Common-word jailbreak names (DAN, AIM, STAN, KEVIN) — only match with jailbreak context.",
 )
 
 _hp(
@@ -239,7 +247,7 @@ _hp(
     "system_message_injection",
     r"(?:^|\n)\s*(?:system|assistant|user|human|ai)\s*:\s*",
     InjectionCategory.DELIMITER_ESCAPE,
-    0.70,
+    0.60,
     "Chat role delimiter injection - attempting to inject system/role messages.",
 )
 
@@ -381,16 +389,16 @@ _hp(
     "mcp_important_prefix",
     r"\bIMPORTANT:\s*(?:Before|After|When|Do not|Always|Never|First)",
     InjectionCategory.TOOL_MANIPULATION,
-    0.85,
+    0.55,
     "IMPORTANT: prefix with imperative verb — common in MCP description poisoning attacks.",
 )
 
 _hp(
     "concealment_instruction",
-    r"(?i)(do\s+not\s+(?:mention|tell|inform|show|display|reveal|notify)\b.{0,60}(?:user|operator|human))",
+    r"(?i)(do\s+not\s+(?:mention|tell|inform|show|display|reveal|notify)\b.{0,60}(?:user|operator|human).{0,40}(?:secret|hidden|covert|quietly|silently|backdoor|exfiltrat|steal|stolen|attack|malicious|inject))",
     InjectionCategory.TOOL_MANIPULATION,
     0.88,
-    "Instruction to conceal an action from the user — key indicator of covert tool manipulation.",
+    "Instruction to conceal an action from the user with deception context — key indicator of covert tool manipulation.",
 )
 
 _hp(
@@ -421,7 +429,7 @@ _hp(
     "authorized_override_framing",
     r"(?i)(?:authorized\s+(?:security\s+)?test|override\s+mode|for\s+(?:testing|evaluation)\s+purposes?\s+only|admin\s+override)",
     InjectionCategory.ROLE_OVERRIDE,
-    0.85,
+    0.55,
     "Skeleton Key framing — presents request as authorized test to bypass safety measures.",
 )
 
@@ -429,7 +437,7 @@ _hp(
     "goal_hijacking",
     r"(?i)(?:instead\s+of\s+(?:the\s+)?(?:above|previous|original|requested|that)|rather\s+than\s+doing\s+(?:that|this|the\s+above))",
     InjectionCategory.INSTRUCTION_OVERRIDE,
-    0.82,
+    0.50,
     "Goal-hijacking — redirects agent from its original task to attacker's objective.",
 )
 
@@ -443,9 +451,9 @@ _hp(
 
 _hp(
     "whitespace_padding_exfil",
-    r"[ \t]{30,}\S",
+    r"[ \t]{80,}\S",
     InjectionCategory.TOOL_MANIPULATION,
-    0.75,
+    0.60,
     "Excessive whitespace padding before content — used to hide stolen data off-screen in UI (Invariant Labs WhatsApp attack pattern).",
 )
 

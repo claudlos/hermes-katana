@@ -399,7 +399,13 @@ class PolicyFileWatcher:
                             self._directory,
                             recursive=self._recursive,
                         )
-                        self._callback(policy_sets)
+                        if not policy_sets:
+                            logger.error(
+                                "Policy reload produced 0 valid policy sets — "
+                                "keeping previous policies to avoid security gap"
+                            )
+                        else:
+                            self._callback(policy_sets)
                     except Exception:
                         logger.exception("Error reloading policies after file change")
             except Exception:
