@@ -1,34 +1,34 @@
 {
   "hermes_commit": "d932980c1a7d9b83b7dac7552824192d73fdd635",
-  "captured_at": "2026-04-05T11:01:47.422712+00:00",
+  "captured_at": "2026-04-05T13:32:11.111907+00:00",
   "files": {
     "gateway/platforms/base.py": {
-      "sha256": "4051604723e0f0d4d13d2a9cd117921602a01a0cbfa7742de673e866726d81f6",
-      "size": 65697
+      "sha256": "2421d85c519014505d10a8b21a92aa66dd63b18d97e2e64f6ac4001d8d7aa71e",
+      "size": 64119
     },
     "gateway/run.py": {
-      "sha256": "ad17e2d4318cd4f4ce98785fa0f5528dbbb016fd2bf81187808b594995a058e6",
-      "size": 330410
+      "sha256": "08504ebb7dc34b982de9e68810ba9790711d971e701106e0bb3f8a941f626b44",
+      "size": 323328
     },
     "hermes_cli/banner.py": {
-      "sha256": "1257521090b296e1f422b474f2b12212cfd91a650475817a977c458c6b12bf31",
-      "size": 20366
+      "sha256": "b1634fb28ba978cde2304c4a100825ff702f54c08c8305fcc4992a71f82d2918",
+      "size": 19903
     },
     "pyproject.toml": {
-      "sha256": "2c160eb1aa5a260e326db070054041a9c4c995dd6e32c3670d9b41b424482b05",
-      "size": 4227
+      "sha256": "d707f8e7e35277bebb927bf4184c6b0e95c69a21662eb62fc8df0bf653368e53",
+      "size": 4112
     },
     "tools/environments/docker.py": {
-      "sha256": "d947591142778fa2ea188a9eb5d11a4db45a39ac40f34115b510f51524c685b4",
-      "size": 23402
+      "sha256": "74fc13505af6c34706011574cf81d52f1330a91a76c160a0acc736df206ae0b6",
+      "size": 22806
     },
     "tools/registry.py": {
-      "sha256": "3cb1cac95172f928dc5ca234764f0e9313fc80f3e7721f241f743e2176af152d",
-      "size": 10994
+      "sha256": "d5a45a9f69d40d1da452228b33e715f4c563cbc66587c55d7b7b7e56c5bd04df",
+      "size": 10719
     },
     "tools/terminal_tool.py": {
-      "sha256": "dc97ab66b982078be7dcd2d6e3bbf55468d3170b3301784215c8d2377f28936c",
-      "size": 68798
+      "sha256": "e8955629cb1de4079802dcbbbba1c1b3fa994f246f0aa8e79f5e4dd07583958b",
+      "size": 67239
     }
   }
 }

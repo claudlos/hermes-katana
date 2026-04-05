@@ -15,7 +15,7 @@
       },
       "provenance": {
         "verification_mode": "tree_sha256",
-        "source_tree_sha256": "f99bf1c457e3c5b2eec973face239854565c98a98759518d0b7982b22a3d48eb",
+        "source_tree_sha256": "6735c450d095e678ad936696c5c03e5bb57581501ecb9c038051c57d266fb922",
         "source_tree_origin": "pinned_snapshot_directory"
       }
     },
@@ -32,7 +32,7 @@
       },
       "provenance": {
         "verification_mode": "tree_sha256",
-        "source_tree_sha256": "483a25ee395d255166b5e017da202615ba46176bedb510e3eed10783d45580f1",
+        "source_tree_sha256": "4ccfb4eae5b3f609229383b0e2424b46f1bd6a54f30327eacfb7f69f5bbcf111",
         "source_tree_origin": "pinned_snapshot_directory"
       }
     }

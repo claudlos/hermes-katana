@@ -244,9 +244,7 @@ CURRENT_CORE_PATCHES: list[Patch] = [
             ensure_dispatcher_bootstrap(self)
         except Exception:
             pass
-        # --- End Katana bootstrap ---""".format(
-            sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap"
-        ),
+        # --- End Katana bootstrap ---""".format(sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap"),
         sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap",
         critical=True,
     ),
@@ -273,9 +271,7 @@ CURRENT_CORE_PATCHES: list[Patch] = [
 
     def get_all_tool_names(self) -> List[str]:
         \"\"\"Return sorted list of all registered tool names.\"\"\"
-        return sorted(self._tools.keys())""".format(
-            sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit"
-        ),
+        return sorted(self._tools.keys())""".format(sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit"),
         sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit",
         critical=True,
     ),
@@ -313,9 +309,7 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         # --- End Katana proxy injection ---
         return _LocalEnvironment(cwd=cwd, timeout=timeout,
                                  persistent=lc.get("persistent", False),
-                                 env=_katana_proxy_env)""".format(
-            sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars"
-        ),
+                                 env=_katana_proxy_env)""".format(sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars"),
         sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars",
         critical=True,
     ),
@@ -432,9 +426,7 @@ CURRENT_CORE_PATCHES: list[Patch] = [
 
         # Get or create session
         session_entry = self.session_store.get_or_create_session(source)
-        session_key = session_entry.session_key""".format(
-            sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning"
-        ),
+        session_key = session_entry.session_key""".format(sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning"),
         sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning",
         critical=False,
     ),

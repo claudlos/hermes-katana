@@ -1,0 +1,12 @@
+# Default: let git detect, but prefer LF in the working tree for source files.
+# NB: later rules override earlier ones — keep this first.
+* text=auto eol=lf
+
+# Hermes snapshot fixtures are byte-exact copies of upstream Hermes source.
+# They are hashed in MANIFEST.json, so ANY line-ending conversion (CRLF on
+# Windows vs LF on Linux) breaks the hash verification tests.
+# Treat them as binary so git never rewrites line endings.
+tests/fixtures/hermes_compat/** -text
+
+# MANIFEST.json itself stays as text with LF — it's JSON we edit by hand.
+tests/fixtures/hermes_compat/**/MANIFEST.json text eol=lf
