@@ -399,11 +399,10 @@ class KatanaProxy:
                 )
             pid = self._process.pid
         except FileNotFoundError:
-            # mitmproxy not installed - use a simulated PID for testing
-            logger.warning(
-                "mitmproxy not found, creating stub proxy record"
+            raise RuntimeError(
+                "mitmproxy is not installed or not found on PATH. "
+                "Install it with: pip install mitmproxy"
             )
-            pid = os.getpid()
 
         # Write PID file
         vault_hash = _compute_vault_hash(self.vault)

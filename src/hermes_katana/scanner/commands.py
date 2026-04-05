@@ -23,6 +23,54 @@ from __future__ import annotations
 
 import re
 import unicodedata
+
+# Confusable homoglyph map: maps visually similar Unicode characters
+# (e.g. Cyrillic, Greek) to their ASCII equivalents for security matching.
+# This handles cases that NFKD normalization alone cannot resolve.
+_CONFUSABLE_MAP = str.maketrans({
+    '\u0430': 'a',  # Cyrillic а -> a
+    '\u0435': 'e',  # Cyrillic е -> e
+    '\u043e': 'o',  # Cyrillic о -> o
+    '\u0440': 'r',  # Cyrillic р -> r
+    '\u0441': 'c',  # Cyrillic с -> c
+    '\u0443': 'y',  # Cyrillic у -> y (visual similarity)
+    '\u0445': 'x',  # Cyrillic х -> x
+    '\u0456': 'i',  # Cyrillic і -> i
+    '\u0458': 'j',  # Cyrillic ј -> j
+    '\u04bb': 'h',  # Cyrillic һ -> h
+    '\u043d': 'n',  # Cyrillic н -> n (some fonts)
+    '\u043c': 'm',  # Cyrillic м -> m (some fonts)
+    '\u0442': 't',  # Cyrillic т -> t (some fonts)
+    '\u03b1': 'a',  # Greek α -> a
+    '\u03b5': 'e',  # Greek ε -> e
+    '\u03bf': 'o',  # Greek ο -> o
+    '\u03c1': 'r',  # Greek ρ -> r (visual)
+    '\u03b9': 'i',  # Greek ι -> i
+    '\u03ba': 'k',  # Greek κ -> k
+    '\u0391': 'A',  # Greek Α -> A
+    '\u0392': 'B',  # Greek Β -> B
+    '\u0395': 'E',  # Greek Ε -> E
+    '\u0397': 'H',  # Greek Η -> H
+    '\u0399': 'I',  # Greek Ι -> I
+    '\u039a': 'K',  # Greek Κ -> K
+    '\u039c': 'M',  # Greek Μ -> M
+    '\u039d': 'N',  # Greek Ν -> N
+    '\u039f': 'O',  # Greek Ο -> O
+    '\u03a1': 'P',  # Greek Ρ -> P
+    '\u03a4': 'T',  # Greek Τ -> T
+    '\u03a5': 'Y',  # Greek Υ -> Y
+    '\u03a7': 'X',  # Greek Χ -> X
+    '\u03b6': 'z',  # Greek ζ -> z (visual)
+    '\u2010': '-',  # Hyphen
+    '\u2011': '-',  # Non-breaking hyphen
+    '\u2012': '-',  # Figure dash
+    '\u2013': '-',  # En dash
+    '\u2014': '-',  # Em dash
+    '\u2015': '-',  # Horizontal bar
+    '\u2212': '-',  # Minus sign
+    '\uff0f': '/',  # Fullwidth solidus
+    '\uff5c': '|',  # Fullwidth vertical bar
+})
 from dataclasses import dataclass
 from enum import Enum
 
@@ -924,13 +972,14 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
     if not cmd:
         return []
 
-    # Unicode homoglyph bypass: normalize to NFKD and fold to ASCII
-    # so that Cyrillic/Greek lookalikes (e->e, a->a, c->c, etc.) are
-    # reduced to their ASCII equivalents before pattern matching.
+    # Unicode homoglyph bypass: first apply confusable map for Cyrillic/Greek
+    # lookalikes, then NFKD-normalize and fold to ASCII.
     # Use str.__str__ to extract raw string before encoding to avoid
     # TaintedStr.encode() warning — taint is not needed after ASCII folding.
-    normalized = unicodedata.normalize("NFKD", cmd)
-    cmd = str.__str__(normalized).encode("ascii", "ignore").decode("ascii")
+    cmd_raw = str.__str__(cmd) if hasattr(cmd, 'sources') else cmd
+    confusable_fixed = cmd_raw.translate(_CONFUSABLE_MAP)
+    normalized = unicodedata.normalize("NFKD", confusable_fixed)
+    cmd = normalized.encode("ascii", "ignore").decode("ascii")
 
     if not cmd:
         return []

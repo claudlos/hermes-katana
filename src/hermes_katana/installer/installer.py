@@ -498,10 +498,27 @@ class KatanaInstaller:
         backup_root = Path(manifest.backup_root).resolve()
         actions: list[str] = []
 
+        def _validate_containment(path: Path, container: Path, label: str) -> None:
+            """Ensure resolved path stays within container."""
+            try:
+                path.resolve().relative_to(container)
+            except ValueError:
+                raise ValueError(
+                    f"{label} path escapes container: {path} is not under {container}"
+                )
+            # Reject symlinks that could redirect operations
+            if path.is_symlink():
+                raise ValueError(f"{label} path is a symlink: {path}")
+
         for relative_raw in manifest.files:
             relative = Path(relative_raw)
+            # Reject absolute paths and traversal
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError(f"Manifest contains unsafe path: {relative_raw}")
             source = backup_root / relative
             destination = target / relative
+            _validate_containment(source, backup_root, "Source")
+            _validate_containment(destination, target, "Destination")
             actions.append(f"Restore {relative.as_posix()}")
 
             if dry_run:
@@ -515,7 +532,10 @@ class KatanaInstaller:
 
         for relative_raw in manifest.missing_paths:
             relative = Path(relative_raw)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError(f"Manifest contains unsafe missing_path: {relative_raw}")
             destination = target / relative
+            _validate_containment(destination, target, "Remove target")
             if destination.exists():
                 actions.append(f"Remove {relative.as_posix()}")
                 if dry_run:

@@ -475,11 +475,25 @@ def _stash_context(call_id: str, ctx: Any) -> None:
 
 
 def _pop_context(tool_name: str, task_id: str) -> Any:
-    """Find and remove the most recent pre-dispatch context for this tool.
+    """Find and remove the pre-dispatch context for this tool and task_id.
 
-    Falls back to the most recent context if an exact match isn't found.
+    Matches on both tool_name and task_id to avoid context mix-up under
+    concurrent calls. Falls back to tool_name-only match if task_id is
+    not available.
     """
-    # Try to find by tool name (most recent first)
+    # First pass: match both tool_name and task_id
+    if task_id:
+        for call_id in reversed(list(_context_stash.keys())):
+            ctx = _context_stash.get(call_id)
+            if (
+                ctx is not None
+                and getattr(ctx, "tool_name", "") == tool_name
+                and getattr(ctx, "task_id", "") == task_id
+            ):
+                _context_stash.pop(call_id, None)
+                return ctx
+
+    # Fallback: match tool_name only (for callers that don't provide task_id)
     for call_id in reversed(list(_context_stash.keys())):
         ctx = _context_stash.get(call_id)
         if ctx is not None and getattr(ctx, "tool_name", "") == tool_name:

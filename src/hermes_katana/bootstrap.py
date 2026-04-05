@@ -257,14 +257,26 @@ def ensure_dispatcher_bootstrap(
 
 
 def _resolve_checkout_path(checkout_root: Path, raw_path: Any) -> Optional[Path]:
-    """Resolve a path from checkout-local config."""
+    """Resolve a path from checkout-local config, enforcing containment."""
     if raw_path in (None, ""):
         return None
 
     path = Path(str(raw_path)).expanduser()
     if not path.is_absolute():
         path = checkout_root / path
-    return path.resolve()
+    resolved = path.resolve()
+
+    # Enforce containment: resolved path must be under checkout root
+    try:
+        resolved.relative_to(checkout_root.resolve())
+    except ValueError:
+        logger.warning(
+            "Checkout-local path '%s' resolves outside checkout root '%s' — rejected",
+            raw_path,
+            checkout_root,
+        )
+        return None
+    return resolved
 
 
 def _build_runtime_bundle(state: CheckoutRuntimeState) -> RuntimeBundle:
