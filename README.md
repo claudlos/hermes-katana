@@ -1,18 +1,20 @@
-```
- _   _                                _  __      _
-| | | | ___ _ __ _ __ ___   ___  ___ | |/ /__ _ | |_ __ _ _ __   __ _
-| |_| |/ _ \ '__| '_ ` _ \ / _ \/ __|| ' // _` || __/ _` | '_ \ / _` |
-|  _  |  __/ |  | | | | | |  __/\__ \| . \ (_| || || (_| | | | | (_| |
-|_| |_|\___|_|  |_| |_| |_|\___||___/|_|\_\__,_| \__\__,_|_| |_|\__,_|
-```
+<p align="center">
+  <img src="docs/assets/banner.png" alt="HermesKatana" width="800">
+</p>
 
-**Defense-in-depth security middleware for AI agents — the first production implementation of CaMeL taint tracking.**
+<h1 align="center">HermesKatana</h1>
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-1214%20passing-brightgreen)
-![Eval](https://img.shields.io/badge/adversarial%20eval-159%2F159-brightgreen)
-![PyPI](https://img.shields.io/badge/pypi-v1.0.0-orange)
+<p align="center">
+  <strong>Defense-in-depth security middleware for AI agents — the first production implementation of CaMeL taint tracking.</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License">
+  <img src="https://img.shields.io/badge/tests-1214%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/adversarial%20eval-159%2F159-brightgreen" alt="Eval">
+  <img src="https://img.shields.io/badge/version-v2.0.0-orange" alt="Version">
+</p>
 
 ---
 
