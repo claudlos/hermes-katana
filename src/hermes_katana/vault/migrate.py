@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from hermes_katana._paths import safe_home as _safe_home
+
 if TYPE_CHECKING:
     from hermes_katana.vault.store import Vault
 
@@ -31,19 +33,6 @@ __all__ = [
     "discover_secrets",
     "migrate_secrets",
 ]
-
-
-def _safe_home() -> Optional[Path]:
-    """Return Path.home() or None if the home directory cannot be resolved.
-
-    On Windows, Path.home() raises RuntimeError when USERPROFILE/HOMEDRIVE are
-    unset (e.g. in isolated test environments that clear os.environ). Callers
-    use this helper to skip home-based candidate paths gracefully.
-    """
-    try:
-        return Path.home()
-    except (RuntimeError, KeyError):
-        return None
 
 
 # ---------------------------------------------------------------------------

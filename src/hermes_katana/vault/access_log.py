@@ -92,7 +92,9 @@ def _infer_caller(skip: int = 3) -> str:
 
 def _default_access_log_path() -> Path:
     """Default path for the vault access log."""
-    return Path.home() / ".config" / "hermes-katana" / "vault_access.jsonl"
+    from hermes_katana._paths import home_or_fallback
+
+    return home_or_fallback() / ".config" / "hermes-katana" / "vault_access.jsonl"
 
 
 class VaultAccessLog:

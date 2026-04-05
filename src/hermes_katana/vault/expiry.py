@@ -39,7 +39,9 @@ __all__ = [
 
 def _default_expiry_path() -> Path:
     """Default path for the expiry metadata file."""
-    return Path.home() / ".config" / "hermes-katana" / "vault_expiry.json"
+    from hermes_katana._paths import home_or_fallback
+
+    return home_or_fallback() / ".config" / "hermes-katana" / "vault_expiry.json"
 
 
 class SecretExpiry:
