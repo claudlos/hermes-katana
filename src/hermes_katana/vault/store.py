@@ -292,24 +292,33 @@ def _get_master_key() -> Optional[bytes]:
     Returns:
         The 32-byte master key, or None if not found.
     """
+    def _validate_key(key_bytes: bytes) -> bytes:
+        if len(key_bytes) != _KEY_SIZE:
+            raise VaultError(
+                f"Master key must be {_KEY_SIZE} bytes, got {len(key_bytes)}"
+            )
+        return key_bytes
+
     try:
         import keyring
         raw = keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
         if raw is None:
             # Keyring exists but has no stored key — fall through to env var
             raise KeyError("no key in keyring")
-        return base64.b64decode(raw)
+        return _validate_key(base64.b64decode(raw))
     except ImportError:
         logger.warning(
             "keyring package not installed, falling back to environment variable"
         )
+    except VaultError:
+        raise
     except Exception as exc:
         logger.warning("Failed to read keyring: %s, falling back to environment variable", exc)
 
     # Fallback: check environment variable
     raw_env = os.environ.pop("HERMES_KATANA_VAULT_KEY", None)
     if raw_env:
-        return base64.b64decode(raw_env)
+        return _validate_key(base64.b64decode(raw_env))
     return None
 
 
@@ -524,7 +533,12 @@ class Vault:
             stored_hmac = vault.get("hmac", "")
 
             # Verify HMAC integrity before returning any data
-            if entries and stored_hmac:
+            if entries:
+                if not stored_hmac:
+                    raise VaultIntegrityError(
+                        "Vault integrity check failed: HMAC missing on non-empty vault. "
+                        "The vault file may have been tampered with."
+                    )
                 expected_hmac = _compute_hmac(entries, master_key)
                 if not hmac.compare_digest(stored_hmac, expected_hmac):
                     raise VaultIntegrityError(
@@ -660,19 +674,27 @@ class Vault:
             old_key = self._get_key()
             new_key = secrets.token_bytes(_KEY_SIZE)
 
-            # Write rotation journal for crash recovery
+            # Write rotation journal for crash recovery.
+            # Keys are encrypted with each other to avoid writing plaintext keys to disk:
+            # old_key is encrypted with new_key, new_key is encrypted with old_key.
             journal_path = self._path.with_suffix(".rotation_journal")
             try:
                 import time as _time
                 journal_data = {
                     "status": "in_progress",
-                    "old_key": base64.b64encode(old_key).decode("ascii"),
-                    "new_key": base64.b64encode(new_key).decode("ascii"),
+                    "old_key_enc": _encrypt_value(
+                        base64.b64encode(old_key).decode("ascii"), new_key
+                    ),
+                    "new_key_enc": _encrypt_value(
+                        base64.b64encode(new_key).decode("ascii"), old_key
+                    ),
                     "timestamp": _time.time(),
                 }
                 journal_path.write_text(
                     json.dumps(journal_data), encoding="utf-8"
                 )
+                # Restrict permissions
+                journal_path.chmod(0o600)
             except Exception as exc:
                 raise VaultError(f"Failed to write rotation journal: {exc}")
 
@@ -735,15 +757,42 @@ class Vault:
                 journal_path.unlink()
                 return False
 
-            new_key = base64.b64decode(journal["new_key"])
-            old_key = base64.b64decode(journal["old_key"])
+            # Keys are stored encrypted in the journal.
+            # We need the current master key to bootstrap recovery.
+            current_key = self._get_key()
+
+            # Try to recover keys from journal
+            # new_key_enc was encrypted with old_key, old_key_enc with new_key
+            new_key: bytes | None = None
+            old_key: bytes | None = None
+            try:
+                # If current_key is old_key, we can decrypt new_key_enc
+                new_key_b64 = _decrypt_value(journal["new_key_enc"], current_key)
+                new_key = base64.b64decode(new_key_b64)
+                old_key = current_key
+            except (VaultError, KeyError):
+                pass
+
+            if new_key is None:
+                try:
+                    # If current_key is new_key, we can decrypt old_key_enc
+                    old_key_b64 = _decrypt_value(journal["old_key_enc"], current_key)
+                    old_key = base64.b64decode(old_key_b64)
+                    new_key = current_key
+                except (VaultError, KeyError):
+                    pass
+
+            if new_key is None or old_key is None:
+                logger.error("Cannot recover rotation: unable to decrypt journal keys")
+                return False
 
             vault = self._read_vault()
             entries = vault.get("entries", {})
             if entries:
-                first_key = next(iter(entries))
+                # Validate ALL entries, not just the first
                 try:
-                    _decrypt_value(entries[first_key], new_key)
+                    for encrypted in entries.values():
+                        _decrypt_value(encrypted, new_key)
                     _set_master_key(new_key)
                     self._master_key = SecureBytes(new_key)
                     journal_path.unlink()
@@ -753,7 +802,8 @@ class Vault:
                     pass
 
                 try:
-                    _decrypt_value(entries[first_key], old_key)
+                    for encrypted in entries.values():
+                        _decrypt_value(encrypted, old_key)
                     _set_master_key(old_key)
                     self._master_key = SecureBytes(old_key)
                     journal_path.unlink()

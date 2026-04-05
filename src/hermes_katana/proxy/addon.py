@@ -318,7 +318,7 @@ class KatanaAddon:
         _injected_headers: set[str] = set()
         if self.config.inject_credentials and self.vault is not None:
             # The injector may have added Authorization or api-key headers
-            for hdr in ("authorization", "api-key", "x-api-key"):
+            for hdr in ("authorization", "api-key", "x-api-key", "x-goog-api-key"):
                 if hdr in {k.lower() for k in flow.request.headers}:
                     _injected_headers.add(hdr)
 
@@ -402,7 +402,7 @@ class KatanaAddon:
                     )
                     flow.response = _make_block_response(
                         400,
-                        f"Request blocked: {scan_result['summary']}",
+                        "Request blocked by security policy.",
                     )
                     self._log_audit(
                         "SCAN_RESULT",
@@ -488,7 +488,7 @@ class KatanaAddon:
                     )
                     # Replace response body with warning
                     flow.response.set_content(
-                        f"[HermesKatana] Response blocked: {scan_result['summary']}".encode()
+                        b"[HermesKatana] Response blocked by security policy."
                     )
                     flow.response.status_code = 502
                     self._log_audit(
@@ -497,6 +497,13 @@ class KatanaAddon:
                         "deny",
                         scan_result["summary"],
                     )
+                    # Inject header and return early — do not count as passed
+                    if self.config.add_scanned_header:
+                        try:
+                            flow.response.headers["X-Katana-Scanned"] = "true"
+                        except AttributeError:
+                            pass
+                    return
                 elif scan_result["finding_count"] > 0:
                     self._increment_stat("responses_warned")
                     self._log_audit(
@@ -570,7 +577,7 @@ class KatanaAddon:
             if scan_result["is_blocked"]:
                 self._increment_stat("ws_messages_blocked")
                 logger.warning("WebSocket message blocked: %s", scan_result["summary"])
-                msg.content = f"[HermesKatana] Blocked: {scan_result['summary']}".encode()
+                msg.content = b"[HermesKatana] Message blocked by security policy."
                 self._log_audit(
                     "SCAN_RESULT", "websocket_scan", "deny", scan_result["summary"],
                 )

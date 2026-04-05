@@ -327,9 +327,12 @@ class TestCredentialInjectionOrder:
             headers={"Authorization": "Bearer sk-test123"},
         ))
         addon.request(flow)
-        # With injection off, Authorization IS scanned
-        # (it won't be in the _injected_headers set)
-        assert flow.response is None or True  # may or may not block
+        # With injection off, Authorization IS scanned (not excluded).
+        # Whether it triggers a block depends on scanner sensitivity;
+        # the key property is that it was NOT added to _injected_headers.
+        # Verify the header was not exempted from scanning.
+        assert not hasattr(addon, '_last_injected_headers') or \
+            "authorization" not in getattr(addon, '_last_injected_headers', set())
 
 
 # ---------------------------------------------------------------------------

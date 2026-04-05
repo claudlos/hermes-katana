@@ -602,13 +602,18 @@ def scan_for_secrets(
     # --- 1. Pattern-based detection ---
     for name, pattern, category, severity, description in _SECRET_PATTERNS:
         for match in pattern.finditer(text):
-            secret = match.group(1) if match.lastindex else match.group()
+            if match.lastindex:
+                secret = match.group(1)
+                pos = (match.start(1), match.end(1))
+            else:
+                secret = match.group()
+                pos = (match.start(), match.end())
             findings.append(SecretFinding(
                 pattern_name=name,
                 category=category,
                 severity=severity,
                 matched_text=_mask_secret(secret),
-                position=(match.start(), match.end()),
+                position=pos,
                 description=description,
                 confidence=0.95,
             ))
@@ -618,8 +623,11 @@ def scan_for_secrets(
         for vault_val in vault_values:
             if not vault_val or len(vault_val) < 4:
                 continue
-            idx = text.find(vault_val)
-            if idx >= 0:
+            start = 0
+            while True:
+                idx = text.find(vault_val, start)
+                if idx < 0:
+                    break
                 findings.append(SecretFinding(
                     pattern_name="vault_exact_match",
                     category=SecretCategory.VAULT_MATCH,
@@ -632,6 +640,7 @@ def scan_for_secrets(
                     ),
                     confidence=1.0,
                 ))
+                start = idx + 1
 
     # --- 3. Entropy-based detection ---
     for match in _ENTROPY_CANDIDATE.finditer(text):
