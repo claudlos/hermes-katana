@@ -50,6 +50,7 @@ from hermes_katana.taint.labels import (
 from hermes_katana.taint.tracker import TaintTracker, TrackerStats
 from hermes_katana.taint.value import (
     CharTaint,
+    TaintedBytes,
     TaintedDict,
     TaintedList,
     TaintedStr,
@@ -57,9 +58,18 @@ from hermes_katana.taint.value import (
     collect_sources,
     unwrap,
 )
+from hermes_katana.taint.codecs import (
+    codec_hooks_installed,
+    install_codec_hooks,
+    uninstall_codec_hooks,
+)
 
 # Public alias — FlowAnalyzer *is* the policy engine
 TaintPolicy = FlowAnalyzer
+
+# Auto-install codec hooks so base64/json/codecs round-trips preserve taint.
+# Opt out with HERMES_KATANA_CODEC_HOOKS=0 in the environment.
+install_codec_hooks()
 
 __all__ = [
     # Labels & provenance
@@ -71,6 +81,7 @@ __all__ = [
     # Values
     "TaintedValue",
     "TaintedStr",
+    "TaintedBytes",
     "TaintedList",
     "TaintedDict",
     "CharTaint",
@@ -85,4 +96,8 @@ __all__ = [
     "FlowAnalysis",
     "FlowAnalyzer",
     "TaintPolicy",
+    # Codec hooks
+    "install_codec_hooks",
+    "uninstall_codec_hooks",
+    "codec_hooks_installed",
 ]
