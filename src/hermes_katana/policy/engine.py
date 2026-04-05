@@ -510,7 +510,8 @@ class PolicyEngine:
         taint_context: dict[str, Any],
     ) -> str:
         """Build a deterministic cache key for an evaluation."""
-        import hashlib, json
+        import hashlib
+        import json
         blob = json.dumps(
             {"t": tool_name, "a": args, "c": taint_context},
             sort_keys=True,
@@ -565,8 +566,8 @@ class PolicyEngine:
                     action=PolicyResult.DENY,
                     matched_policy=None,
                     reason=(
-                        f"command_safety_check denied terminal call: "
-                        f"dangerous command with tainted args"
+                        "command_safety_check denied terminal call: "
+                        "dangerous command with tainted args"
                     ),
                     details={
                         "tool_name": tool_name,

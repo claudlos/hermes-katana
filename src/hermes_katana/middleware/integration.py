@@ -119,8 +119,7 @@ class KatanaTaintMiddleware(KatanaMiddleware):
         Also populates ``ctx.taint_context`` with structured taint metadata
         for downstream policy evaluation.
         """
-        from hermes_katana.taint import TaintedValue, FlowDecision
-        from hermes_katana.taint.value import TaintedStr
+        from hermes_katana.taint import FlowDecision
 
         tracker = self.tracker
         tainted_fields: dict[str, Any] = {}

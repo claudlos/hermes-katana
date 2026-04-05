@@ -16,9 +16,8 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
-from hermes_katana.taint.labels import Source, TaintLabel, TrustLevel
+from hermes_katana.taint.labels import Source, TrustLevel
 from hermes_katana.taint.tracker import TaintTracker
 from hermes_katana.taint.value import TaintedStr
 

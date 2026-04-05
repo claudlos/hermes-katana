@@ -136,10 +136,10 @@ def _code_block_ratio(text: str) -> float:
 
 def _doc_line_ratio(text: str) -> float:
     """Return the fraction of lines that look like documentation/comments."""
-    lines = [l for l in text.splitlines() if l.strip()]
+    lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         return 0.0
-    doc_count = sum(1 for l in lines if _DOC_LINE_RE.match(l))
+    doc_count = sum(1 for line in lines if _DOC_LINE_RE.match(line))
     return doc_count / len(lines)
 
 
