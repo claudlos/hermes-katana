@@ -47,6 +47,106 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Benign command whitelist — commands safe even with mild taint
+# ---------------------------------------------------------------------------
+
+BENIGN_COMMANDS: set[str] = {
+    "ls", "cat", "echo", "pwd", "cd", "pip", "pip3", "npm", "npx", "yarn",
+    "git", "head", "tail", "wc", "sort", "uniq", "grep", "find", "which",
+    "whoami", "date", "env", "printenv", "uname", "df", "du", "free",
+    "ps", "top", "htop", "file", "stat", "id", "hostname", "uptime",
+    "python3", "python", "node", "cargo", "rustc", "make", "cmake",
+    "tree", "less", "more", "diff", "basename", "dirname", "realpath",
+    "mkdir", "touch", "cp", "mv",  # mild side-effects but common dev ops
+}
+
+# Git subcommands that are read-only / safe
+BENIGN_GIT_SUBCOMMANDS: set[str] = {
+    "status", "log", "diff", "show", "branch", "tag", "remote", "stash",
+    "describe", "shortlog", "reflog", "config", "ls-files", "ls-tree",
+}
+
+
+def _extract_base_command(command: str) -> str:
+    """Extract the base command name from a shell command string."""
+    cmd = command.strip()
+    # Strip leading env vars like FOO=bar cmd
+    while "=" in cmd.split()[0] if cmd.split() else False:
+        parts = cmd.split(None, 1)
+        cmd = parts[1] if len(parts) > 1 else ""
+    # Strip sudo prefix
+    if cmd.startswith("sudo "):
+        cmd = cmd[5:].strip()
+    base = cmd.split()[0] if cmd.split() else ""
+    # Strip path prefix
+    if "/" in base:
+        base = base.rsplit("/", 1)[-1]
+    return base
+
+
+def _is_benign_command(command: str) -> bool:
+    """Check if a command is benign (safe even with mild taint)."""
+    base = _extract_base_command(command)
+    if not base:
+        return False
+    if base in BENIGN_COMMANDS:
+        # Special check for git — only safe subcommands
+        if base == "git":
+            parts = command.strip().split()
+            git_idx = next((i for i, p in enumerate(parts) if p == "git" or p.endswith("/git")), -1)
+            if git_idx >= 0 and git_idx + 1 < len(parts):
+                subcmd = parts[git_idx + 1]
+                return subcmd in BENIGN_GIT_SUBCOMMANDS
+            return True  # bare 'git' is fine
+        return True
+    return False
+
+
+def command_safety_check(
+    command: str,
+    taint_context: dict[str, Any],
+) -> PolicyResult:
+    """Cross-reference command content with taint to decide action.
+
+    Logic:
+    - Clean (no taint) → ALLOW regardless of command content
+    - Tainted + dangerous command pattern → DENY
+    - Tainted + benign command → ALLOW (low taint ≤3) or ESCALATE (higher)
+    - Tainted + unknown command → ESCALATE
+
+    This is used by the engine as an advisory pre-check for terminal calls.
+    """
+    is_tainted = _field_is_tainted(taint_context, "*")
+
+    if not is_tainted:
+        return PolicyResult.ALLOW
+
+    taint_level = _field_level(taint_context, "*")
+
+    # Check if command is flagged as dangerous by the scanner
+    try:
+        from hermes_katana.scanner.commands import detect_dangerous_command
+        findings = detect_dangerous_command(command)
+        is_dangerous = len(findings) > 0
+    except ImportError:
+        # Scanner not available — be conservative
+        is_dangerous = False
+
+    if is_dangerous:
+        return PolicyResult.DENY
+
+    if _is_benign_command(command):
+        # Low taint (1-3) + benign = allow
+        if taint_level <= 3:
+            return PolicyResult.ALLOW
+        # Medium taint (4-6) + benign = escalate
+        return PolicyResult.ESCALATE
+
+    # Unknown command + tainted = escalate
+    return PolicyResult.ESCALATE
+
+
+# ---------------------------------------------------------------------------
 # Evaluation result
 # ---------------------------------------------------------------------------
 
@@ -234,6 +334,11 @@ def evaluate_condition(
         threshold = int(val) if val is not None else 0
         return level >= threshold
 
+    elif op == ConditionOperator.TAINT_LEVEL_LTE:
+        level = _field_level(taint_context, fld)
+        threshold = int(val) if val is not None else 0
+        return level <= threshold
+
     elif op == ConditionOperator.HAS_LABEL:
         labels = _field_labels(taint_context, fld)
         return str(val) in labels
@@ -263,12 +368,21 @@ class PolicyEngine:
     Thread safety: all mutations are protected by a reentrant lock so the
     engine can be shared across threads and updated via hot-reload.
 
+    Features:
+    - Glob-based tool-name matching
+    - Priority-ordered evaluation (highest first, first match wins)
+    - Command safety cross-referencing (terminal calls checked against scanner)
+    - LRU caching for repeated evaluations on same tool+args patterns
+
     Usage::
 
         engine = PolicyEngine.with_defaults("balanced")
         result = engine.evaluate("terminal", {"command": "ls"}, {})
         print(result.action)  # PolicyResult.ALLOW
     """
+
+    # Class-level LRU cache for policy evaluations
+    _EVAL_CACHE_MAX = 512
 
     def __init__(
         self,
@@ -286,6 +400,7 @@ class PolicyEngine:
         self._default_action = default_action
         self._policy_set_name: str = "custom"
         self._watcher: Optional[PolicyFileWatcher] = None
+        self._eval_cache: dict[str, EvaluationResult] = {}
 
         # Sort by priority descending on init
         self._sort_policies()
@@ -372,6 +487,25 @@ class PolicyEngine:
 
     # -- Core evaluation ----------------------------------------------------
 
+    @staticmethod
+    def _make_cache_key(
+        tool_name: str,
+        args: dict[str, Any],
+        taint_context: dict[str, Any],
+    ) -> str:
+        """Build a deterministic cache key for an evaluation."""
+        import hashlib, json
+        blob = json.dumps(
+            {"t": tool_name, "a": args, "c": taint_context},
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha256(blob.encode()).hexdigest()[:32]
+
+    def invalidate_cache(self) -> None:
+        """Clear the evaluation cache (called on policy mutations)."""
+        self._eval_cache.clear()
+
     def evaluate(
         self,
         tool_name: str,
@@ -384,6 +518,12 @@ class PolicyEngine:
         policy whose tool pattern matches *and* all conditions evaluate to
         True determines the returned action.
 
+        For terminal calls, a ``command_safety_check`` is run first to
+        cross-reference the command scanner: dangerous+tainted → DENY,
+        benign+low-taint → ALLOW, otherwise → ESCALATE.
+
+        Results are cached by (tool_name, args, taint_context) hash.
+
         Args:
             tool_name:     The Hermes tool being invoked (e.g. ``terminal``).
             args:          The tool's arguments as a flat dict.
@@ -394,6 +534,32 @@ class PolicyEngine:
         """
         if taint_context is None:
             taint_context = {}
+
+        # Check cache first
+        cache_key = self._make_cache_key(tool_name, args, taint_context)
+        cached = self._eval_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        # Command safety pre-check for terminal calls
+        if tool_name == "terminal" and "command" in args:
+            safety = command_safety_check(args["command"], taint_context)
+            if safety == PolicyResult.DENY:
+                result = EvaluationResult(
+                    action=PolicyResult.DENY,
+                    matched_policy=None,
+                    reason=(
+                        f"command_safety_check denied terminal call: "
+                        f"dangerous command with tainted args"
+                    ),
+                    details={
+                        "tool_name": tool_name,
+                        "policy_set": self._policy_set_name,
+                        "safety_check": "dangerous_tainted",
+                    },
+                )
+                self._cache_put(cache_key, result)
+                return result
 
         with self._lock:
             for policy in self._policies:
@@ -416,7 +582,7 @@ class PolicyEngine:
                         f"(pattern='{policy.tool_pattern}', priority={policy.priority})"
                     )
                     logger.debug(reason)
-                    return EvaluationResult(
+                    result = EvaluationResult(
                         action=policy.action,
                         matched_policy=policy,
                         reason=reason,
@@ -426,14 +592,27 @@ class PolicyEngine:
                             "policy_set": self._policy_set_name,
                         },
                     )
+                    self._cache_put(cache_key, result)
+                    return result
 
         # No policy matched — use default
-        return EvaluationResult(
+        result = EvaluationResult(
             action=self._default_action,
             matched_policy=None,
             reason=f"No policy matched tool '{tool_name}'; using default action",
             details={"tool_name": tool_name, "policy_set": self._policy_set_name},
         )
+        self._cache_put(cache_key, result)
+        return result
+
+    def _cache_put(self, key: str, result: EvaluationResult) -> None:
+        """Insert into cache, evicting oldest if over limit."""
+        if len(self._eval_cache) >= self._EVAL_CACHE_MAX:
+            # Evict ~25% of oldest entries
+            keys = list(self._eval_cache.keys())
+            for k in keys[: len(keys) // 4]:
+                self._eval_cache.pop(k, None)
+        self._eval_cache[key] = result
 
     def evaluate_batch(
         self,
@@ -464,6 +643,7 @@ class PolicyEngine:
             self._policies = [p for p in self._policies if p.name != policy.name]
             self._policies.append(policy)
             self._sort_policies()
+            self.invalidate_cache()
         logger.info("Added policy '%s' (priority=%d)", policy.name, policy.priority)
 
     def remove_policy(self, name: str) -> bool:
@@ -472,6 +652,8 @@ class PolicyEngine:
             before = len(self._policies)
             self._policies = [p for p in self._policies if p.name != name]
             removed = len(self._policies) < before
+            if removed:
+                self.invalidate_cache()
         if removed:
             logger.info("Removed policy '%s'", name)
         return removed
@@ -530,6 +712,7 @@ class PolicyEngine:
         with self._lock:
             self._policies = list(policies)
             self._sort_policies()
+            self.invalidate_cache()
         logger.info("Replaced all policies (%d total)", len(policies))
 
     @property

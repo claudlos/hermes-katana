@@ -211,7 +211,7 @@ _sp(
 # Stripe API Key (live or test)
 _sp(
     "stripe_key",
-    r"(?:^|[^A-Za-z0-9_-])((?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{24,})(?:[^A-Za-z0-9_-]|$)",
+    r"(?:^|[^A-Za-z0-9_-])(sk_live_[A-Za-z0-9]{24,})(?:[^A-Za-z0-9_-]|$)",
     SecretCategory.API_KEY,
     SecretSeverity.CRITICAL,
     "Stripe API Key - access to payment processing.",
@@ -275,7 +275,7 @@ _sp(
 # Database connection strings
 _sp(
     "database_url",
-    r"(?:mongodb|postgres|postgresql|mysql|redis|amqp|mssql)://[^\s'\"]{10,}",
+    r"(?:mongodb|postgres|postgresql|mysql|redis|amqp|mssql)://(?!localhost[:/]|127\.0\.0\.1[:/]|\[::1\][:/])[^\s'\"]{10,}",
     SecretCategory.CONNECTION_STRING,
     SecretSeverity.CRITICAL,
     "Database connection string with potential credentials.",
@@ -285,7 +285,7 @@ _sp(
 # Generic password in assignment
 _sp(
     "password_assignment",
-    r"(?:password|passwd|pwd|pass)\s*[=:]\s*['\"]([^'\"\s]{8,})['\"]",
+    r"(?:password|passwd|pwd|pass)\s*[=:]\s*['\"](?!placeholder|test(?:ing)?(?:pass|password|pwd|\d+)|password\d*|changeme|example|dummy|sample|foobar|P[@a]ss(?:w[o0]rd)?[!1]?|default|secret123|abc(?:def)?123|admin123|xxx+|12345678+|\*{3,})['\"]([^'\"\s]{8,})['\"]",
     SecretCategory.PASSWORD,
     SecretSeverity.HIGH,
     "Plaintext password assignment.",

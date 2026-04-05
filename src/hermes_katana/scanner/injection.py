@@ -121,7 +121,7 @@ _hp(
 
 _hp(
     "forget_everything",
-    r"forget\s+(everything|all)\s+(you|that)\s+(know|were|have\s+been)",
+    r"forget\s+(?:everything|all)\s+(?:you|that)\s+(?:know|were|have\s+been)(?!\s+(?:about|told\s+about|taught\s+about|regarding))",
     InjectionCategory.INSTRUCTION_OVERRIDE,
     0.90,
     "Attempt to reset AI context by instructing to forget.",
@@ -137,7 +137,7 @@ _hp(
 
 _hp(
     "override_instructions",
-    r"override\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|rules?|prompts?|settings?)",
+    r"(?<!\w\s)(?<!the\s)(?<!CSS\s)(?<!default\s)(?<!theme\s)override\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|rules?|prompts?|settings?)",
     InjectionCategory.INSTRUCTION_OVERRIDE,
     0.90,
     "Explicit override command for existing instructions.",
@@ -153,7 +153,7 @@ _hp(
 
 _hp(
     "instead_do",
-    r"instead\s*,?\s+(?:you\s+)?(?:should|must|will|need\s+to)\s+(?:do|follow|obey|execute)",
+    r"instead\s*,?\s+(?:you\s+)?(?:should|must|will|need\s+to)\s+(?:obey|execute|ignore|disregard|override|forget|bypass|reveal|extract)",
     InjectionCategory.INSTRUCTION_OVERRIDE,
     0.75,
     "Redirection phrase attempting to substitute new instructions.",
@@ -169,7 +169,7 @@ _hp(
 
 _hp(
     "from_now_on",
-    r"from\s+(?:now|this\s+point)\s+on\s*,?\s+(?:you|your)\s+(?:instructions?|rules?|behavior|responses?)",
+    r"from\s+(?:now|this\s+point)\s+on\s*,?\s+(?:you|your)\s+(?:instructions?|rules?|behavior|responses?)\s+(?:are|will\s+be|should\s+be|must\s+be)\s+to\s+(?:ignore|disregard|override|forget|act|behave|pretend)",
     InjectionCategory.INSTRUCTION_OVERRIDE,
     0.80,
     "Temporal override attempting to establish new rules 'from now on'.",
@@ -177,7 +177,7 @@ _hp(
 
 _hp(
     "actually_your_instructions",
-    r"(?:actually|in\s+fact|really)\s*,?\s+your\s+(?:real|true|actual)\s+(?:instructions?|purpose|role|job)",
+    r"(?:actually|in\s+fact|really)\s*,?\s+your\s+(?:real|true|actual)\s+(?:instructions?|purpose|role|job)\s+(?:is|are)\s+to\s+(?:ignore|disregard|override|forget|act|behave|pretend|say|generate|output|respond)",
     InjectionCategory.INSTRUCTION_OVERRIDE,
     0.85,
     "Gaslighting attack claiming different 'real' instructions exist.",
@@ -195,7 +195,7 @@ _hp(
 
 _hp(
     "pretend_to_be",
-    r"(?:pretend|act|behave|respond)\s+(?:to\s+be|as\s+if\s+you\s+(?:are|were)|like)\s+(?:a\s+)?(?:different|new|unrestricted|evil|hacked)",
+    r"(?:pretend|act|behave|respond)\s+(?:to\s+be|as\s+if\s+you\s+(?:are|were)|like)\s+(?:a\s+)?(?:unrestricted|evil|hacked|jailbroken|unfiltered|uncensored|malicious)",
     InjectionCategory.ROLE_OVERRIDE,
     0.85,
     "Role-play injection to bypass safety guidelines.",
@@ -227,7 +227,7 @@ _hp(
 
 _hp(
     "developer_mode",
-    r"(?:developer|debug|admin|maintenance|test(?:ing)?)\s+mode\s+(?:enabled?|activated?|on|engaged)",
+    r"(?<!the\s)(?<!The\s)(?:developer|debug|admin|maintenance|test(?:ing)?)\s+mode\s+(?:enabled?|activated?|on|engaged)(?!\s+(?:flag|setting|option|variable|field|property|attribute|parameter|config|value|status|state|check|is\s))",
     InjectionCategory.ROLE_OVERRIDE,
     0.85,
     "Claim that a special mode has been enabled.",
@@ -303,7 +303,7 @@ _hp(
 
 _hp(
     "reveal_system_prompt",
-    r"(?:reveal|show|display|print|output|repeat|echo|tell\s+me)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions?|rules?|guidelines?|configuration|initial\s+message)",
+    r"(?:reveal|show|display|print|output|repeat|echo|tell\s+me)\s+(?:your\s+)?(?:full\s+|complete\s+|entire\s+)?(?:system\s+)?(?:prompt|instructions?|rules?|guidelines?|configuration|initial\s+message)(?!\s+(?:settings?|page|file|docs?|documentation|in\s+(?:the\s+)?(?:doc|documentation|readme)))",
     InjectionCategory.SYSTEM_PROMPT_EXTRACT,
     0.85,
     "Attempt to extract system prompt content.",
@@ -319,7 +319,7 @@ _hp(
 
 _hp(
     "repeat_above",
-    r"(?:repeat|recite|copy|reproduce|type\s+out)\s+(?:everything|all|the\s+text|the\s+content)\s+(?:above|before|from\s+the\s+(?:start|beginning))",
+    r"(?:repeat|recite|copy|reproduce|type\s+out)\s+(?:everything|all|the\s+text|the\s+content)\s+(?:above|before|from\s+the\s+(?:start|beginning))(?!\s+this\s+line\s+in\s+the\s+)",
     InjectionCategory.SYSTEM_PROMPT_EXTRACT,
     0.85,
     "Request to repeat all previous text, targeting system prompt.",
@@ -361,7 +361,7 @@ _hp(
 
 _hp(
     "modify_tool_params",
-    r"(?:change|modify|set|update|alter)\s+(?:the\s+)?(?:tool|function|api|command)\s+(?:parameters?|arguments?|inputs?|config)",
+    r"(?:change|modify|set|update|alter)\s+(?:the\s+)?(?:tool|function|api|command)\s+(?:parameters?|arguments?|inputs?|config)\s+(?:so\s+that|in\s+order\s+to|for\s+(?:the\s+)?(?:next|subsequent)|to\s+(?:inject|override|bypass|exfiltrate|redirect|include\s+(?:a\s+)?(?:hidden|secret|malicious)))",
     InjectionCategory.TOOL_MANIPULATION,
     0.75,
     "Attempt to modify tool parameters from data context.",
@@ -443,7 +443,7 @@ _hp(
 
 _hp(
     "memory_instruction_injection",
-    r"(?i)(?:memory\s+instruction|add\s+(?:this\s+)?to\s+(?:your\s+)?(?:memory|context)|remember\s+(?:this\s+)?for\s+(?:future|next|all)\s+(?:session|interaction|time))",
+    r"(?i)(?:memory\s+instruction|add\s+(?:this\s+)?to\s+(?:your\s+)?(?:memory|context)\s*:.{0,80}(?:ignore|disregard|override|always|never|secret|hidden|from\s+now)|remember\s+(?:this\s+)?for\s+(?:future|next|all)\s+(?:session|interaction|time))",
     InjectionCategory.INSTRUCTION_OVERRIDE,
     0.88,
     "Attempt to inject into persistent agent memory — stored injection attack vector.",

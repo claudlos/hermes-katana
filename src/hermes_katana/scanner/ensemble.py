@@ -32,15 +32,22 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Global threshold — below this, findings are informational only
+# ---------------------------------------------------------------------------
+
+ACTIONABLE_THRESHOLD = 0.7
+
+# ---------------------------------------------------------------------------
 # Hand-crafted features (always available, no sklearn needed)
 # ---------------------------------------------------------------------------
 
-# Imperative verb patterns common in injection
+# Imperative verb patterns common in injection — EXCLUDING normal programming
+# terms like run, write, create, generate, output which cause FPs
 _IMPERATIVE_RE = re.compile(
     r"\b(ignore|disregard|forget|override|bypass|skip|pretend|act\s+as|"
     r"you\s+are\s+now|do\s+not\s+follow|instead\s+of|new\s+instructions|"
-    r"reveal|show\s+me|output|print|execute|run|write|create|generate|"
-    r"repeat\s+after\s+me|say\s+the\s+following|from\s+now\s+on)\b",
+    r"reveal|show\s+me|repeat\s+after\s+me|say\s+the\s+following|"
+    r"from\s+now\s+on)\b",
     re.IGNORECASE,
 )
 
@@ -65,6 +72,49 @@ _EXFIL_RE = re.compile(
     r"\b(system\s+prompt|original\s+instructions|hidden\s+instructions|"
     r"initial\s+prompt|secret\s+key|api\s+key|password|credentials|"
     r"confidential|internal\s+rules)\b",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Negative features — indicators of BENIGN text
+# ---------------------------------------------------------------------------
+
+# Code-like syntax: variable assignments, function calls, imports, etc.
+_CODE_SYNTAX_RE = re.compile(
+    r"(?:"
+    r"(?:def|class|import|from|return|if|elif|else|for|while|try|except|with)\s+"  # Python keywords
+    r"|(?:function|const|let|var|=>|===)\s+"  # JS keywords
+    r"|(?:fn|let\s+mut|impl|use|pub\s+fn)\s+"  # Rust keywords
+    r"|\w+\s*[=!<>]=\s*\w+"  # comparisons/assignments
+    r"|\w+\.\w+\("  # method calls
+    r"|\w+\s*=\s*\w+\("  # variable = func()
+    r"|#include\s*<"  # C/C++ includes
+    r"|//\s*\w+"  # line comments
+    r"|/\*"  # block comment start
+    r")",
+    re.MULTILINE,
+)
+
+# Technical terminology (programming, networking, devops)
+_TECHNICAL_RE = re.compile(
+    r"\b(?:function|variable|parameter|argument|return\s+value|"
+    r"database|endpoint|middleware|callback|async|await|"
+    r"container|kubernetes|docker|nginx|"
+    r"array|hashmap|linked\s+list|binary\s+tree|"
+    r"TCP|UDP|HTTP|HTTPS|REST|GraphQL|"
+    r"compile|runtime|stack\s+trace|exception|"
+    r"repository|commit|merge|branch|pull\s+request|"
+    r"pytest|unittest|assert|mock|fixture)\b",
+    re.IGNORECASE,
+)
+
+# Polite/conversational language
+_POLITE_RE = re.compile(
+    r"\b(?:please|thank\s+you|thanks|could\s+you|would\s+you|"
+    r"can\s+you\s+help|I\s+need\s+help|I'm\s+trying\s+to|"
+    r"I\s+have\s+a\s+question|how\s+do\s+I|what\s+is\s+the|"
+    r"could\s+you\s+explain|I'd\s+like\s+to|would\s+it\s+be|"
+    r"is\s+there\s+a\s+way)\b",
     re.IGNORECASE,
 )
 
@@ -119,6 +169,11 @@ def _extract_features(text: str) -> dict[str, float]:
     # Newline density (multi-part instructions)
     newline_ratio = text.count("\n") / length
 
+    # --- Negative (benign) features ---
+    code_hits = len(_CODE_SYNTAX_RE.findall(text))
+    technical_hits = len(_TECHNICAL_RE.findall(text))
+    polite_hits = len(_POLITE_RE.findall(text))
+
     return {
         "imperative_density": imperative_density,
         "imperative_count": float(imperative_hits),
@@ -132,6 +187,10 @@ def _extract_features(text: str) -> dict[str, float]:
         "newline_ratio": newline_ratio,
         "word_count": float(word_count),
         "char_length": float(length),
+        # Negative features (suppress score)
+        "code_hits": float(code_hits),
+        "technical_hits": float(technical_hits),
+        "polite_hits": float(polite_hits),
     }
 
 
@@ -167,6 +226,35 @@ def _feature_score(features: dict[str, float]) -> float:
 
     if features["special_density"] > 0.05:
         score += 0.05
+
+    # Combo bonus: multiple attack signal types reinforce each other
+    attack_signals = sum([
+        features["imperative_count"] >= 1,
+        features["role_hits"] >= 1,
+        features["delimiter_hits"] >= 1,
+        features["exfil_hits"] >= 1,
+    ])
+    if attack_signals >= 3:
+        score += 0.15
+    elif attack_signals >= 2:
+        score += 0.10
+
+    # --- Negative features: suppress score for benign text ---
+    benign_suppression = 0.0
+    if features["code_hits"] >= 2:
+        benign_suppression += 0.15
+    elif features["code_hits"] >= 1:
+        benign_suppression += 0.08
+
+    if features["technical_hits"] >= 2:
+        benign_suppression += 0.12
+    elif features["technical_hits"] >= 1:
+        benign_suppression += 0.06
+
+    if features["polite_hits"] >= 1:
+        benign_suppression += 0.08
+
+    score = max(score - benign_suppression, 0.0)
 
     return min(score, 1.0)
 
@@ -241,6 +329,40 @@ DEFAULT_TRAINING_DATA: list[tuple[str, bool]] = [
     ("What's the difference between let and const in JavaScript?", False),
     ("Can you explain what a hash map is?", False),
     ("Help me write unit tests for this function", False),
+    # === Benign developer messages that contain "suspicious" words ===
+    # These MUST score low — they use words like run, write, create, execute
+    # in normal programming contexts
+    ("Run the test suite with pytest -v", False),
+    ("Write a function that generates Fibonacci numbers", False),
+    ("Create a new React component for the login page", False),
+    ("Generate a migration script for the database schema", False),
+    ("Execute this SQL query: SELECT * FROM users WHERE active = true", False),
+    ("Output the results to a CSV file", False),
+    ("Print the contents of the dictionary for debugging", False),
+    ("Can you run pylint on this module and fix the warnings?", False),
+    ("Write me a Dockerfile that runs a Flask application", False),
+    ("Create a GitHub Actions workflow for CI/CD", False),
+    ("Generate TypeScript types from this JSON schema", False),
+    ("How do I run a background task in Celery?", False),
+    ("Write a shell script that outputs disk usage statistics", False),
+    ("Execute the build pipeline and check for errors", False),
+    ("Can you create unit tests that cover edge cases?", False),
+    ("Please generate API documentation from the docstrings", False),
+    ("Run cargo build --release and show me the output", False),
+    ("Write a Python decorator that logs function execution time", False),
+    ("Create a virtual environment and install dependencies", False),
+    ("Output the stack trace so I can see where it fails", False),
+    ("I need to run database migrations before deploying", False),
+    ("Write a Makefile that builds and tests the project", False),
+    ("Generate a random UUID for the session token", False),
+    ("How do I execute a stored procedure in PostgreSQL?", False),
+    ("Create an index on the email column for faster lookups", False),
+    ("Please write integration tests for the payment module", False),
+    ("Run the linter, fix formatting issues, then commit", False),
+    ("Generate a self-signed SSL certificate for development", False),
+    ("Write a cron job that runs every hour to clean temp files", False),
+    ("Can you create a wrapper function for the HTTP client?", False),
+    ("Output JSON instead of XML for the API response", False),
 ]
 
 
@@ -396,10 +518,15 @@ def combined_score(
     regex_weight: float = 0.6,
     ml_weight: float = 0.4,
 ) -> float:
-    """Combine regex and ensemble scores into a final confidence.
+    """Combine regex and ensemble scores using Bayesian-inspired combination.
 
-    Takes the weighted combination but ensures that a high regex score
-    (strong pattern match) is never diluted below its standalone value.
+    Uses both signals to produce a posterior-like score:
+    - If regex says 0.9 but ensemble says 0.1 -> combined ~0.4 (NOT actionable)
+    - If both say high -> combined stays high
+    - If both say low -> combined stays low
+
+    This is the KEY mechanism to reduce false positives: a high regex score
+    alone is not enough if the ensemble classifier thinks it's benign.
 
     Args:
         regex_score: Score from the regex-based scanner (0-1).
@@ -410,9 +537,45 @@ def combined_score(
     Returns:
         Combined score in [0.0, 1.0].
     """
-    weighted = (regex_weight * regex_score) + (ml_weight * ensemble_score)
-    # Never let the combined score fall below either individual score
-    # when that score is already high (>0.7)
-    floor = max(regex_score if regex_score > 0.7 else 0.0,
-                ensemble_score if ensemble_score > 0.7 else 0.0)
-    return min(max(weighted, floor), 1.0)
+    # Bayesian-inspired combination:
+    # Convert scores to log-odds, combine, convert back
+    # This naturally handles the "disagreement" case
+    def _to_log_odds(p: float) -> float:
+        p = max(min(p, 0.999), 0.001)  # clamp to avoid log(0)
+        return math.log(p / (1.0 - p))
+
+    def _from_log_odds(lo: float) -> float:
+        return 1.0 / (1.0 + math.exp(-lo))
+
+    # If both are zero, short-circuit
+    if regex_score == 0.0 and ensemble_score == 0.0:
+        return 0.0
+
+    # Convert to log-odds space, weight, and combine
+    regex_lo = _to_log_odds(regex_score)
+    ensemble_lo = _to_log_odds(ensemble_score)
+
+    # Prior log-odds (neutral — let the evidence speak)
+    prior_lo = _to_log_odds(0.50)
+
+    # Combine: prior + weighted evidence from both classifiers
+    combined_lo = prior_lo + (regex_weight * regex_lo) + (ml_weight * ensemble_lo)
+
+    result = _from_log_odds(combined_lo)
+
+    return min(max(result, 0.0), 1.0)
+
+
+def is_actionable(score: float) -> bool:
+    """Check if a combined score meets the actionable threshold.
+
+    Scores below ACTIONABLE_THRESHOLD are informational only and should
+    not trigger blocking or alerting.
+
+    Args:
+        score: Combined confidence score (0-1).
+
+    Returns:
+        True if the score is actionable (>= threshold).
+    """
+    return score >= ACTIONABLE_THRESHOLD

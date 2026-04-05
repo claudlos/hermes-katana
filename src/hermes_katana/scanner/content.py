@@ -256,7 +256,7 @@ _CODE_INJECTION_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
     (
         "shell_command_injection",
         re.compile(
-            r"(?:^|\n)\s*(?:\$|#|>>>?)\s*(?:sudo|rm|chmod|curl\s+.*\|\s*(?:ba)?sh|wget\s+.*\|\s*sh|eval|exec)",
+            r"(?:^|\n)\s*(?:\$|#|>>>?)\s*(?:sudo\s+(?!apt|apt-get|pip|dnf|yum|brew|snap|pacman|npm|yarn)\S|rm\s+-[a-zA-Z]*r|chmod\s+(?:777|666|a\+rwx)|curl\s+.*\|\s*(?:ba)?sh|wget\s+.*\|\s*sh|eval|exec)",
             re.MULTILINE,
         ),
         "Shell command with dangerous operations in LLM response. "
@@ -275,7 +275,7 @@ _CODE_INJECTION_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
     (
         "os_system_call",
         re.compile(
-            r"\b(?:os\.system|os\.popen|subprocess\.(?:call|run|Popen)|commands\.getoutput)\s*\(",
+            r"\b(?:os\.system|os\.popen|commands\.getoutput)\s*\(|subprocess\.(?:call|run|Popen)\s*\(\s*(?:f['\"]|input|request|os\.environ|__import__|user|data|cmd|command)",
             re.IGNORECASE,
         ),
         "System command execution in code - may be dangerous if the "
@@ -341,7 +341,7 @@ _MARKDOWN_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
     (
         "markdown_image_tracking",
         re.compile(
-            r"!\[(?:[^\]]*)\]\(\s*https?://(?:(?!(?:github|gitlab|imgur|i\.stack))[^\s/)])+[^\s)]+\.(gif|png|jpg|jpeg|webp|svg)\?[^\s)]+\)",
+            r"!\[(?:[^\]]*)\]\(\s*https?://(?:(?!(?:github|gitlab|imgur|i\.stack|cdn\.|cloudfront|cloudinary|fastly|akamai|jsdelivr|unpkg|staticfile|example\.com|raw\.githubusercontent))[^\s/)])+[^\s)]+\.(gif|png|jpg|jpeg|webp|svg)\?[^\s)]+\)",
             re.IGNORECASE,
         ),
         "Markdown image with query parameters from unknown domain - "
@@ -351,7 +351,7 @@ _MARKDOWN_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
     (
         "markdown_link_disguise",
         re.compile(
-            r"\[(?:click\s+here|download|login|verify|confirm|update|secure)[^\]]*\]\(\s*https?://[^\s)]+\)",
+            r"\[(?:click\s+here|download|verify|confirm|update|secure)[^\]]*\]\(\s*https?://(?!(?:docs\.python\.org|github\.com|gitlab\.com|pypi\.org|npmjs\.com|stackoverflow\.com|readthedocs\.io|maven\.apache\.org|crates\.io|packagist\.org|rubygems\.org|hub\.docker\.com|developer\.mozilla\.org|learn\.microsoft\.com|cloud\.google\.com|aws\.amazon\.com|console\.cloud|bitbucket\.org|sourceforge\.net|medium\.com|dev\.to|notion\.so|figma\.com|slack\.com|discord\.com|trello\.com|jira\.atlassian))[^\s)]+\)",
             re.IGNORECASE,
         ),
         "Markdown link with social engineering text (click here, login, etc.) - "
@@ -371,7 +371,7 @@ _MARKDOWN_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
     (
         "markdown_html_injection",
         re.compile(
-            r"(?:<script|<iframe|<object|<embed|<form|<input|<link\s+.*rel\s*=|<meta\s+.*http-equiv)",
+            r"(?:<script|<iframe|<object|<embed|<form\s+[^>]*action\s*=|<meta\s+[^>]*http-equiv)",
             re.IGNORECASE,
         ),
         "HTML tags in markdown that can execute scripts, embed content, "
@@ -557,7 +557,7 @@ _EXFIL_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
     (
         "webhook_exfil",
         re.compile(
-            r"https?://(?:(?:hooks\.slack\.com|discord(?:app)?\.com/api/webhooks|webhook\.site|requestbin|pipedream|hookbin|beeceptor)[^\s<>\"']*)",
+            r"https?://(?:hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+|discord(?:app)?\.com/api/webhooks/\d+|webhook\.site/[0-9a-f\-]+|requestbin\.com/\w+|pipedream\.net/\w+|hookbin\.com/\w+|beeceptor\.com/\w+)[^\s<>\"']*",
             re.IGNORECASE,
         ),
         "Webhook URL detected - commonly used for data exfiltration. "

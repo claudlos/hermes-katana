@@ -90,6 +90,66 @@ _FIRST_PERSON = re.compile(r"\b(I|me|my|mine|myself|we|our|us)\b", re.IGNORECASE
 _SECOND_PERSON = re.compile(r"\b(you|your|yours|yourself)\b", re.IGNORECASE)
 _THIRD_PERSON = re.compile(r"\b(he|she|they|them|his|her|their|it|its)\b", re.IGNORECASE)
 
+# Code-block and documentation detection
+_CODE_BLOCK_RE = re.compile(r"```[\s\S]*?```", re.MULTILINE)
+_DOC_LINE_RE = re.compile(
+    r"^\s*(\$\s+|#!?/|>>>|\.\.\.|//|/\*|\*\s|\-\-\s|@param|@return|Args:|Returns:|Example)",
+    re.MULTILINE,
+)
+
+# Security discussion heuristics — these phrases indicate the user is
+# *talking about* security rather than attempting an attack.
+_SECURITY_DISCUSSION_RE = re.compile(
+    r"\b(how\s+(do|does|can|would|to)\s+\w+\s*(inject|attack|exploit|bypass|hack)|"
+    r"how\s+does\s+.{0,30}(injection|attack)\s+work|"
+    r"what\s+is\s+(prompt\s+injection|sql\s+injection|xss|csrf)|"
+    r"security\s+(test|audit|review|scan|research|paper|vulnerability)|"
+    r"owasp|cve-\d+|penetration\s+test|red\s+team|threat\s+model|"
+    r"(explain|describe|example\s+of|protect\s+against|prevent|mitigat)\s+.{0,20}(injection|attack|exploit)|"
+    r"for\s+(educational|research|testing|demo)\s+purposes)\b",
+    re.IGNORECASE,
+)
+
+# Technical conversation markers that naturally shift topics
+_TECHNICAL_MARKERS = re.compile(
+    r"\b(function|class|def\s|import\s|return\s|const\s|let\s|var\s|"
+    r"error|exception|traceback|stack\s+trace|debug|log|config|deploy|"
+    r"database|query|api|endpoint|server|client|request|response|"
+    r"install|build|compile|test|commit|branch|merge|docker|kubernetes)\b",
+    re.IGNORECASE,
+)
+
+
+def _code_block_ratio(text: str) -> float:
+    """Return the fraction of text that's inside fenced code blocks."""
+    if not text:
+        return 0.0
+    total_code = sum(len(m.group()) for m in _CODE_BLOCK_RE.finditer(text))
+    return min(total_code / len(text), 1.0)
+
+
+def _doc_line_ratio(text: str) -> float:
+    """Return the fraction of lines that look like documentation/comments."""
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines:
+        return 0.0
+    doc_count = sum(1 for l in lines if _DOC_LINE_RE.match(l))
+    return doc_count / len(lines)
+
+
+def _is_security_discussion(text: str) -> bool:
+    """Return True if the text appears to be discussing security topics."""
+    return bool(_SECURITY_DISCUSSION_RE.search(text))
+
+
+def _technical_density(text: str) -> float:
+    """Return the density of technical keywords in the text."""
+    words = text.split()
+    if not words:
+        return 0.0
+    matches = len(_TECHNICAL_MARKERS.findall(text))
+    return min(matches / max(len(words), 1), 1.0)
+
 
 def _word_freq(text: str) -> Counter:
     """Lowercase word frequency counter."""
@@ -189,6 +249,25 @@ class ConversationAnalyzer:
         inst_density = _instruction_density(text)
         persona = _pronoun_profile(text)
 
+        # --- Context modifiers (reduce FPs) ---
+        code_ratio = _code_block_ratio(text)
+        doc_ratio = _doc_line_ratio(text)
+        security_discussion = _is_security_discussion(text)
+        tech_density = _technical_density(text)
+
+        # Confidence reduction factor: code blocks, docs, and security
+        # discussions are less likely to be real attacks.
+        confidence_reduction = 0.0
+        if code_ratio > 0.3:
+            confidence_reduction += 0.4 * code_ratio
+        if doc_ratio > 0.3:
+            confidence_reduction += 0.3 * doc_ratio
+        if security_discussion:
+            confidence_reduction += 0.3
+
+        # Cap total reduction at 0.8 (never fully suppress)
+        confidence_reduction = min(confidence_reduction, 0.8)
+
         # --- Topic drift ---
         topic_drift = 0.0
         if self._turn_history:
@@ -196,8 +275,14 @@ class ConversationAnalyzer:
             similarity = _cosine_similarity(prev_freq, word_freq)
             topic_drift = 1.0 - similarity
 
-            if topic_drift > self.topic_drift_threshold:
-                contribution = 0.15
+            # Reduce drift score for technical conversations that
+            # naturally jump between related topics.
+            effective_drift = topic_drift
+            if tech_density > 0.05:
+                effective_drift *= max(0.4, 1.0 - tech_density * 3)
+
+            if effective_drift > self.topic_drift_threshold:
+                contribution = 0.15 * (1.0 - confidence_reduction)
                 turn_risk += contribution
                 alerts.append(ContextAlert(
                     alert_type="topic_drift",
@@ -205,14 +290,15 @@ class ConversationAnalyzer:
                         f"Significant topic change detected (drift={topic_drift:.2f}). "
                         f"Previous turn similarity: {similarity:.2f}"
                     ),
-                    severity="medium" if topic_drift < 0.85 else "high",
+                    severity="medium" if (topic_drift < 0.85 or security_discussion) else "high",
                     turn_index=turn_index,
                     score_contribution=contribution,
                 ))
 
         # --- Instruction density ---
-        if inst_density > self.instruction_threshold:
-            contribution = 0.2 * inst_density
+        effective_inst_density = inst_density * (1.0 - confidence_reduction)
+        if effective_inst_density > self.instruction_threshold:
+            contribution = 0.2 * effective_inst_density
             turn_risk += contribution
             alerts.append(ContextAlert(
                 alert_type="instruction_density",
@@ -235,7 +321,7 @@ class ConversationAnalyzer:
             first_delta = abs(curr_first - base_first)
             second_delta = abs(curr_second - base_second)
 
-            if (first_delta > 0.1 or second_delta > 0.1) and len(self._turn_history) >= 2:
+            if (first_delta > 0.15 or second_delta > 0.15) and len(self._turn_history) >= 2:
                 persona_shift = True
                 contribution = 0.1
                 turn_risk += contribution
@@ -309,3 +395,32 @@ class ConversationAnalyzer:
     def current_risk(self) -> float:
         """Current cumulative risk level."""
         return min(self._cumulative_risk, 1.0)
+
+    def analyze_turn_with_context(
+        self,
+        text: str,
+        turn_index: int = -1,
+        *,
+        is_code_block: bool = False,
+        is_documentation: bool = False,
+    ) -> ContextAnalysis:
+        """Analyze a turn with explicit context hints.
+
+        Wraps the text with code-block fences or doc markers before
+        analysis so the confidence reduction heuristics activate.
+
+        Args:
+            text: The turn text.
+            turn_index: Explicit turn index (-1 = auto).
+            is_code_block: Treat entire text as inside a code block.
+            is_documentation: Treat entire text as documentation.
+
+        Returns:
+            ContextAnalysis with reduced confidence for doc/code contexts.
+        """
+        wrapped = text
+        if is_code_block:
+            wrapped = f"```\n{text}\n```"
+        elif is_documentation:
+            wrapped = "\n".join(f"# {line}" for line in text.splitlines())
+        return self.analyze_turn(wrapped, turn_index)
