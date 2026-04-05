@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 from importlib import metadata
 from io import StringIO
@@ -54,6 +55,16 @@ class TestCLIGoldenPath:
 
         monkeypatch.setattr(config_mod, "_CONFIG_DIR", config_dir)
         monkeypatch.setattr(config_mod, "_CONFIG_FILE", config_file)
+        # `policy use` writes KATANA_POLICY_PRESET into os.environ as a side effect.
+        # Snapshot the pre-test state so monkeypatch restores it on teardown, else
+        # it leaks to downstream tests (e.g. test_concurrency's corrupt-yaml fallback).
+        # Note: delenv(raising=False) on a nonexistent var does NOT register restoration,
+        # so we round-trip via setenv to make monkeypatch track "originally absent".
+        if "KATANA_POLICY_PRESET" in os.environ:
+            monkeypatch.setenv("KATANA_POLICY_PRESET", os.environ["KATANA_POLICY_PRESET"])
+        else:
+            monkeypatch.setenv("KATANA_POLICY_PRESET", "")
+            monkeypatch.delenv("KATANA_POLICY_PRESET")
         monkeypatch.setattr(vault_mod, "default_vault_path", lambda: vault_path)
         monkeypatch.setattr(vault_mod, "_default_vault_path", lambda: vault_path)
         monkeypatch.setattr(vault_pkg, "default_vault_path", lambda: vault_path)
@@ -115,11 +126,25 @@ class TestCLIGoldenPath:
             def start(self):
                 return None
 
-        def fake_popen(cmd, stdout=None, stderr=None, env=None):
+        def fake_popen(cmd, *args, **kwargs):
             process_state["running"] = True
             return FakeProcess()
 
-        monkeypatch.setattr(proxy_runner_mod.subprocess, "Popen", fake_popen)
+        # Inject a fake subprocess NAMESPACE on proxy_runner_mod only, so we don't
+        # mutate the real subprocess.Popen globally (which would break platform.system()
+        # and anything else in the process that calls subprocess).
+        import types as _types
+        import subprocess as _real_subprocess
+
+        _fake_subprocess = _types.SimpleNamespace(
+            Popen=fake_popen,
+            PIPE=_real_subprocess.PIPE,
+            DEVNULL=_real_subprocess.DEVNULL,
+            STDOUT=_real_subprocess.STDOUT,
+            CalledProcessError=_real_subprocess.CalledProcessError,
+            TimeoutExpired=_real_subprocess.TimeoutExpired,
+        )
+        monkeypatch.setattr(proxy_runner_mod, "subprocess", _fake_subprocess)
         monkeypatch.setattr(proxy_runner_mod.threading, "Thread", FakeThread)
         monkeypatch.setattr(
             proxy_runner_mod,
