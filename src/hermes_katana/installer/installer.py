@@ -42,7 +42,6 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from hermes_katana.installer.patches import (
-    CORE_PATCHES,
     CURRENT_CORE_PATCHES,
     LEGACY_CORE_PATCHES,
     PatchResult,
