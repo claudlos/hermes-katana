@@ -117,9 +117,7 @@ class TestInstallerLayoutAwareness:
         # Error message must mention BOTH layouts so users of current Hermes
         # checkouts aren't confused by legacy-only marker names.
         msg = str(exc_info.value)
-        assert "current-layout markers" in msg, (
-            "install() error must list current-layout markers, not just legacy"
-        )
+        assert "current-layout markers" in msg, "install() error must list current-layout markers, not just legacy"
         assert "tools/registry.py" in msg
         assert "hermes_cli" in msg
         assert "legacy v0.1.0 markers" in msg
@@ -128,16 +126,18 @@ class TestInstallerLayoutAwareness:
         """_patches_for() should log a warning when layout detection fails
         instead of silently returning current-layout patches."""
         import logging
+
         unsupported = tmp_dir / "mystery"
         unsupported.mkdir()
         installer = KatanaInstaller()
         with caplog.at_level(logging.WARNING, logger="hermes_katana.installer.installer"):
             patches = installer._patches_for(unsupported)
-        assert any(
-            "Could not detect Hermes layout" in r.message for r in caplog.records
-        ), "silent fallback to 'current' layout must emit a warning"
+        assert any("Could not detect Hermes layout" in r.message for r in caplog.records), (
+            "silent fallback to 'current' layout must emit a warning"
+        )
         # Falls back to current patches (safe default)
         from hermes_katana.installer.patches import CURRENT_CORE_PATCHES
+
         assert patches is CURRENT_CORE_PATCHES
 
     def test_current_markers_match_detect_hermes_layout(self):
@@ -146,6 +146,7 @@ class TestInstallerLayoutAwareness:
         detect_hermes() and _detect_hermes_layout() can return contradictory
         results for edge-case checkouts."""
         from hermes_katana.installer.installer import _HERMES_CURRENT_MARKERS
+
         # Both modules must agree on these anchor paths.
         assert "tools/registry.py" in _HERMES_CURRENT_MARKERS
         assert "hermes_cli" in _HERMES_CURRENT_MARKERS
@@ -319,9 +320,7 @@ class TestInstallerBothLayouts:
         installer.install(checkout)
         verify = installer.verify(checkout)
 
-        assert verify.is_valid is True, (
-            f"{layout}: verify failed: {verify.issues}"
-        )
+        assert verify.is_valid is True, f"{layout}: verify failed: {verify.issues}"
 
     def test_uninstall_reverts_critical_patches(self, monkeypatch, tmp_dir, fixture_id, layout):
         monkeypatch.setattr(KatanaInstaller, "_generate_ca_cert", _stub_ca_cert)

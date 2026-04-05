@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from io import StringIO
 from types import SimpleNamespace
 from pathlib import Path
@@ -36,7 +37,14 @@ class TestCLIContracts:
         monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
         monkeypatch.setattr(config_mod, "_CONFIG_DIR", tmp_dir)
         monkeypatch.setattr(config_mod, "_CONFIG_FILE", tmp_dir / "config.yaml")
-        monkeypatch.delenv("KATANA_POLICY_PRESET", raising=False)
+        # `policy use` writes KATANA_POLICY_PRESET into os.environ. Round-trip via
+        # setenv+delenv so monkeypatch registers "originally absent" for restoration
+        # (delenv alone with raising=False doesn't track nonexistent vars).
+        if "KATANA_POLICY_PRESET" in os.environ:
+            monkeypatch.setenv("KATANA_POLICY_PRESET", os.environ["KATANA_POLICY_PRESET"])
+        else:
+            monkeypatch.setenv("KATANA_POLICY_PRESET", "")
+            monkeypatch.delenv("KATANA_POLICY_PRESET")
 
         result = self.runner.invoke(cli_main.main, ["policy", "use", "paranoid"])
 
