@@ -35,7 +35,7 @@ from typing import Any, Optional
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
-from hermes_katana._paths import fallback_root, safe_home
+from hermes_katana._paths import home_or_fallback
 
 __all__ = [
     "KatanaConfig",
@@ -53,13 +53,12 @@ logger = logging.getLogger(__name__)
 
 # These are computed at import time so tests can monkeypatch them directly.
 # On Windows, Path.home() can raise RuntimeError when USERPROFILE/HOMEDRIVE
-# are unset (sandboxed envs, restricted service accounts). We fall back to
-# the temp-dir root in that case so module import cannot crash. In production
-# the fallback branch should never fire - home is always resolvable there.
-_home = safe_home()
-_CONFIG_DIR = (_home if _home is not None else fallback_root()) / ".hermes-katana"
+# are unset (sandboxed envs, restricted service accounts). home_or_fallback()
+# routes to a user-scoped tempdir in that case so module import cannot crash.
+# In production the fallback branch should never fire — home is resolvable
+# there and safe_home() emits a one-time warning if it isn't.
+_CONFIG_DIR = home_or_fallback() / ".hermes-katana"
 _CONFIG_FILE = _CONFIG_DIR / "config.yaml"
-del _home
 _VALID_PRESETS = {"paranoid", "balanced", "permissive"}
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 

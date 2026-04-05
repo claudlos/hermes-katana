@@ -58,15 +58,60 @@ class TestFallbackRoot:
         assert isinstance(root, Path)
         # Must be under the system tempdir
         assert str(root).startswith(tempfile.gettempdir())
-        # Must include the fallback subdir name
-        assert root.name == "hermes-katana-fallback"
+        # Must include the user-scoped fallback subdir name prefix
+        assert root.name.startswith("hermes-katana-fallback-")
 
-    def test_does_not_create_the_directory(self, tmp_path, monkeypatch):
+    def test_is_user_scoped(self):
+        """Fallback root name must include a per-user token so different
+        users on the same host don't collide in /tmp."""
+        from hermes_katana._paths import fallback_root, _fallback_user_token
+
+        root = fallback_root()
+        token = _fallback_user_token()
+        assert token  # non-empty
+        assert root.name == f"hermes-katana-fallback-{token}"
+
+    def test_creates_the_directory_with_restrictive_permissions(self, tmp_path, monkeypatch):
+        """The fallback root holds secrets (vault) and audit entries, so
+        on POSIX it must be mode 0o700 to prevent other local accounts
+        from reading/tampering with them."""
+        import os
         from hermes_katana import _paths
 
+        # Reset the module-level creation flag so the test actually runs
+        # the mkdir path, even if a prior test already triggered it.
+        monkeypatch.setattr(_paths, "_fallback_dir_created", False)
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+
         root = _paths.fallback_root()
-        assert not root.exists()
+        assert root.exists()
+        assert root.is_dir()
+        if hasattr(os, "getuid"):
+            # POSIX: check mode is exactly 0o700 (no other/group access)
+            mode = root.stat().st_mode & 0o777
+            assert mode == 0o700, f"expected 0o700, got {oct(mode)}"
+
+    def test_tightens_existing_loose_permissions(self, tmp_path, monkeypatch):
+        """If the fallback dir already exists with looser perms (e.g. from
+        an older version), fallback_root() must chmod it to 0o700."""
+        import os
+        from hermes_katana import _paths
+
+        if not hasattr(os, "getuid"):
+            pytest.skip("POSIX-only (Windows ignores mkdir mode)")
+
+        monkeypatch.setattr(_paths, "_fallback_dir_created", False)
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+
+        # Pre-create the directory with loose 0755 perms
+        token = _paths._fallback_user_token()
+        loose_dir = tmp_path / f"hermes-katana-fallback-{token}"
+        loose_dir.mkdir(mode=0o755)
+        assert loose_dir.stat().st_mode & 0o777 == 0o755
+
+        # fallback_root() should tighten it
+        _paths.fallback_root()
+        assert loose_dir.stat().st_mode & 0o777 == 0o700
 
 
 class TestHomeOrFallback:
@@ -84,6 +129,72 @@ class TestHomeOrFallback:
         with patch.object(_paths, "safe_home", return_value=None):
             result = _paths.home_or_fallback()
             assert result == _paths.fallback_root()
+
+
+class TestResolveHomeRelative:
+    """Covers the convenience joiner. Contract: NEVER raises, always
+    returns a usable Path, joins under home when resolvable and under
+    fallback when not."""
+
+    def test_joins_parts_under_home_when_resolvable(self):
+        from hermes_katana._paths import resolve_home_relative, safe_home
+
+        home = safe_home()
+        if home is None:
+            pytest.skip("Home not resolvable in this environment")
+        result = resolve_home_relative(".config", "hermes-katana", "vault.json")
+        assert result == home / ".config" / "hermes-katana" / "vault.json"
+
+    def test_joins_parts_under_fallback_when_home_unresolvable(self):
+        from hermes_katana import _paths
+
+        with patch.object(_paths, "safe_home", return_value=None):
+            result = _paths.resolve_home_relative(".config", "hermes-katana", "vault.json")
+            assert result.parts[-3:] == (".config", "hermes-katana", "vault.json")
+            # Result must live under the user-scoped fallback root
+            assert str(result).startswith(str(_paths.fallback_root()))
+
+    def test_never_raises_even_with_no_parts(self):
+        from hermes_katana._paths import resolve_home_relative
+
+        # Must return a Path, never raise
+        result = resolve_home_relative()
+        assert isinstance(result, Path)
+
+
+class TestHomeWarning:
+    """safe_home() must log a one-time warning when home is unresolvable
+    so operators notice misconfigurations instead of silently writing
+    vault/audit data to a shared tempdir location."""
+
+    def test_emits_warning_on_first_fallback(self, monkeypatch, caplog):
+        import logging as _logging
+        from hermes_katana import _paths
+
+        monkeypatch.setattr(_paths, "_home_warning_emitted", False)
+        _simulate_unresolvable_home(monkeypatch)
+
+        with caplog.at_level(_logging.WARNING, logger="hermes_katana._paths"):
+            _paths.safe_home()
+
+        assert any("Path.home() failed" in r.message for r in caplog.records), (
+            "expected a one-time warning naming the fallback location"
+        )
+
+    def test_warning_fires_at_most_once_per_process(self, monkeypatch, caplog):
+        import logging as _logging
+        from hermes_katana import _paths
+
+        monkeypatch.setattr(_paths, "_home_warning_emitted", False)
+        _simulate_unresolvable_home(monkeypatch)
+
+        with caplog.at_level(_logging.WARNING, logger="hermes_katana._paths"):
+            _paths.safe_home()
+            _paths.safe_home()
+            _paths.safe_home()
+
+        warnings = [r for r in caplog.records if "Path.home() failed" in r.message]
+        assert len(warnings) == 1, f"expected exactly one warning, got {len(warnings)}"
 
 
 # ---------------------------------------------------------------------------
