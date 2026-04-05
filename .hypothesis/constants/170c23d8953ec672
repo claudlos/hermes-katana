@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/dbus/_dbus.py
+# hypothesis_version: 6.151.10
+
+['<%s.%s (%s) at %#x>', 'Bus', 'SessionBus', 'StarterBus', 'SystemBus', 'invalid bus_type %s', 'reStructuredText', 'session', 'starter', 'system', 'unknown bus type']

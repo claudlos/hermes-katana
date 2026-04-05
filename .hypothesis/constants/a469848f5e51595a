@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/gi/_propertyhelper.py
+# hypothesis_version: 6.151.10
+
+[0.0, '(uninitialized)', '-', 'Unsupported type: %r', '_', '__gproperties__', '__gtype__', '_property_helper_', 'do_get_property', 'do_set_property']

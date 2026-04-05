@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/gi/docstring.py
+# hypothesis_version: 6.151.10
+
+[' or None', '%s(%s)', '%s(%s) -> %s', '%s.%s', '()\n', '(**properties)\n', ', ', ':', '=<optional>', '=None', '__name__', 'self', 'void']

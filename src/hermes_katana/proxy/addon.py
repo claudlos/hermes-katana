@@ -313,11 +313,84 @@ class KatanaAddon:
                 self._increment_stat("credentials_injected")
                 logger.debug("Injected credentials for %s", provider_name)
 
-        # Request body scanning
+        # --- Scan request URL, headers, query params, cookies (GAP 3.1) ---
+        # Collect injected header keys so we can skip them during scanning
+        _injected_headers: set[str] = set()
+        if self.config.inject_credentials and self.vault is not None:
+            # The injector may have added Authorization or api-key headers
+            for hdr in ("authorization", "api-key", "x-api-key"):
+                if hdr in {k.lower() for k in flow.request.headers}:
+                    _injected_headers.add(hdr)
+
+        # Scan URL path segments
+        try:
+            url_text = flow.request.url
+            if url_text:
+                url_result = self._scan_text(url_text, direction="request")
+                if url_result["is_blocked"]:
+                    self._increment_stat("requests_blocked_scan")
+                    flow.response = _make_block_response(400, f"URL blocked: {url_result['summary']}")
+                    self._log_audit("SCAN_RESULT", f"url_scan:{host}", "deny", url_result["summary"])
+                    return
+        except Exception as exc:
+            logger.debug("URL scan error: %s", exc)
+
+        # Scan request headers (skip injected ones — GAP 3.8)
+        try:
+            for hdr_name, hdr_value in flow.request.headers.items():
+                if hdr_name.lower() in _injected_headers:
+                    continue
+                hdr_result = self._scan_text(hdr_value, direction="request")
+                if hdr_result["is_blocked"]:
+                    self._increment_stat("requests_blocked_scan")
+                    flow.response = _make_block_response(400, f"Header blocked: {hdr_result['summary']}")
+                    self._log_audit("SCAN_RESULT", f"header_scan:{host}:{hdr_name}", "deny", hdr_result["summary"])
+                    return
+        except Exception as exc:
+            logger.debug("Header scan error: %s", exc)
+
+        # Scan query parameters
+        try:
+            if hasattr(flow.request, 'query') and flow.request.query:
+                for qname, qvalue in flow.request.query.items():
+                    q_result = self._scan_text(qvalue, direction="request")
+                    if q_result["is_blocked"]:
+                        self._increment_stat("requests_blocked_scan")
+                        flow.response = _make_block_response(400, f"Query param blocked: {q_result['summary']}")
+                        self._log_audit("SCAN_RESULT", f"query_scan:{host}:{qname}", "deny", q_result["summary"])
+                        return
+        except Exception as exc:
+            logger.debug("Query param scan error: %s", exc)
+
+        # Scan cookie values
+        try:
+            cookie_header = flow.request.headers.get("cookie", "")
+            if cookie_header:
+                for part in cookie_header.split(";"):
+                    if "=" in part:
+                        _, cval = part.split("=", 1)
+                        c_result = self._scan_text(cval.strip(), direction="request")
+                        if c_result["is_blocked"]:
+                            self._increment_stat("requests_blocked_scan")
+                            flow.response = _make_block_response(400, f"Cookie blocked: {c_result['summary']}")
+                            self._log_audit("SCAN_RESULT", f"cookie_scan:{host}", "deny", c_result["summary"])
+                            return
+        except Exception as exc:
+            logger.debug("Cookie scan error: %s", exc)
+
+        # Request body scanning (GAP 3.5 — scan prefix of oversized bodies)
         body = flow.request.get_content()
-        if body and not self._body_too_large(body):
+        if body:
+            scan_body = body
+            if self._body_too_large(body):
+                logger.warning(
+                    "Oversized request body (%d bytes) from %s to %s — scanning first %d bytes",
+                    len(body), client_id, host, self.config.max_body_scan_size,
+                )
+                scan_body = body[:self.config.max_body_scan_size]
+                self._increment_stat("requests_oversized")
             try:
-                text = body.decode("utf-8", errors="replace")
+                text = scan_body.decode("utf-8", errors="replace")
                 scan_result = self._scan_text(text, direction="request")
 
                 if scan_result["is_blocked"]:
@@ -376,9 +449,33 @@ class KatanaAddon:
         except AttributeError:
             body = None
 
-        if body and not self._body_too_large(body):
+        # Scan response headers (GAP 3.2)
+        try:
+            for hdr_name, hdr_value in flow.response.headers.items():
+                rh_result = self._scan_text(hdr_value, direction="response")
+                if rh_result["is_blocked"]:
+                    self._increment_stat("responses_blocked_scan")
+                    logger.warning("Response header blocked: %s -> %s", hdr_name, rh_result["summary"])
+                    flow.response.set_content(
+                        f"[HermesKatana] Response header blocked: {rh_result['summary']}".encode()
+                    )
+                    flow.response.status_code = 502
+                    self._log_audit("SCAN_RESULT", f"response_header_scan:{host}:{hdr_name}", "deny", rh_result["summary"])
+                    return
+        except Exception as exc:
+            logger.debug("Response header scan error: %s", exc)
+
+        if body:
+            scan_body = body
+            if self._body_too_large(body):
+                logger.warning(
+                    "Oversized response body (%d bytes) from %s — scanning first %d bytes",
+                    len(body), host, self.config.max_body_scan_size,
+                )
+                scan_body = body[:self.config.max_body_scan_size]
+                self._increment_stat("responses_oversized")
             try:
-                text = body.decode("utf-8", errors="replace")
+                text = scan_body.decode("utf-8", errors="replace")
                 scan_result = self._scan_text(text, direction="response")
                 scanned = True
 
@@ -411,13 +508,14 @@ class KatanaAddon:
             except Exception as exc:
                 logger.debug("Response body scan error: %s", exc)
 
-        # Inject X-Katana-Scanned header
-        try:
-            flow.response.headers["X-Katana-Scanned"] = (
-                "true" if scanned else "passthrough"
-            )
-        except AttributeError:
-            pass
+        # Inject X-Katana-Scanned header (opt-in — GAP 3.7)
+        if self.config.add_scanned_header:
+            try:
+                flow.response.headers["X-Katana-Scanned"] = (
+                    "true" if scanned else "passthrough"
+                )
+            except AttributeError:
+                pass
 
         self._increment_stat("responses_passed")
 
@@ -446,6 +544,43 @@ class KatanaAddon:
             self.audit.log(entry)
         except Exception as exc:
             logger.debug("Audit logging failed: %s", exc)
+
+    def websocket_message(self, flow: Any) -> None:
+        """mitmproxy WebSocket message hook (GAP 3.3).
+
+        Scans WebSocket message content through the same pipeline.
+        """
+        try:
+            msg = flow.websocket.messages[-1]
+            content = msg.content
+        except (AttributeError, IndexError):
+            return
+
+        self._increment_stat("ws_messages_total")
+
+        if isinstance(content, bytes):
+            text = content.decode("utf-8", errors="replace")
+        else:
+            text = str(content)
+
+        try:
+            direction = "request" if getattr(msg, "from_client", True) else "response"
+            scan_result = self._scan_text(text, direction=direction)
+
+            if scan_result["is_blocked"]:
+                self._increment_stat("ws_messages_blocked")
+                logger.warning("WebSocket message blocked: %s", scan_result["summary"])
+                msg.content = f"[HermesKatana] Blocked: {scan_result['summary']}".encode()
+                self._log_audit(
+                    "SCAN_RESULT", "websocket_scan", "deny", scan_result["summary"],
+                )
+            elif scan_result["finding_count"] > 0:
+                self._increment_stat("ws_messages_warned")
+                self._log_audit(
+                    "SCAN_RESULT", "websocket_scan", "warn", scan_result["summary"],
+                )
+        except Exception as exc:
+            logger.debug("WebSocket scan error: %s", exc)
 
     def get_stats(self) -> dict[str, Any]:
         """Return addon statistics."""

@@ -21,7 +21,9 @@ Security model:
 from __future__ import annotations
 
 import base64
+import ctypes
 import hashlib
+import platform
 import hmac
 import json
 import logging
@@ -34,6 +36,48 @@ from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+class _VaultFileLock:
+    """Cross-platform advisory file lock for multi-process vault safety."""
+
+    def __init__(self, path: Path) -> None:
+        self._lock_path = path.with_suffix(path.suffix + ".flock")
+        self._fp: Any = None
+
+    def acquire(self) -> None:
+        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        self._fp = open(self._lock_path, "w")
+        if platform.system() == "Windows":
+            import msvcrt
+            msvcrt.locking(self._fp.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX)
+
+    def release(self) -> None:
+        if self._fp is not None:
+            try:
+                if platform.system() == "Windows":
+                    import msvcrt
+                    msvcrt.locking(self._fp.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(self._fp.fileno(), fcntl.LOCK_UN)
+            except (OSError, BlockingIOError):
+                pass
+            try:
+                self._fp.close()
+            except Exception:
+                pass
+            self._fp = None
+
+    def __enter__(self) -> "_VaultFileLock":
+        self.acquire()
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.release()
 
 # Vault file format version
 _VAULT_VERSION = 2
@@ -66,6 +110,85 @@ class VaultIntegrityError(VaultError):
 class VaultKeyError(VaultError):
     """Raised when a requested key is not found."""
     pass
+
+
+class SecureBytes:
+    """Memory-safe bytes wrapper that zeros memory on deallocation.
+
+    Wraps a bytes-like secret so that the underlying buffer is overwritten
+    with zeros when the object is garbage-collected or explicitly closed.
+    Optionally calls mlock() to prevent the page from being swapped to disk.
+
+    Usage:
+        sb = SecureBytes(secret_key)
+        raw = sb.raw  # access the bytes
+        sb.close()    # explicitly zero and release
+    """
+
+    def __init__(self, data: bytes) -> None:
+        import ctypes
+        import ctypes.util
+        self._buf = bytearray(data)
+        self._length = len(data)
+        self._closed = False
+        self._mlocked = False
+        # Best-effort mlock to prevent swapping
+        try:
+            libc_name = ctypes.util.find_library("c")
+            if libc_name:
+                libc = ctypes.CDLL(libc_name, use_errno=True)
+                if self._length > 0:
+                    addr = (ctypes.c_char * self._length).from_buffer(self._buf)
+                    ret = libc.mlock(ctypes.addressof(addr), self._length)
+                    if ret == 0:
+                        self._mlocked = True
+        except Exception:
+            pass
+
+    @property
+    def raw(self) -> bytes:
+        """Return the underlying bytes (read-only copy)."""
+        if self._closed:
+            raise VaultError("SecureBytes has been closed/zeroed")
+        return bytes(self._buf)
+
+    def close(self) -> None:
+        """Zero the buffer and mark as closed."""
+        if self._closed:
+            return
+        try:
+            import ctypes
+        except ImportError:
+            self._closed = True
+            return
+        try:
+            buf_type = ctypes.c_char * self._length
+            buf_ref = buf_type.from_buffer(self._buf)
+            ctypes.memset(ctypes.addressof(buf_ref), 0, self._length)
+        except Exception:
+            for i in range(self._length):
+                self._buf[i] = 0
+        if self._mlocked:
+            try:
+                import ctypes.util
+                libc_name = ctypes.util.find_library("c")
+                if libc_name:
+                    libc = ctypes.CDLL(libc_name, use_errno=True)
+                    buf_type = ctypes.c_char * self._length
+                    buf_ref = buf_type.from_buffer(self._buf)
+                    libc.munlock(ctypes.addressof(buf_ref), self._length)
+            except Exception:
+                pass
+        self._closed = True
+
+    def __del__(self) -> None:
+        self.close()
+
+    def __len__(self) -> int:
+        return self._length
+
+    def __bool__(self) -> bool:
+        return not self._closed and self._length > 0
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +302,7 @@ def _get_master_key() -> Optional[bytes]:
         logger.warning(
             "keyring package not installed, falling back to environment variable"
         )
-        raw_env = os.environ.get("HERMES_KATANA_VAULT_KEY")
+        raw_env = os.environ.pop("HERMES_KATANA_VAULT_KEY", None)
         if raw_env:
             return base64.b64decode(raw_env)
         return None
@@ -264,8 +387,9 @@ class Vault:
     ) -> None:
         self._path = path or _default_vault_path()
         self._lock_path = self._path.with_suffix(".lock")
+        self._file_lock = _VaultFileLock(self._path)
         self._rlock = threading.RLock()
-        self._master_key: Optional[bytes] = None
+        self._master_key: Optional[SecureBytes] = None
 
         # Ensure parent directory exists
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -285,18 +409,20 @@ class Vault:
 
             # Create empty vault file
             self._write_vault({})
-        self._master_key = key
+        self._master_key = SecureBytes(key)
 
     def _get_key(self) -> bytes:
         """Get the master key, raising an error if not available."""
         if self._master_key is None:
-            self._master_key = _get_master_key()
+            raw = _get_master_key()
+            if raw is not None:
+                self._master_key = SecureBytes(raw)
         if self._master_key is None:
             raise VaultError(
                 "No master key found. Initialize vault or set "
                 "HERMES_KATANA_VAULT_KEY environment variable."
             )
-        return self._master_key
+        return self._master_key.raw
 
     def _check_lock(self) -> None:
         """Check if the vault is locked (circuit breaker)."""
@@ -309,6 +435,8 @@ class Vault:
     def _read_vault(self) -> dict[str, Any]:
         """Read and parse the vault file.
 
+        Uses file-level locking for multi-process safety.
+
         Returns:
             The vault data dict with 'version', 'entries', 'hmac' keys.
         """
@@ -316,7 +444,8 @@ class Vault:
             return {"version": _VAULT_VERSION, "entries": {}, "hmac": ""}
 
         try:
-            raw = self._path.read_text(encoding="utf-8")
+            with self._file_lock:
+                raw = self._path.read_text(encoding="utf-8")
             data = json.loads(raw)
             return data
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -339,26 +468,30 @@ class Vault:
             "hmac": hmac_digest,
         }
 
-        # Write to temp file first, then atomic replace
+        # Write to temp file first, then atomic replace — with file lock
+        # for multi-process safety
         try:
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(self._path.parent),
-                prefix=".vault_",
-                suffix=".tmp",
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as fp:
-                    json.dump(vault_data, fp, indent=2)
-                    fp.flush()
-                    os.fsync(fp.fileno())
-                # Atomic replace
-                Path(tmp_path).replace(self._path)
-                # Restrict file permissions on Unix (owner read/write only)
-                if sys.platform != "win32":
-                    os.chmod(self._path, 0o600)
-            except Exception:
-                os.unlink(tmp_path)
-                raise
+            with self._file_lock:
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=str(self._path.parent),
+                    prefix=".vault_",
+                    suffix=".tmp",
+                )
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as fp:
+                        json.dump(vault_data, fp, indent=2)
+                        fp.flush()
+                        os.fsync(fp.fileno())
+                    # Set permissions before rename
+                    if sys.platform != "win32":
+                        os.chmod(tmp_path, 0o600)
+                    # Atomic replace
+                    Path(tmp_path).replace(self._path)
+                except Exception:
+                    os.unlink(tmp_path)
+                    raise
+        except VaultError:
+            raise
         except Exception as exc:
             raise VaultError(f"Failed to write vault: {exc}")
 
@@ -520,6 +653,22 @@ class Vault:
             old_key = self._get_key()
             new_key = secrets.token_bytes(_KEY_SIZE)
 
+            # Write rotation journal for crash recovery
+            journal_path = self._path.with_suffix(".rotation_journal")
+            try:
+                import time as _time
+                journal_data = {
+                    "status": "in_progress",
+                    "old_key": base64.b64encode(old_key).decode("ascii"),
+                    "new_key": base64.b64encode(new_key).decode("ascii"),
+                    "timestamp": _time.time(),
+                }
+                journal_path.write_text(
+                    json.dumps(journal_data), encoding="utf-8"
+                )
+            except Exception as exc:
+                raise VaultError(f"Failed to write rotation journal: {exc}")
+
             # Read and decrypt all values with old key
             vault = self._read_vault()
             entries = vault.get("entries", {})
@@ -540,7 +689,7 @@ class Vault:
 
             # Store the new key in keyring first (so we can recover)
             _set_master_key(new_key)
-            self._master_key = new_key
+            self._master_key = SecureBytes(new_key)
 
             # Write the re-encrypted vault
             try:
@@ -548,13 +697,69 @@ class Vault:
             except Exception:
                 # Rollback: restore old key
                 _set_master_key(old_key)
-                self._master_key = old_key
+                self._master_key = SecureBytes(old_key)
                 raise
 
             logger.info(
                 "Vault key rotated successfully (%d entries re-encrypted)",
                 len(new_entries),
             )
+
+            # Remove rotation journal on success
+            try:
+                if journal_path.exists():
+                    journal_path.unlink()
+            except OSError:
+                pass
+
+    def recover_rotation(self) -> bool:
+        """Check for and complete any interrupted key rotation.
+
+        Called on startup to recover from crashes during rotation.
+        Returns True if a recovery was performed, False otherwise.
+        """
+        journal_path = self._path.with_suffix(".rotation_journal")
+        if not journal_path.exists():
+            return False
+
+        try:
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            if journal.get("status") != "in_progress":
+                journal_path.unlink()
+                return False
+
+            new_key = base64.b64decode(journal["new_key"])
+            old_key = base64.b64decode(journal["old_key"])
+
+            vault = self._read_vault()
+            entries = vault.get("entries", {})
+            if entries:
+                first_key = next(iter(entries))
+                try:
+                    _decrypt_value(entries[first_key], new_key)
+                    _set_master_key(new_key)
+                    self._master_key = SecureBytes(new_key)
+                    journal_path.unlink()
+                    logger.info("Completed interrupted key rotation (forward)")
+                    return True
+                except VaultError:
+                    pass
+
+                try:
+                    _decrypt_value(entries[first_key], old_key)
+                    _set_master_key(old_key)
+                    self._master_key = SecureBytes(old_key)
+                    journal_path.unlink()
+                    logger.info("Rolled back interrupted key rotation")
+                    return True
+                except VaultError:
+                    pass
+
+            journal_path.unlink()
+            return False
+        except Exception as exc:
+            logger.error("Failed to recover rotation: %s", exc)
+            return False
 
     def verify_integrity(self) -> bool:
         """Verify the vault's HMAC integrity.
@@ -594,7 +799,38 @@ class Vault:
         except VaultError:
             return 0
 
+    def close(self) -> None:
+        """Securely zero the master key from memory.
+
+        Call when done with the vault to ensure key material is wiped.
+        Also called automatically on garbage collection via __del__.
+        """
+        if self._master_key is not None:
+            self._master_key.close()
+            self._master_key = None
+
+    def __del__(self) -> None:
+        """Zero the master key on garbage collection."""
+        try:
+            self.close()
+        except Exception:
+            pass
+
     @property
     def path(self) -> Path:
         """Return the vault file path."""
         return self._path
+
+    def _zero_key(self) -> None:
+        """Securely zero the master key in memory (GAP 2.1)."""
+        if hasattr(self, '_master_key') and self._master_key:
+            try:
+                buf = (ctypes.c_char * len(self._master_key)).from_buffer_copy(self._master_key)
+                ctypes.memset(buf, 0, len(self._master_key))
+            except Exception:
+                pass
+            self._master_key = None
+
+    def __del__(self) -> None:
+        """Zero master key on garbage collection."""
+        self._zero_key()

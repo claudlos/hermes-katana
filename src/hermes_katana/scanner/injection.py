@@ -899,11 +899,23 @@ def detect_injection(text: str) -> list[InjectionFinding]:
     if not text:
         return []
 
+    # Unicode normalization to defeat evasion:
+    # 1. Convert fullwidth chars (U+FF01-U+FF5E) to ASCII equivalents
+    # 2. Strip zero-width characters
+    import unicodedata
+    _ZERO_WIDTH = re.compile(r'[\u200b\u200c\u200d\ufeff\u00ad\u2060-\u2064\u180e]')
+    normalized_text = _ZERO_WIDTH.sub('', text)
+    normalized_text = unicodedata.normalize("NFKC", normalized_text)
+
+    # Use normalized text for pattern matching but keep original for position reporting
+    scan_texts = [text] if text == normalized_text else [text, normalized_text]
+
     findings: list[InjectionFinding] = []
 
     # Strategy 1: Heuristic pattern matching
-    for name, pattern, category, confidence, description in _HEURISTIC_PATTERNS:
-        for match in pattern.finditer(text):
+    for scan_text in scan_texts:
+      for name, pattern, category, confidence, description in _HEURISTIC_PATTERNS:
+        for match in pattern.finditer(scan_text):
             findings.append(InjectionFinding(
                 strategy="heuristic",
                 confidence=confidence,

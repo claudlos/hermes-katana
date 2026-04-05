@@ -1,0 +1,4 @@
+# file: /home/user/Documents/Code/hermes-katana/src/hermes_katana/vault/expiry.py
+# hypothesis_version: 6.151.10
+
+['.config', '.expiry_', '.tmp', 'expires_at', 'hermes-katana', 'set_at', 'ttl_seconds', 'utf-8', 'vault_expiry.json', 'w']

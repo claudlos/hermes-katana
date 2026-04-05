@@ -196,12 +196,12 @@ PARANOID_POLICIES: dict[str, Any] = {
         },
         {
             "name": "paranoid_catchall_clean",
-            "description": "Allow clean calls to non-sensitive tools.",
+            "description": "Deny all remaining calls — paranoid denies unknown tools.",
             "tool_pattern": "*",
             "conditions": [],
-            "action": "allow",
+            "action": "deny",
             "priority": 1,
-            "tags": ["catchall"],
+            "tags": ["catchall", "unknown-tool"],
         },
     ],
 }
@@ -581,6 +581,15 @@ BALANCED_POLICIES: dict[str, Any] = {
             "tags": ["side-effect", "persistence", "notes"],
         },
         {
+            "name": "balanced_notes_clean",
+            "description": "Allow clean notes calls (no taint).",
+            "tool_pattern": "notes",
+            "conditions": [],
+            "action": "allow",
+            "priority": 50,
+            "tags": ["known-tool", "notes"],
+        },
+        {
             "name": "balanced_catchall_high_taint",
             "description": "Escalate any uncovered tool with high taint.",
             "tool_pattern": "*",
@@ -593,14 +602,23 @@ BALANCED_POLICIES: dict[str, Any] = {
         },
         {
             "name": "balanced_catchall",
-            "description": "Log any remaining tool call with taint for audit.",
+            "description": "Escalate any remaining tainted tool call for human review.",
             "tool_pattern": "*",
             "conditions": [
                 {"field": "*", "operator": "contains_taint", "value": True},
             ],
-            "action": "log_only",
+            "action": "escalate",
             "priority": 5,
             "tags": ["catchall"],
+        },
+        {
+            "name": "balanced_catchall_clean",
+            "description": "Escalate remaining unknown clean tool calls for human review.",
+            "tool_pattern": "*",
+            "conditions": [],
+            "action": "escalate",
+            "priority": 1,
+            "tags": ["catchall", "unknown-tool"],
         },
     ],
 }
@@ -776,12 +794,12 @@ PERMISSIVE_POLICIES: dict[str, Any] = {
         },
         {
             "name": "permissive_catchall_clean",
-            "description": "Allow all clean tool calls.",
+            "description": "Log unknown clean tool calls for audit trail.",
             "tool_pattern": "*",
             "conditions": [],
-            "action": "allow",
+            "action": "log_only",
             "priority": 1,
-            "tags": ["catchall"],
+            "tags": ["catchall", "unknown-tool"],
         },
     ],
 }

@@ -16,6 +16,7 @@ Thread-safety: the tracker uses a threading lock for all mutations.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from contextlib import contextmanager
@@ -125,6 +126,17 @@ class TaintTracker:
             if cls._instance is not None:
                 cls._instance.clear()
             cls._instance = None
+
+    @classmethod
+    def _reset_instance(cls) -> None:
+        """Reset singleton in forked child process (fork safety).
+
+        Called via os.register_at_fork(after_in_child=...) to ensure
+        each child process gets a fresh tracker instead of sharing
+        corrupted state with the parent.
+        """
+        cls._instance = None
+        cls._lock = threading.Lock()
 
     @classmethod
     @contextmanager
@@ -391,7 +403,7 @@ class TaintTracker:
 
         def _walk(val: Any) -> None:
             nonlocal worst
-            if isinstance(val, TaintedValue):
+            if isinstance(val, (TaintedStr, TaintedValue)):
                 decision = self.check_flow(val, tool_name)
                 if priority[decision] > priority[worst]:
                     worst = decision
@@ -476,3 +488,10 @@ class TaintTracker:
     def __exit__(self, *exc: Any) -> None:
         self.clear()
 
+
+# Register fork handler to reset singleton in child processes
+try:
+    os.register_at_fork(after_in_child=lambda: TaintTracker._reset_instance())
+except AttributeError:
+    # os.register_at_fork not available on all platforms (e.g. Windows)
+    pass

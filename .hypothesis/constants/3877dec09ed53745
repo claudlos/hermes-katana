@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/gi/overrides/Gio.py
+# hypothesis_version: 6.151.10
+
+['()', '.', 'ActionMap', 'Application', 'DBusAnnotationInfo', 'DBusArgInfo', 'DBusInterfaceInfo', 'DBusMethodInfo', 'DBusNodeInfo', 'DBusProxy', 'DBusSignalInfo', 'Expected type %s.%s', 'FileEnumerator', 'Gio', 'ListModel', 'ListStore', 'MenuItem', 'Settings', 'VolumeMonitor', 'a', 'activate', 'backend', 'change-state', 'enum', 'error_handler', 'flags', 'path', 'range', 'result_handler', 'schema', 'timeout', 'type', 'unknown key: %r', 'user_data']

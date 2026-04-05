@@ -19,6 +19,8 @@ Usage::
 from __future__ import annotations
 
 import inspect
+import hashlib
+import hmac as _hmac_mod
 import json
 import logging
 import os
@@ -143,7 +145,9 @@ class VaultAccessLog:
             try:
                 self._maybe_rotate()
                 with open(self._path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(asdict(entry), default=str) + "\n")
+                    line_data = json.dumps(asdict(entry), default=str)
+                    line_hmac = self._compute_line_hmac(line_data)
+                    f.write(line_data + "|" + line_hmac + "\n")
                     f.flush()
             except Exception:
                 logger.debug("Failed to write vault access log", exc_info=True)
@@ -198,7 +202,11 @@ class VaultAccessLog:
                     if not line:
                         continue
                     try:
-                        d = json.loads(line)
+                        if "|" in line:
+                            line_data, _line_hmac = line.rsplit("|", 1)
+                        else:
+                            line_data = line
+                        d = json.loads(line_data)
                         entry = AccessEntry(**d)
                         if key_name and entry.key_name != key_name:
                             continue
@@ -231,3 +239,43 @@ class VaultAccessLog:
         with self._lock:
             if self._path.exists():
                 self._path.unlink()
+
+    def _compute_line_hmac(self, line_data: str) -> str:
+        """Compute HMAC-SHA256 for a single log line for tamper evidence."""
+        hmac_key = self._get_hmac_key()
+        return _hmac_mod.new(
+            hmac_key, line_data.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+
+    def _get_hmac_key(self) -> bytes:
+        """Derive an HMAC key for log integrity."""
+        env_key = os.environ.get("HERMES_KATANA_LOG_KEY")
+        if env_key:
+            return hashlib.sha256(env_key.encode()).digest()
+        return hashlib.sha256(
+            b"hermes-katana-access-log:" + str(self._path).encode()
+        ).digest()
+
+    def verify_integrity(self) -> bool:
+        """Verify HMAC integrity of all log entries.
+
+        Returns True if all lines have valid HMACs (or the log is empty).
+        Returns False if any line has been tampered with.
+        """
+        if not self._path.exists():
+            return True
+        try:
+            with open(self._path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if "|" not in line:
+                        return False
+                    line_data, line_hmac = line.rsplit("|", 1)
+                    expected = self._compute_line_hmac(line_data)
+                    if not _hmac_mod.compare_digest(line_hmac, expected):
+                        return False
+            return True
+        except Exception:
+            return False

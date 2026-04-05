@@ -30,6 +30,9 @@ The core patches
 from __future__ import annotations
 
 import logging
+import os
+import shutil
+import stat
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -387,6 +390,71 @@ CORE_PATCHES: list[Patch] = [
 # ---------------------------------------------------------------------------
 
 
+def validate_patch_target(target_file: Path, patch: Patch) -> list[str]:
+    """Validate file permissions and ownership before patching.
+
+    Checks:
+    - File exists and is a regular file
+    - File is owned by current user (or we have write access)
+    - No unexpected setuid/setgid bits
+    - File is not a symlink (prevents symlink attacks)
+
+    Returns:
+        List of warning/error messages (empty if all checks pass).
+    """
+    issues: list[str] = []
+
+    if not target_file.exists():
+        issues.append(f"Target file does not exist: {target_file}")
+        return issues
+
+    if target_file.is_symlink():
+        issues.append(
+            f"Target is a symlink (potential symlink attack): {target_file}"
+        )
+
+    if not target_file.is_file():
+        issues.append(f"Target is not a regular file: {target_file}")
+        return issues
+
+    try:
+        st = target_file.stat()
+        if st.st_mode & (stat.S_ISUID | stat.S_ISGID):
+            issues.append(
+                f"Target has setuid/setgid bits set: {target_file} "
+                f"(mode: {oct(st.st_mode)})"
+            )
+        current_uid = os.getuid()
+        if st.st_uid != current_uid and current_uid != 0:
+            issues.append(
+                f"Target owned by uid {st.st_uid}, not current user "
+                f"({current_uid}): {target_file}"
+            )
+        if not os.access(target_file, os.W_OK):
+            issues.append(f"No write permission on target: {target_file}")
+    except OSError as exc:
+        issues.append(f"Cannot stat target file: {exc}")
+
+    return issues
+
+
+def create_backup(target_file: Path) -> "Path | None":
+    """Create a backup of the target file before patching.
+
+    Returns:
+        Path to the backup file, or None if backup failed.
+    """
+    if not target_file.exists():
+        return None
+    backup_path = target_file.with_suffix(target_file.suffix + ".katana-backup")
+    try:
+        shutil.copy2(str(target_file), str(backup_path))
+        return backup_path
+    except OSError as exc:
+        logger.warning("Failed to create backup of %s: %s", target_file, exc)
+        return None
+
+
 def _is_patch_applied(target_path: Path, patch: Patch) -> bool:
     """Check whether a patch's sentinel exists in the target file.
 
@@ -448,6 +516,25 @@ def apply_patches(
                 msg,
             )
             continue
+
+        # Validate file permissions and ownership
+        issues = validate_patch_target(target_file, patch)
+        if issues:
+            for issue in issues:
+                logger.warning("Patch %s: %s", patch.name, issue)
+            critical_issues = [i for i in issues if "setuid" in i or "symlink" in i]
+            if critical_issues:
+                results.append(PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR,
+                    message=f"Permission validation failed: {'; '.join(critical_issues)}",
+                ))
+                continue
+
+        # Create backup before patching
+        backup = create_backup(target_file)
+        if backup:
+            logger.debug("Backup created: %s", backup)
 
         # Read current content
         try:

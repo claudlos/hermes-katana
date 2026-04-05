@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/rich/cells.py
+# hypothesis_version: 6.151.10
+
+[512, 4096, '^[ -o\xa0˿Ͱ-҂]*$', '__main__', 'x', '|', '😽']

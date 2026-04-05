@@ -133,6 +133,10 @@ class ProxyConfig(BaseModel):
         ge=0.0,
         description="Seconds to wait for in-flight requests during shutdown.",
     )
+    add_scanned_header: bool = Field(
+        default=False,
+        description="Inject X-Katana-Scanned header on responses (opt-in, disabled by default).",
+    )
 
     model_config = {"frozen": False, "extra": "forbid"}
 

@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/gi/overrides/__init__.py
+# hypothesis_version: 6.151.10
+
+['%s=%s', ', ', '.', '<%s %r>', 'ProxyModule', '__all__', '__info__', 'call failed', 'gi.overrides', 'gi.overrides.', 'gi.repository.']

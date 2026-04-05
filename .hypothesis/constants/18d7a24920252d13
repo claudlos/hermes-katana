@@ -1,0 +1,4 @@
+# file: /home/user/Documents/Code/hermes-katana/src/hermes_katana/proxy/injector.py
+# hypothesis_version: 6.151.10
+
+['ANTHROPIC_API_KEY', 'Anthropic', 'Authorization', 'Bearer', 'COHERE_API_KEY', 'Cohere', 'DEEPSEEK_API_KEY', 'DeepSeek', 'GOOGLE_API_KEY', 'GROQ_API_KEY', 'Google', 'Groq', 'HUGGINGFACE_API_KEY', 'HuggingFace', 'MISTRAL_API_KEY', 'Mistral', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'OpenAI', 'OpenRouter', 'REPLICATE_API_TOKEN', 'Replicate', 'TOGETHER_API_KEY', 'Together', 'VERCEL_API_KEY', 'Vault', 'Vercel', 'api.anthropic.com', 'api.cohere.ai', 'api.cohere.com', 'api.deepseek.com', 'api.groq.com', 'api.mistral.ai', 'api.openai.com', 'api.replicate.com', 'api.together.ai', 'api.together.xyz', 'api.vercel.ai', 'auth_scheme', 'domains', 'header_field', 'huggingface.co', 'key_name', 'name', 'openrouter.ai', 'sdk.vercel.ai', 'x-api-key', 'x-goog-api-key']

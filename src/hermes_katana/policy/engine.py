@@ -428,7 +428,14 @@ class PolicyEngine:
             )
 
         ps = PolicySet.model_validate(raw)
-        engine = cls(policies=ps.policies, default_action=PolicyResult.ALLOW)
+        # Use preset-appropriate default action instead of blanket ALLOW
+        _preset_defaults = {
+            "paranoid": PolicyResult.DENY,
+            "balanced": PolicyResult.ESCALATE,
+            "permissive": PolicyResult.LOG_ONLY,
+        }
+        default = _preset_defaults.get(preset, PolicyResult.ESCALATE)
+        engine = cls(policies=ps.policies, default_action=default)
         engine._policy_set_name = ps.name
         logger.info(
             "PolicyEngine initialised with '%s' preset (%d policies)",
@@ -561,39 +568,43 @@ class PolicyEngine:
                 self._cache_put(cache_key, result)
                 return result
 
+        # Snapshot policies under the lock, then evaluate without holding it
+        # (GAP 4.3 — thread safety: atomic snapshot for evaluate)
         with self._lock:
-            for policy in self._policies:
-                if not policy.enabled:
-                    continue
+            policies_snapshot = list(self._policies)
 
-                # Tool-name glob match
-                if not fnmatch.fnmatch(tool_name, policy.tool_pattern):
-                    continue
+        for policy in policies_snapshot:
+            if not policy.enabled:
+                continue
 
-                # Evaluate all conditions (implicit AND)
-                all_met = all(
-                    evaluate_condition(cond, args, taint_context)
-                    for cond in policy.conditions
+            # Tool-name glob match
+            if not fnmatch.fnmatch(tool_name, policy.tool_pattern):
+                continue
+
+            # Evaluate all conditions (implicit AND)
+            all_met = all(
+                evaluate_condition(cond, args, taint_context)
+                for cond in policy.conditions
+            )
+
+            if all_met:
+                reason = (
+                    f"Policy '{policy.name}' matched tool '{tool_name}' "
+                    f"(pattern='{policy.tool_pattern}', priority={policy.priority})"
                 )
-
-                if all_met:
-                    reason = (
-                        f"Policy '{policy.name}' matched tool '{tool_name}' "
-                        f"(pattern='{policy.tool_pattern}', priority={policy.priority})"
-                    )
-                    logger.debug(reason)
-                    result = EvaluationResult(
-                        action=policy.action,
-                        matched_policy=policy,
-                        reason=reason,
-                        details={
-                            "tool_name": tool_name,
-                            "policy_name": policy.name,
-                            "policy_set": self._policy_set_name,
-                        },
-                    )
-                    self._cache_put(cache_key, result)
-                    return result
+                logger.debug(reason)
+                result = EvaluationResult(
+                    action=policy.action,
+                    matched_policy=policy,
+                    reason=reason,
+                    details={
+                        "tool_name": tool_name,
+                        "policy_name": policy.name,
+                        "policy_set": self._policy_set_name,
+                    },
+                )
+                self._cache_put(cache_key, result)
+                return result
 
         # No policy matched — use default
         result = EvaluationResult(
@@ -708,12 +719,41 @@ class PolicyEngine:
         return count
 
     def replace_all(self, policies: Sequence[Policy]) -> None:
-        """Atomically replace all policies (used by hot-reload)."""
+        """Atomically replace all policies (used by hot-reload).
+
+        Validates policies before applying. Rejects empty or malformed
+        policy lists to avoid leaving the engine in an insecure state
+        (GAP 4.5 — hot-reload validation).
+        """
+        if not policies:
+            logger.error(
+                "replace_all() called with empty policy list — "
+                "rejecting to avoid security gap"
+            )
+            return
+
+        # Validate each policy has required fields
+        validated: list[Policy] = []
+        for p in policies:
+            if not p.name or not p.tool_pattern:
+                logger.warning(
+                    "Skipping malformed policy (missing name or tool_pattern): %r", p
+                )
+                continue
+            validated.append(p)
+
+        if not validated:
+            logger.error(
+                "replace_all() — all %d policies were malformed; keeping previous",
+                len(policies),
+            )
+            return
+
         with self._lock:
-            self._policies = list(policies)
+            self._policies = validated
             self._sort_policies()
             self.invalidate_cache()
-        logger.info("Replaced all policies (%d total)", len(policies))
+        logger.info("Replaced all policies (%d total)", len(validated))
 
     @property
     def policy_count(self) -> int:

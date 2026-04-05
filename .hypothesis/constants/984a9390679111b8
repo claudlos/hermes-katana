@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/dbus/connection.py
+# hypothesis_version: 6.151.10
+
+[-1.0, ',', ', ', 'Connection', 'Disconnected', 'SignalMatch', '_args_match', '_byte_arrays', '_conn_weakref', '_destination_keyword', '_handler', '_int_args_match', '_interface', '_interface_keyword', '_member', '_member_keyword', '_message_keyword', '_path', '_path_keyword', '_rule', '_sender', '_sender_keyword', '_sender_name_owner', 'arg', "arg%d='%s'", 'dbus.connection', "interface='%s'", "member='%s'", 'named_service', "path='%s'", 'reStructuredText', "sender='%s'", "type='signal'", 'utf8_strings']

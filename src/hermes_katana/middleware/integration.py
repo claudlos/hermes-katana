@@ -90,13 +90,14 @@ class KatanaTaintMiddleware(KatanaMiddleware):
         for downstream policy evaluation.
         """
         from hermes_katana.taint import TaintedValue, FlowDecision
+        from hermes_katana.taint.value import TaintedStr
 
         tracker = self.tracker
         tainted_fields: dict[str, Any] = {}
         worst_flow = None
 
         for arg_name, arg_val in ctx.args.items():
-            if isinstance(arg_val, TaintedValue):
+            if isinstance(arg_val, (TaintedStr, TaintedValue)):
                 # Build taint context entry for this field
                 sources = arg_val.sources
                 labels = [s.label.name for s in sources]
@@ -357,6 +358,22 @@ class KatanaPolicyMiddleware(KatanaMiddleware):
         if result.matched_policy:
             ctx.extras["policy_name"] = result.matched_policy.name
 
+        # Deny-by-default for unknown tools with tainted args
+        if result.matched_policy is None and ctx.taint_context.get("tainted_fields"):
+            ctx.deny(
+                f"Unknown tool '{ctx.tool_name}' with tainted arguments — "
+                f"deny by default (no matching policy)"
+            )
+            return DispatchDecision.DENY
+
+        # Escalate unknown tools with clean args (fail-closed)
+        if result.matched_policy is None:
+            ctx.escalate(
+                f"Unknown tool '{ctx.tool_name}' — "
+                f"escalate by default (no matching policy)"
+            )
+            return DispatchDecision.ESCALATE
+
         if result.action == PolicyResult.DENY:
             ctx.deny(f"Policy denied: {result.reason}")
             return DispatchDecision.DENY
@@ -400,7 +417,9 @@ class KatanaAuditMiddleware(KatanaMiddleware):
         log_allow: bool = True,
         enabled: bool = True,
     ) -> None:
-        super().__init__(name="katana.audit", enabled=enabled, priority=20)
+        # GAP 4.4: Audit runs BEFORE policy (higher priority) so denied calls
+        # are always logged even on short-circuit.
+        super().__init__(name="katana.audit", enabled=enabled, priority=65)
         self._audit_trail = audit_trail
         self._log_allow = log_allow
 

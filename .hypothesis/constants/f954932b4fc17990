@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/dbus/mainloop/__init__.py
+# hypothesis_version: 6.151.10
+
+['NULL_MAIN_LOOP', 'NativeMainLoop', 'WATCH_ERROR', 'WATCH_HANGUP', 'WATCH_READABLE', 'WATCH_WRITABLE', 'glib']
