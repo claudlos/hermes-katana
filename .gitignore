@@ -44,3 +44,4 @@ Thumbs.db
 # Misc
 .tmp/
 *.lock
+.smux-board.json
