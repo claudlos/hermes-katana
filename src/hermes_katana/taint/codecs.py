@@ -249,21 +249,33 @@ def _patch_json() -> None:
 
 
 _BASE64_FUNCS = (
-    "b64encode", "b64decode",
-    "encodebytes", "decodebytes",
-    "urlsafe_b64encode", "urlsafe_b64decode",
-    "standard_b64encode", "standard_b64decode",
-    "b16encode", "b16decode",
-    "b32encode", "b32decode",
-    "b85encode", "b85decode",
-    "a85encode", "a85decode",
+    "b64encode",
+    "b64decode",
+    "encodebytes",
+    "decodebytes",
+    "urlsafe_b64encode",
+    "urlsafe_b64decode",
+    "standard_b64encode",
+    "standard_b64decode",
+    "b16encode",
+    "b16decode",
+    "b32encode",
+    "b32decode",
+    "b85encode",
+    "b85decode",
+    "a85encode",
+    "a85decode",
 )
 
 _CODECS_FUNCS = ("encode", "decode")
 
 _URLPARSE_FUNCS = (
-    "quote", "unquote", "quote_plus", "unquote_plus",
-    "quote_from_bytes", "unquote_to_bytes",
+    "quote",
+    "unquote",
+    "quote_plus",
+    "unquote_plus",
+    "quote_from_bytes",
+    "unquote_to_bytes",
 )
 
 _HTML_FUNCS = ("escape", "unescape")
