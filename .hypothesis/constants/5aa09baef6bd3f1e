@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/dbus/proxies.py
+# hypothesis_version: 6.151.10
+
+[', ', '.', 'Introspect', '__', 'bus', 'dbus.proxies', 'dbus_interface', 'error_handler', 'ignore_reply', 'named_service', 'reply_handler', 'restructuredtext', 'signature']

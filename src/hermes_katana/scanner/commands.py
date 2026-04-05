@@ -788,6 +788,108 @@ _cp(
 )
 
 
+# ============================
+# BACKTICK SUBSTITUTION
+# ============================
+
+_cp(
+    "backtick_dangerous_cmd",
+    r"`[^`]*(?:curl|wget|rm|chmod|dd|mkfs|nc|netcat)[^`]*`",
+    CommandCategory.CODE_EXECUTION,
+    CommandSeverity.CRITICAL,
+    "Backtick command substitution containing dangerous command.",
+)
+
+# ============================
+# FILE DESCRIPTOR TRICKS
+# ============================
+
+_cp(
+    "fd_dev_tcp_udp",
+    r"(?:/dev/(?:tcp|udp)/|exec\s+\d+[<>])",
+    CommandCategory.REVERSE_SHELL,
+    CommandSeverity.CRITICAL,
+    "File descriptor trick using /dev/tcp or /dev/udp - reverse shell technique.",
+)
+
+# ============================
+# PIPE CHAIN TO SHELL
+# ============================
+
+_cp(
+    "pipe_chain_to_shell",
+    r"(?:curl|wget)\s[^|]+(?:\|[^|]+)*\|\s*(?:sh|bash|zsh|dash|ksh)\b",
+    CommandCategory.PIPE_TO_SHELL,
+    CommandSeverity.CRITICAL,
+    "Multi-hop pipe chain from curl/wget ending in shell execution.",
+)
+
+# ============================
+# PROCESS SUBSTITUTION
+# ============================
+
+_cp(
+    "process_substitution_shell",
+    r"(?:bash|sh|zsh|dash|\.\s)\s*<\(\s*(?:curl|wget)",
+    CommandCategory.PIPE_TO_SHELL,
+    CommandSeverity.CRITICAL,
+    "Process substitution feeding downloaded content to shell.",
+)
+
+# ============================
+# ENV / PATH MANIPULATION
+# ============================
+
+_cp(
+    "path_manipulation",
+    r"PATH\s*=\s*(?:/tmp|/dev/shm|/var/tmp|\.)[^;]*:\$PATH",
+    CommandCategory.PRIVILEGE_ESCALATION,
+    CommandSeverity.HIGH,
+    "PATH environment variable manipulation with suspicious directory - may hijack command resolution.",
+)
+
+# ============================
+# VARIABLE EXPANSION EVASION
+# ============================
+
+_cp(
+    "variable_expansion_shell",
+    r"\w+=\w+.*\$\w+.*\|\s*(?:sh|bash|zsh|dash|ksh)\b",
+    CommandCategory.PIPE_TO_SHELL,
+    CommandSeverity.CRITICAL,
+    "Variable assignment with expansion piped to shell - evasion technique.",
+)
+
+
+# ---------------------------------------------------------------------------
+# Shell quote stripping (defeats string-splitting evasion)
+# ---------------------------------------------------------------------------
+
+_RE_BACKTICK = re.compile(r"`([^`]+)`")
+_RE_PATH_PREFIX = re.compile(r'(?:/usr)?(?:/local)?/s?bin/')
+
+
+def _strip_shell_quotes(cmd: str) -> str:
+    r"""Strip shell quoting tricks and path prefixes used to evade pattern matching.
+
+    Handles:
+    - Single-quoted fragments:  r'm' -> rm,  cu'r'l -> curl
+    - Double-quoted fragments:  r"m" -> rm
+    - Empty quote pairs:  rm'' -> rm
+    - Backslash escapes:  r\m -> rm
+    - Path prefixes:  /usr/bin/wget -> wget
+    """
+    # Strip content from single-quoted fragments (preserve content between quotes)
+    cmd = re.sub(r"'([^']*)'", r'\1', cmd)
+    # Strip content from double-quoted fragments
+    cmd = re.sub(r'"([^"]*)"', r'\1', cmd)
+    # Strip backslash before letters
+    cmd = re.sub(r"\\(?=[a-zA-Z])", "", cmd)
+    # Strip path prefixes so /usr/bin/wget -> wget, /bin/bash -> bash
+    cmd = _RE_PATH_PREFIX.sub("", cmd)
+    return cmd
+
+
 # ---------------------------------------------------------------------------
 # Main detection function
 # ---------------------------------------------------------------------------
@@ -823,25 +925,65 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
         return []
 
     # Unicode homoglyph bypass: normalize to NFKD and fold to ASCII
-    # so that Cyrillic/Greek lookalikes (е→e, а→a, с→c, etc.) are
+    # so that Cyrillic/Greek lookalikes (e->e, a->a, c->c, etc.) are
     # reduced to their ASCII equivalents before pattern matching.
     cmd = unicodedata.normalize("NFKD", cmd).encode("ascii", "ignore").decode("ascii")
 
     if not cmd:
         return []
 
+    # Shell quote/backslash stripping to defeat string-splitting evasions
+    stripped = _strip_shell_quotes(cmd)
+
     findings: list[CommandFinding] = []
 
-    for name, pattern, category, severity, description in _COMMAND_PATTERNS:
-        for match in pattern.finditer(cmd):
+    # Scan both original and quote-stripped versions
+    for variant in ((cmd, stripped) if stripped != cmd else (cmd,)):
+        for name, pattern, category, severity, description in _COMMAND_PATTERNS:
+            for match in pattern.finditer(variant):
+                findings.append(CommandFinding(
+                    pattern_name=name,
+                    severity=severity,
+                    matched_text=match.group(),
+                    category=category,
+                    position=(match.start(), match.end()),
+                    description=description,
+                ))
+
+    # Backtick substitution: extract and recursively scan backtick content
+    for bt_match in _RE_BACKTICK.finditer(cmd):
+        content = bt_match.group(1)
+        sub_findings = detect_dangerous_command(content)
+        findings.extend(sub_findings)
+        # Backtick = command substitution = execution. Flag download commands
+        # inside backticks even without pipe-to-shell, since the backtick
+        # itself executes the result.
+        if not sub_findings and re.search(r'\b(?:curl|wget)\s+', content):
             findings.append(CommandFinding(
-                pattern_name=name,
-                severity=severity,
-                matched_text=match.group(),
-                category=category,
-                position=(match.start(), match.end()),
-                description=description,
+                pattern_name="backtick_download_exec",
+                severity=CommandSeverity.CRITICAL,
+                matched_text=bt_match.group(),
+                category=CommandCategory.PIPE_TO_SHELL,
+                position=(bt_match.start(), bt_match.end()),
+                description="Download command inside backtick substitution - downloaded content is executed.",
             ))
+
+    # Replace backtick expressions with a dangerous placeholder so the
+    # surrounding command is checked in full, e.g. "rm -rf `echo /`" -> "rm -rf /"
+    if _RE_BACKTICK.search(cmd):
+        cmd_expanded = _RE_BACKTICK.sub("/", cmd)
+        expanded_stripped = _strip_shell_quotes(cmd_expanded)
+        for exp_variant in ((cmd_expanded, expanded_stripped) if expanded_stripped != cmd_expanded else (cmd_expanded,)):
+            for name, pattern, category, severity, description in _COMMAND_PATTERNS:
+                for match in pattern.finditer(exp_variant):
+                    findings.append(CommandFinding(
+                        pattern_name=name,
+                        severity=severity,
+                        matched_text=match.group(),
+                        category=category,
+                        position=(match.start(), match.end()),
+                        description=description,
+                    ))
 
     # Sort by severity
     severity_order = {

@@ -346,6 +346,10 @@ class AuditTrail:
         writes it to the log file with file locking, and updates the
         in-memory last-hash cache.
 
+        For multi-process safety, we re-read the last hash from the file
+        while holding the file lock, so concurrent processes always chain
+        correctly.
+
         Args:
             entry: The audit entry to log. The prev_hash and entry_hash
                 fields will be set automatically.
@@ -354,14 +358,21 @@ class AuditTrail:
             The entry_hash of the logged entry.
         """
         with self._rlock:
-            # Finalize the entry with the current chain hash
-            entry.finalize(self._last_hash)
-
-            # Serialize to JSON
-            line = entry.model_dump_json(exclude_none=False) + "\n"
-
-            # Write with file locking
+            # Write with file locking — hold the lock across read+finalize+write
+            # to prevent two processes from reading the same last_hash
             with self._file_lock:
+                # Re-read the actual last hash from disk under lock
+                # (another process may have appended since our last write)
+                actual_last_hash = self._read_last_hash_from_file()
+                if actual_last_hash != self._last_hash:
+                    self._last_hash = actual_last_hash
+
+                # Finalize the entry with the verified chain hash
+                entry.finalize(self._last_hash)
+
+                # Serialize to JSON
+                line = entry.model_dump_json(exclude_none=False) + "\n"
+
                 with open(self._path, "a", encoding="utf-8") as fp:
                     fp.write(line)
                     fp.flush()
@@ -375,6 +386,31 @@ class AuditTrail:
             self._maybe_rotate()
 
             return entry.entry_hash
+
+    def _read_last_hash_from_file(self) -> str:
+        """Read the last entry_hash from the audit log file.
+
+        Called under file lock to get the true last hash for multi-process
+        chain integrity. Returns _GENESIS_HASH if the file is empty or
+        doesn't exist.
+        """
+        if not self._path.exists() or self._path.stat().st_size == 0:
+            return _GENESIS_HASH
+        try:
+            last_hash = _GENESIS_HASH
+            with open(self._path, "r", encoding="utf-8") as fp:
+                for line in fp:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        last_hash = data.get("entry_hash", _GENESIS_HASH)
+                    except json.JSONDecodeError:
+                        continue
+            return last_hash
+        except Exception:
+            return _GENESIS_HASH
 
     def _maybe_rotate(self) -> None:
         """Check if the log file needs rotation and rotate if so."""

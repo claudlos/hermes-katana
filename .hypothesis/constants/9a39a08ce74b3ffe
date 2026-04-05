@@ -1,0 +1,4 @@
+# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/proxy/runner.py
+# hypothesis_version: 6.151.10
+
+[0.0, 0.2, 0.5, 1.0, 5.0, 200, 404, 503, 4096, '--ignore-hosts', '--listen-host', '--listen-port', '--set', '-m', '-s', '.tmp', '/F', '/PID', '/health', '0', '1', '127.0.0.1', 'AuditTrail', 'Content-Type', 'KatanaProxy', 'Proxy stopped', 'Vault', 'Windows', '_PidInfo', 'addon_script.py', 'application/json', 'config', 'host', 'inject_credentials', 'katana-health-check', 'mitmdump', 'mitmproxy.tools.main', 'no-vault', 'path', 'pid', 'port', 'r', 'running', 'started_at', 'taskkill', 'tls_verify', 'unknown', 'uptime_seconds', 'vault-error', 'vault_hash', 'w', '|']

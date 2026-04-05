@@ -14,7 +14,9 @@ approval.
 
 from __future__ import annotations
 
+import json as _json
 import logging
+import fnmatch
 import threading
 import time
 from dataclasses import dataclass, field
@@ -86,11 +88,8 @@ class FlowRule:
         """``True`` if *tool_name* is covered by this rule."""
         if "*" in self.target_tools:
             return True
-        # Support simple prefix matching with trailing *
         for pattern in self.target_tools:
-            if pattern.endswith("*") and tool_name.startswith(pattern[:-1]):
-                return True
-            if tool_name == pattern:
+            if fnmatch.fnmatch(tool_name, pattern):
                 return True
         return False
 
@@ -151,6 +150,17 @@ CRITICAL_SINKS: frozenset[str] = frozenset({
     "write_file",
     "patch",
     "mcp_patch",
+    "subprocess",
+    "os.system",
+    "exec",
+    "eval",
+    "http_request",
+    "fetch",
+    "api_call",
+    "browser_type",
+    "browser_click",
+    "cronjob",
+    "skill_manage",
 })
 
 # Labels considered untrusted by default
@@ -294,7 +304,7 @@ class FlowAnalyzer:
     def __init__(
         self,
         rules: Optional[Sequence[FlowRule]] = None,
-        default_decision: FlowDecision = FlowDecision.ALLOW,
+        default_decision: FlowDecision = FlowDecision.ASK_USER,
         strict_mode: bool = False,
     ) -> None:
         self._rules: list[FlowRule] = sorted(
@@ -413,6 +423,7 @@ class FlowAnalyzer:
         with self._lock:
             self._history.append(result)
             if len(self._history) > self._MAX_HISTORY:
+                self._flush_history_to_disk(self._history[:-self._MAX_HISTORY // 2])
                 self._history = self._history[-self._MAX_HISTORY // 2:]
         logger.debug(
             "Flow analysis: %s → %s = %s",
@@ -435,6 +446,31 @@ class FlowAnalyzer:
     def clear_history(self) -> None:
         """Discard all recorded analyses."""
         self._history.clear()
+
+    def _flush_history_to_disk(self, entries: list[FlowAnalysis]) -> None:
+        """Flush oldest history entries to an audit trail JSONL file.
+
+        Called automatically before truncating history at _MAX_HISTORY.
+        Entries are appended to ~/.config/hermes-katana/flow_audit.jsonl.
+        """
+        from pathlib import Path as _P
+        try:
+            audit_dir = _P.home() / ".config" / "hermes-katana"
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            audit_path = audit_dir / "flow_audit.jsonl"
+            with open(audit_path, "a", encoding="utf-8") as f:
+                for entry in entries:
+                    record = {
+                        "decision": entry.decision.name,
+                        "tool_name": entry.tool_name,
+                        "labels": sorted(lbl.name for lbl in entry.labels_present),
+                        "reasoning": entry.reasoning,
+                        "timestamp": entry.timestamp,
+                    }
+                    f.write(_json.dumps(record, default=str) + "\n")
+                f.flush()
+        except Exception:
+            logger.debug("Failed to flush flow history to disk", exc_info=True)
 
     def __repr__(self) -> str:
         return (

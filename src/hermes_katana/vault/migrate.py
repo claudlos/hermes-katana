@@ -314,7 +314,17 @@ def _secure_delete_from_file(
                 modified = True
 
         if modified:
-            file_path.write_text(content, encoding="utf-8")
+            # Write with fsync to ensure overwrite reaches disk.
+            # NOTE: On journaling filesystems (ext4, NTFS) or CoW
+            # filesystems (btrfs, ZFS), the original data may persist
+            # in the journal or as a previous snapshot. Full secure
+            # deletion requires filesystem-specific tools or FDE.
+            fd = os.open(str(file_path), os.O_WRONLY | os.O_TRUNC)
+            try:
+                os.write(fd, content.encode("utf-8"))
+                os.fsync(fd)
+            finally:
+                os.close(fd)
             return True
     except Exception as exc:
         logger.debug("Secure delete from %s failed: %s", file_path, exc)

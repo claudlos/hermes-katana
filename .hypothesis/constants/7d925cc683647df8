@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/gi/_signalhelper.py
+# hypothesis_version: 6.151.10
+
+['-', '::', 'BoundSignal("%s")', '_', '__annotations__', '__gsignals__', 'do_', 'override', 'return']

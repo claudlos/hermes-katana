@@ -1,0 +1,4 @@
+# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/installer/patches.py
+# hypothesis_version: 6.151.10
+
+['# [KATANA-PATCH]', 'Patch %s: %s', 'applied', 'banner_integration', 'dispatcher_bootstrap', 'error', 'hermes/ui/banner.py', 'planned', 'proxy_env_vars', 'reverted', 'skipped', 'tool_dispatch_hook', 'utf-8']

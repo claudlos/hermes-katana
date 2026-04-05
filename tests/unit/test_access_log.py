@@ -113,7 +113,11 @@ class TestVaultAccessLog:
         access_log.log_access("K", "SET", caller="test")
         lines = log_path.read_text().strip().split("\n")
         assert len(lines) == 1
-        data = json.loads(lines[0])
+        # Lines now have HMAC appended: json_data|hmac
+        raw_line = lines[0]
+        if "|" in raw_line:
+            raw_line = raw_line.rsplit("|", 1)[0]
+        data = json.loads(raw_line)
         assert data["key_name"] == "K"
         assert data["operation"] == "SET"
 

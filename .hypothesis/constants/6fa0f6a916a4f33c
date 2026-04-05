@@ -1,0 +1,4 @@
+# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/proxy/addon.py
+# hypothesis_version: 6.151.10
+
+[1.0, 2.0, 400, 403, 429, 502, 10000, ';', '=', 'AuditTrail', 'Content-Type', 'POLICY_DECISION', 'RATE_ANOMALY', 'Rate limit exceeded', 'SCAN_RESULT', 'URL scan error: %s', 'Vault', 'X-Katana-Blocked', 'X-Katana-Scanned', 'api-key', 'authorization', 'cookie', 'credentials_injected', 'deny', 'finding_count', 'is_blocked', 'passthrough', 'query', 'rate_tracker', 'replace', 'request', 'requests_ignored', 'requests_oversized', 'requests_passed', 'requests_total', 'requests_warned', 'response', 'responses_oversized', 'responses_passed', 'responses_total', 'responses_warned', 'risk_score', 'summary', 'text/plain', 'total_violations', 'tracked_clients', 'true', 'unknown', 'utf-8', 'verdict', 'warn', 'x-api-key', '|']

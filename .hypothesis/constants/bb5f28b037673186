@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/gi/_constants.py
+# hypothesis_version: 6.151.10
+
+['GBoxed', 'GEnum', 'GFlags', 'GInterface', 'GObject', 'GParam', 'GStrv', 'GType', 'GVariant', 'PyObject', 'gboolean', 'gchar', 'gchararray', 'gdouble', 'gfloat', 'gint', 'gint64', 'glong', 'gpointer', 'guchar', 'guint', 'guint64', 'gulong', 'void']

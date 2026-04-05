@@ -1,0 +1,4 @@
+# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/scanner/secrets.py
+# hypothesis_version: 6.151.10
+
+[0.0, 0.2, 0.5, 0.85, 0.9, 0.95, 1.0, 4.5, '*', '0X', '0x', '=', 'Heroku API Key.', 'anthropic_key', 'api_key', 'aws_access_key', 'aws_secret_key', 'azure_key', 'base64', 'bearer_token', 'chunked', 'connection_string', 'critical', 'database_url', 'encoded_secret', 'github_fine_grained', 'github_token', 'google_api_key', 'heroku_key', 'hex', 'high', 'high_entropy', 'jwt_token', 'low', 'mailgun_key', 'medium', 'openai_key', 'password', 'password_assignment', 'private_key', 'reversed', 'rot13', 'rot_13', 'sendgrid_key', 'slack_bot_token', 'slack_user_token', 'strict', 'stripe_key', 'token', 'twilio_key', 'url_encoded', 'utf-8', 'vault_exact_match', 'vault_match', 'vault_match_reversed', 'vault_match_rot13', 'vault_match_split']

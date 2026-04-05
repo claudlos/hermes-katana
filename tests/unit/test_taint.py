@@ -16,6 +16,7 @@ from hermes_katana.taint.value import (
     TaintedStr,
     TaintedValue,
     collect_sources,
+    taint_aware_json_dumps,
     unwrap,
 )
 
@@ -422,3 +423,98 @@ class TestUtilities:
     def test_collect_sources_plain(self):
         srcs = collect_sources("plain_string")
         assert len(srcs) == 0
+
+    def test_collect_sources_tainted_str(self, web_source):
+        ts = TaintedStr("data", sources=frozenset({web_source}))
+        srcs = collect_sources(ts)
+        assert web_source in srcs
+
+
+# ======================================================================
+# Taint Laundering Prevention — TaintedStr subclasses str
+# ======================================================================
+
+class TestTaintLaunderingPrevention:
+    """Verify that TaintedStr IS a str subclass so it passes isinstance
+    checks everywhere str is expected, and that method-level operations
+    preserve taint.  Note: CPython's C-level str()/repr()/format()/f-strings
+    coerce returns to plain str — this is expected and unavoidable."""
+
+    def test_tainted_str_is_str_subclass(self, web_source):
+        ts = TaintedStr("hello", sources=frozenset({web_source}))
+        assert isinstance(ts, str)
+
+    def test_isinstance_str_passes(self, web_source):
+        """The key win: TaintedStr passes isinstance(x, str) checks."""
+        ts = TaintedStr("hello", sources=frozenset({web_source}))
+        assert isinstance(ts, str)
+        # Can be used anywhere a str is expected without conversion
+        assert ts == "hello"
+
+    def test_direct_use_preserves_taint(self, web_source):
+        """Using TaintedStr directly (without str()) keeps taint."""
+        ts = TaintedStr("hello", sources=frozenset({web_source}))
+        # Direct method calls preserve taint
+        result = ts.upper()
+        assert isinstance(result, TaintedStr)
+        assert TaintLabel.WEB_CONTENT in result.labels
+        assert result == "HELLO"
+
+    def test_chained_operations(self, web_source):
+        """Chaining TaintedStr methods preserves taint throughout."""
+        ts = TaintedStr("hello world", sources=frozenset({web_source}))
+        result = ts.upper().replace("WORLD", "EARTH").strip()
+        assert isinstance(result, TaintedStr)
+        assert TaintLabel.WEB_CONTENT in result.labels
+        assert result == "HELLO EARTH"
+
+    def test_concat_preserves_taint(self, web_source, user_source):
+        ts1 = TaintedStr("hello", sources=frozenset({web_source}))
+        ts2 = TaintedStr(" world", sources=frozenset({user_source}))
+        result = ts1 + ts2
+        assert isinstance(result, TaintedStr)
+        assert TaintLabel.WEB_CONTENT in result.labels
+        assert TaintLabel.USER in result.labels
+
+    def test_mod_formatting(self, web_source, user_source):
+        template = TaintedStr("Hello %s!", sources=frozenset({web_source}))
+        name = TaintedStr("world", sources=frozenset({user_source}))
+        result = template % name
+        assert isinstance(result, TaintedStr)
+        assert result == "Hello world!"
+        assert TaintLabel.WEB_CONTENT in result.labels
+        assert TaintLabel.USER in result.labels
+
+    def test_json_dumps_preserves_taint(self, web_source):
+        ts = TaintedStr("secret", sources=frozenset({web_source}))
+        result = taint_aware_json_dumps({"key": ts})
+        assert isinstance(result, TaintedStr)
+        assert TaintLabel.WEB_CONTENT in result.labels
+
+    def test_value_property_backward_compat(self, web_source):
+        ts = TaintedStr("hello", sources=frozenset({web_source}))
+        assert ts.value == "hello"
+        assert isinstance(ts.value, str)
+
+    def test_encode_tainted(self, web_source):
+        ts = TaintedStr("hello", sources=frozenset({web_source}))
+        result = ts.encode_tainted()
+        assert isinstance(result, TaintedValue)
+        assert result.value == b"hello"
+        assert TaintLabel.WEB_CONTENT in result.labels
+
+    def test_unwrap_tainted_str_returns_plain_str(self, web_source):
+        ts = TaintedStr("hello", sources=frozenset({web_source}))
+        result = unwrap(ts)
+        assert result == "hello"
+        assert type(result) is str  # NOT TaintedStr
+
+    def test_split_join_roundtrip(self, web_source):
+        ts = TaintedStr("a,b,c", sources=frozenset({web_source}))
+        sep = TaintedStr(",", sources=frozenset({web_source}))
+        parts = ts.split(",")
+        assert all(isinstance(p, TaintedStr) for p in parts)
+        rejoined = sep.join(parts)
+        assert isinstance(rejoined, TaintedStr)
+        assert rejoined == "a,b,c"
+        assert TaintLabel.WEB_CONTENT in rejoined.labels

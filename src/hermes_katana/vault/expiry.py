@@ -221,3 +221,23 @@ class SecretExpiry:
         with self._lock:
             if self._path.exists():
                 self._path.unlink()
+
+    def sync_with_vault(self, vault_keys: list[str]) -> list[str]:
+        """Remove orphaned expiry entries not present in the vault (GAP 2.8).
+
+        Args:
+            vault_keys: List of key names currently in the vault.
+
+        Returns:
+            List of orphaned key names that were removed.
+        """
+        with self._lock:
+            data = self._read()
+            vault_set = set(vault_keys)
+            orphaned = [k for k in data if k not in vault_set]
+            if orphaned:
+                for k in orphaned:
+                    del data[k]
+                self._write(data)
+                logger.debug("Removed %d orphaned expiry entries: %s", len(orphaned), orphaned)
+        return sorted(orphaned)

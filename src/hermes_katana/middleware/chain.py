@@ -44,6 +44,55 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Direct call bypass detector (GAP 4.1)
+# ---------------------------------------------------------------------------
+
+# Global registry of tools that MUST go through the middleware chain.
+_REGISTERED_TOOLS: set[str] = set()
+_BYPASS_LOCK = threading.Lock()
+_BYPASS_WARNINGS: list[dict[str, Any]] = []
+
+
+def register_protected_tool(tool_name: str) -> None:
+    """Register a tool that must always be dispatched through the chain."""
+    with _BYPASS_LOCK:
+        _REGISTERED_TOOLS.add(tool_name)
+
+
+def _direct_call_detector(tool_name: str, *, via_chain: bool = False) -> None:
+    """Log/warn when a tool call bypasses the middleware chain.
+
+    Call this from the tool dispatch layer.  If ``via_chain`` is False
+    and the tool is in the protected set, a warning is emitted.
+    """
+    if via_chain:
+        return
+    with _BYPASS_LOCK:
+        if tool_name in _REGISTERED_TOOLS:
+            warning = {
+                "tool": tool_name,
+                "message": (
+                    f"Tool '{tool_name}' invoked outside the middleware chain — "
+                    f"security checks may have been bypassed"
+                ),
+                "timestamp": time.time(),
+            }
+            _BYPASS_WARNINGS.append(warning)
+            logger.warning(warning["message"])
+
+
+def get_bypass_warnings() -> list[dict[str, Any]]:
+    """Return accumulated bypass warnings (for testing / audit)."""
+    with _BYPASS_LOCK:
+        return list(_BYPASS_WARNINGS)
+
+
+def clear_bypass_warnings() -> None:
+    """Clear accumulated bypass warnings."""
+    with _BYPASS_LOCK:
+        _BYPASS_WARNINGS.clear()
+
 
 # ---------------------------------------------------------------------------
 # Dispatch decision

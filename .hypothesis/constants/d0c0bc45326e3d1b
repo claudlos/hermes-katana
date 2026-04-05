@@ -1,0 +1,4 @@
+# file: /usr/lib/python3/dist-packages/dbus/exceptions.py
+# hypothesis_version: 6.151.10
+
+['%s: %s', ', ', 'DBusException', 'NameExistsException', 'Unknown method: %s', 'ValidationException', '_dbus_error_name', 'name', 'replace', 'utf-8']
