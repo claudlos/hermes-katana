@@ -297,6 +297,7 @@ HermesKatana's taint tracking system is inspired by Google DeepMind's CaMeL pape
 This project stands on the shoulders of excellent research and prior work:
 
 - **[CaMeL: Defeating Prompt Injections by Design](https://arxiv.org/abs/2503.18813)** — Debenedetti, Tramèr, et al. (Google DeepMind, 2025). The foundational paper that introduced capability-based security and taint tracking for LLM agents. HermesKatana extends CaMeL's value-level taint tracking to character-level granularity.
+- **[camelup](https://github.com/nativ3ai/camelup)** — Python CaMeL reference implementation by [@nativ3ai](https://github.com/nativ3ai).
 - **[google-deepmind/dangerous-capabilities-evaluations](https://github.com/google-deepmind/dangerous-capabilities-evaluations)** — Google DeepMind's evaluation framework for dangerous AI capabilities, informing our adversarial eval design.
 - **[hermes-aegis](https://github.com/Tranquil-Flow/hermes-aegis)** — The predecessor project by [@Tranquil-Flow](https://github.com/Tranquil-Flow). Pioneered the mitmproxy-based secret scrubbing proxy, encrypted vault, and command scanner patterns that HermesKatana builds upon.
 - **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — The AI agent runtime by [Nous Research](https://github.com/NousResearch) that HermesKatana was designed to protect. The middleware chain architecture is tailored for Hermes's tool-dispatch pipeline.
