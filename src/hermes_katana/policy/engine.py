@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
 
+from hermes_katana.taint import Source, TaintedStr
+
 from .defaults import BUILTIN_POLICY_SETS
 from .models import (
     Condition,
@@ -554,21 +556,113 @@ class PolicyEngine:
     # -- Core evaluation ----------------------------------------------------
 
     @staticmethod
+    def _canonical_taint_fingerprint(obj: Any) -> Any:
+        """Walk *obj* and produce a deterministic, taint-aware fingerprint.
+
+        Silent ``default=str`` coercion (the previous approach) was unsafe
+        because a plain string and a tainted value with the same content
+        produced identical cache keys — the taint labels were invisible
+        to the hash. An attacker could warm the cache with a benign plain
+        string, then bypass policy on a tainted call with the same content.
+
+        This function canonicalizes:
+          * ``TaintedStr``    -> ("tainted_str", content, sorted_label_ids,
+                                  sorted_source_fingerprints)
+          * ``Source``         -> ("source", label, origin, trust_level)
+                                  (timestamp INTENTIONALLY omitted; including
+                                   it would make cache misses the norm and
+                                   it is not security-relevant)
+          * ``frozenset/set``  -> ("frozenset", sorted fingerprints)
+          * ``dict``           -> ("dict", sorted (k, fp(v)) items)
+          * ``list/tuple``     -> ("list", [fp(x) for x in obj])
+          * primitives         -> passthrough (str / int / float / bool / None)
+          * everything else    -> ("obj", type_qualname, repr(obj))
+            The fully-qualified type name prevents foreign objects from
+            colliding with primitives merely because their ``__str__`` /
+            ``__repr__`` happens to match.
+        """
+        # TaintedStr is a str subclass — check it BEFORE the str branch.
+        if isinstance(obj, TaintedStr):
+            label_names = tuple(sorted(getattr(lab, "name", repr(lab)) for lab in obj.labels))
+            source_fps = tuple(
+                sorted(
+                    (repr(PolicyEngine._canonical_taint_fingerprint(s)) for s in (getattr(obj, "sources", None) or ()))
+                )
+            )
+            return ("tainted_str", str.__str__(obj), label_names, source_fps)
+        if isinstance(obj, Source):
+            return (
+                "source",
+                getattr(obj.label, "name", repr(obj.label)),
+                str(obj.origin) if obj.origin is not None else None,
+                getattr(obj.trust_level, "name", repr(obj.trust_level)),
+            )
+        if isinstance(obj, (str, int, float, bool)) or obj is None:
+            return obj
+        if isinstance(obj, dict):
+            # Canonicalize both keys AND values (issue #4 follow-up: stringifying
+            # keys reintroduced the same collision class — {Spoof(): v} vs
+            # {"user": v} and {1: v} vs {"1": v} hashed identically).
+            # Sort by repr of the (key_fp, value_fp) pair so comparisons never
+            # hit TypeError across mixed key types.
+            items = [
+                (
+                    PolicyEngine._canonical_taint_fingerprint(k),
+                    PolicyEngine._canonical_taint_fingerprint(v),
+                )
+                for k, v in obj.items()
+            ]
+            items.sort(key=repr)
+            return ("dict", tuple(items))
+        # Preserve concrete container kind — list/tuple and set/frozenset are
+        # observably different to evaluate_condition() (which compares via
+        # str(arg_val)), so they must not share cache entries.
+        if isinstance(obj, list):
+            return (
+                "list",
+                tuple(PolicyEngine._canonical_taint_fingerprint(x) for x in obj),
+            )
+        if isinstance(obj, tuple):
+            return (
+                "tuple",
+                tuple(PolicyEngine._canonical_taint_fingerprint(x) for x in obj),
+            )
+        if isinstance(obj, frozenset):
+            items = [PolicyEngine._canonical_taint_fingerprint(x) for x in obj]
+            items.sort(key=repr)
+            return ("frozenset", tuple(items))
+        if isinstance(obj, set):
+            items = [PolicyEngine._canonical_taint_fingerprint(x) for x in obj]
+            items.sort(key=repr)
+            return ("set", tuple(items))
+        # Unknown type — include the QUALIFIED type name so foreign objects
+        # cannot collide with primitives merely by having a matching repr.
+        tp = type(obj)
+        qualname = f"{tp.__module__}.{tp.__qualname__}"
+        return ("obj", qualname, repr(obj))
+
+    @staticmethod
     def _make_cache_key(
         tool_name: str,
         args: dict[str, Any],
         taint_context: dict[str, Any],
     ) -> str:
-        """Build a deterministic cache key for an evaluation."""
-        import hashlib
-        import json
+        """Build a deterministic, taint-aware cache key for an evaluation.
 
-        blob = json.dumps(
-            {"t": tool_name, "a": args, "c": taint_context},
-            sort_keys=True,
-            default=str,
+        Uses :meth:`_canonical_taint_fingerprint` to recursively canonicalize
+        every value so that TaintedStr and Source objects contribute their
+        label metadata to the key (see that method's docstring for the
+        cache-collision attack this prevents).
+        """
+        import hashlib
+
+        fingerprint = (
+            "v2",  # version the scheme so future changes invalidate old caches
+            tool_name,
+            PolicyEngine._canonical_taint_fingerprint(args),
+            PolicyEngine._canonical_taint_fingerprint(taint_context),
         )
-        return hashlib.sha256(blob.encode()).hexdigest()[:32]
+        return hashlib.sha256(repr(fingerprint).encode("utf-8")).hexdigest()[:32]
 
     def invalidate_cache(self) -> None:
         """Clear the evaluation cache (called on policy mutations)."""
