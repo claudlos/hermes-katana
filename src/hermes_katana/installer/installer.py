@@ -78,9 +78,12 @@ HERMES_MARKERS = [
 ]
 
 # Current layout markers (post-v0.1.0)
+# NB: "hermes_cli" is a directory check to match _detect_hermes_layout() in
+# patches.py — keep these in sync, otherwise detect_hermes() and layout
+# detection can disagree on edge cases (dir exists without __init__.py).
 _HERMES_CURRENT_MARKERS = [
     "tools/registry.py",
-    "hermes_cli/__init__.py",
+    "hermes_cli",
     "tools/terminal_tool.py",
 ]
 
@@ -261,10 +264,21 @@ class KatanaInstaller:
         return self._last_backup_manifest
 
     def _patches_for(self, target: Path) -> list:
-        """Return the correct patch list for the Hermes layout at *target*."""
+        """Return the correct patch list for the Hermes layout at *target*.
+
+        Falls back to the current layout when detection raises (should only
+        happen if ``detect_hermes()`` was bypassed) but logs a warning so the
+        mismatch is visible instead of silently applying the wrong patches.
+        """
         try:
             layout = _detect_hermes_layout(target)
-        except ValueError:
+        except ValueError as exc:
+            logger.warning(
+                "Could not detect Hermes layout at %s (%s); defaulting to current "
+                "layout. This usually means detect_hermes() was skipped.",
+                target,
+                exc,
+            )
             layout = "current"
         return LEGACY_CORE_PATCHES if layout == "legacy-v0.1.0" else CURRENT_CORE_PATCHES
 
@@ -356,7 +370,11 @@ class KatanaInstaller:
             raise FileNotFoundError(f"Target path does not exist: {target}")
 
         if not self.detect_hermes(target):
-            raise ValueError(f"Not a Hermes checkout: {target}\nExpected marker files: {', '.join(HERMES_MARKERS)}")
+            raise ValueError(
+                f"Not a Hermes checkout: {target}\n"
+                f"Expected current-layout markers: {', '.join(_HERMES_CURRENT_MARKERS)}\n"
+                f"Or legacy v0.1.0 markers: {', '.join(HERMES_MARKERS)}"
+            )
 
         # Select patch set based on layout
         try:

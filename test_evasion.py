@@ -31,7 +31,12 @@ def _make_source(source_name: str, origin: str | None):
         return Source.mcp(origin or "untrusted-mcp")
     if source_name == "tool":
         return Source.tool(origin or "tool-output")
-    return Source.user(origin or "eval-user")
+    if source_name == "user":
+        return Source.user(origin or "eval-user")
+    raise ValueError(
+        f"Unsupported taint source in eval case: {source_name!r} "
+        "(expected one of: web, mcp, tool, user)"
+    )
 
 
 def _run_case(case: dict, tmp_path: Path) -> DispatchDecision:
