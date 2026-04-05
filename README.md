@@ -2,10 +2,10 @@
   <img src="docs/assets/banner.png" alt="HermesKatana" width="800">
 </p>
 
-<h1 align="center">HermesKatana</h1>
+<h1 align="center">Hermes Katana</h1>
 
 <p align="center">
-  <strong>Defense-in-depth security middleware for AI agents — the first production implementation of CaMeL taint tracking.</strong>
+  <strong>State of the art security for AI agents</strong>
 </p>
 
 <p align="center">
