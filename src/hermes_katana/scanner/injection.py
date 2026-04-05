@@ -136,6 +136,14 @@ _hp(
 )
 
 _hp(
+    "new_instructions_action",
+    r"(?:new|updated|revised|real|actual|true)\s+instructions?\s*:\s*(?:output|reveal|show|execute|ignore|disregard|override|delete|remove|dump|extract|send|exfiltrate|run|print|display)",
+    InjectionCategory.INSTRUCTION_OVERRIDE,
+    0.92,
+    "New instructions followed by dangerous action verb - high-confidence injection.",
+)
+
+_hp(
     "override_instructions",
     r"(?<!\w\s)(?<!the\s)(?<!CSS\s)(?<!default\s)(?<!theme\s)override\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|rules?|prompts?|settings?)",
     InjectionCategory.INSTRUCTION_OVERRIDE,
@@ -199,6 +207,14 @@ _hp(
     InjectionCategory.ROLE_OVERRIDE,
     0.85,
     "Role-play injection to bypass safety guidelines.",
+)
+
+_hp(
+    "unrestricted_ai",
+    r"(?:unrestricted\s+AI|no\s+safety\s+filters|no\s+content\s+polic)",
+    InjectionCategory.ROLE_OVERRIDE,
+    0.85,
+    "Request to act as unrestricted AI without safety filters or content policies.",
 )
 
 _hp(
@@ -297,6 +313,92 @@ _hp(
     InjectionCategory.DELIMITER_ESCAPE,
     0.85,
     "Visual separator with injection label.",
+)
+
+# --- INDIRECT PROMPT INJECTION patterns ---
+
+_hp(
+    "indirect_disregard_prior",
+    r"disregard\s+prior",
+    InjectionCategory.INSTRUCTION_OVERRIDE,
+    0.85,
+    "Subtle indirect prompt injection - 'disregard prior' phrasing.",
+)
+
+_hp(
+    "indirect_safety_guidelines",
+    r"safety\s+guidelines",
+    InjectionCategory.INSTRUCTION_OVERRIDE,
+    0.85,
+    "Subtle indirect prompt injection - reference to 'safety guidelines'.",
+)
+
+_hp(
+    "indirect_bypass_safety",
+    r"bypass\s+safety",
+    InjectionCategory.INSTRUCTION_OVERRIDE,
+    0.85,
+    "Subtle indirect prompt injection - 'bypass safety' phrasing.",
+)
+
+_hp(
+    "indirect_override_safety",
+    r"override\s+safety",
+    InjectionCategory.INSTRUCTION_OVERRIDE,
+    0.85,
+    "Subtle indirect prompt injection - 'override safety' phrasing.",
+)
+
+_hp(
+    "indirect_ignore_safety",
+    r"ignore\s+safety",
+    InjectionCategory.INSTRUCTION_OVERRIDE,
+    0.85,
+    "Subtle indirect prompt injection - 'ignore safety' phrasing.",
+)
+
+# --- CHAT DELIMITER INJECTION patterns ---
+
+_hp(
+    "chat_delimiter_im",
+    r"<\|im_(start|end)\|>",
+    InjectionCategory.DELIMITER_ESCAPE,
+    0.90,
+    "Chat template delimiter injection - OpenAI im_start/im_end tokens.",
+)
+
+_hp(
+    "chat_delimiter_inst",
+    r"\[/?INST\]",
+    InjectionCategory.DELIMITER_ESCAPE,
+    0.90,
+    "Chat template delimiter injection - Llama [INST] tokens.",
+)
+
+_hp(
+    "chat_delimiter_sys",
+    r"<</?SYS>>",
+    InjectionCategory.DELIMITER_ESCAPE,
+    0.90,
+    "Chat template delimiter injection - Llama <<SYS>> tokens.",
+)
+
+# --- JSON/STRUCTURAL INJECTION patterns ---
+
+_hp(
+    "json_tool_name_injection",
+    r'"tool_name"\s*:',
+    InjectionCategory.TOOL_MANIPULATION,
+    0.85,
+    "JSON structural injection - tool_name field in text, potential tool manipulation.",
+)
+
+_hp(
+    "json_function_call_injection",
+    r'"function_call"\s*:',
+    InjectionCategory.TOOL_MANIPULATION,
+    0.85,
+    "JSON structural injection - function_call field in text, potential tool manipulation.",
 )
 
 # --- SYSTEM_PROMPT_EXTRACT patterns ---
@@ -439,6 +541,14 @@ _hp(
     InjectionCategory.INSTRUCTION_OVERRIDE,
     0.50,
     "Goal-hijacking — redirects agent from its original task to attacker's objective.",
+)
+
+_hp(
+    "goal_hijack_action",
+    r"(?i)instead\s+of\s+(?:the\s+)?(?:above|previous|original|requested)\s+(?:task|instructions?|request)?\s*,?\s*(?:you\s+should|you\s+must|you\s+need\s+to|please)?\s*(?:output|reveal|show|execute|ignore|disregard|override|delete|remove|dump|extract|send|exfiltrate|run|print|display)",
+    InjectionCategory.INSTRUCTION_OVERRIDE,
+    0.92,
+    "Goal-hijacking with dangerous action verb - high-confidence injection.",
 )
 
 _hp(
