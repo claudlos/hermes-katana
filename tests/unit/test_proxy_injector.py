@@ -9,8 +9,6 @@ import pytest
 
 from hermes_katana.proxy.injector import (
     PROVIDER_REGISTRY,
-    Provider,
-    _DOMAIN_INDEX,
     get_provider_for_domain,
     inject_credentials,
     list_providers,
@@ -21,13 +19,14 @@ from hermes_katana.proxy.injector import (
 # Provider Registry
 # ======================================================================
 
+
 class TestProviderRegistry:
     def test_registry_has_12_plus_providers(self):
         assert len(PROVIDER_REGISTRY) >= 12
 
     def test_all_providers_have_required_fields(self):
         for p in PROVIDER_REGISTRY:
-            assert p.name, f"Provider missing name"
+            assert p.name, "Provider missing name"
             assert p.domains, f"{p.name} has no domains"
             assert p.key_name, f"{p.name} has no key_name"
             assert p.header_field, f"{p.name} has no header_field"
@@ -63,6 +62,7 @@ class TestProviderRegistry:
 # get_provider_for_domain
 # ======================================================================
 
+
 class TestGetProviderForDomain:
     def test_known_domain(self):
         assert get_provider_for_domain("api.openai.com") is not None
@@ -86,6 +86,7 @@ class TestGetProviderForDomain:
 # ======================================================================
 # inject_credentials
 # ======================================================================
+
 
 def _make_flow(host: str, headers: dict | None = None) -> SimpleNamespace:
     return SimpleNamespace(
@@ -175,6 +176,7 @@ class TestInjectCredentials:
 # list_providers
 # ======================================================================
 
+
 class TestListProviders:
     def test_returns_list_of_dicts(self):
         providers = list_providers()
@@ -189,7 +191,17 @@ class TestListProviders:
 
     def test_all_providers_represented(self):
         names = {p["name"] for p in list_providers()}
-        expected = {"OpenAI", "Anthropic", "Google", "Groq", "Together",
-                    "OpenRouter", "DeepSeek", "Mistral", "Cohere",
-                    "Replicate", "HuggingFace"}
+        expected = {
+            "OpenAI",
+            "Anthropic",
+            "Google",
+            "Groq",
+            "Together",
+            "OpenRouter",
+            "DeepSeek",
+            "Mistral",
+            "Cohere",
+            "Replicate",
+            "HuggingFace",
+        }
         assert expected.issubset(names)

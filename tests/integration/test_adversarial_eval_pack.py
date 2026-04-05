@@ -154,9 +154,7 @@ def test_zz_eval_summary(tmp_dir):
         if ok:
             passed.append(case["id"])
         else:
-            failed.append(
-                f"  {case['id']}: expected={expected} actual={result.get('actual_decision', '?')}"
-            )
+            failed.append(f"  {case['id']}: expected={expected} actual={result.get('actual_decision', '?')}")
 
     total = len(_ALL_CASES)
     report_lines = [

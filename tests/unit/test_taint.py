@@ -25,16 +25,19 @@ from hermes_katana.taint.value import (
 # TaintLabel enum
 # ======================================================================
 
+
 class TestTaintLabel:
     def test_all_labels_exist(self):
         # Core labels
-        required = {"USER", "SYSTEM", "TOOL_OUTPUT", "WEB_CONTENT",
-                    "FILE_CONTENT", "MEMORY", "MCP", "AGENT", "UNKNOWN"}
+        required = {"USER", "SYSTEM", "TOOL_OUTPUT", "WEB_CONTENT", "FILE_CONTENT", "MEMORY", "MCP", "AGENT", "UNKNOWN"}
         # Extended labels added in sweep (research docs 01/03)
         extended = {
-            "MCP_TOOL_DESCRIPTION", "MCP_TOOL_RESULT",
-            "MCP_RESOURCE", "MCP_PROMPT",
-            "AGENT_DELEGATED", "CROSS_SESSION",
+            "MCP_TOOL_DESCRIPTION",
+            "MCP_TOOL_RESULT",
+            "MCP_RESOURCE",
+            "MCP_PROMPT",
+            "AGENT_DELEGATED",
+            "CROSS_SESSION",
         }
         actual = {label.name for label in TaintLabel}
         assert required.issubset(actual), f"Missing core labels: {required - actual}"
@@ -70,6 +73,7 @@ class TestTaintLabel:
 # ======================================================================
 # Source factory methods
 # ======================================================================
+
 
 class TestSource:
     def test_user_factory(self):
@@ -138,6 +142,7 @@ class TestSource:
 # TaintedValue
 # ======================================================================
 
+
 class TestTaintedValue:
     def test_creation(self, user_source):
         tv = TaintedValue(value=42, sources=frozenset({user_source}))
@@ -164,6 +169,7 @@ class TestTaintedValue:
 
     def test_is_public_with_readers(self, user_source):
         from hermes_katana.taint.labels import Reader
+
         r = Reader.trusted_only("terminal")
         tv = TaintedValue(value="data", sources=frozenset({user_source}), readers=frozenset({r}))
         assert tv.is_public() is False
@@ -208,6 +214,7 @@ class TestTaintedValue:
 # ======================================================================
 # TaintedStr — character-level taint
 # ======================================================================
+
 
 class TestTaintedStr:
     def test_basic_creation(self, web_source):
@@ -298,6 +305,7 @@ class TestTaintedStr:
 # TaintedList — per-item taint
 # ======================================================================
 
+
 class TestTaintedList:
     def test_creation(self, web_source):
         tl = TaintedList(value=[1, 2, 3], sources=frozenset({web_source}))
@@ -343,6 +351,7 @@ class TestTaintedList:
 # TaintedDict — per-key taint
 # ======================================================================
 
+
 class TestTaintedDict:
     def test_creation(self, web_source):
         td = TaintedDict(value={"a": 1, "b": 2}, sources=frozenset({web_source}))
@@ -381,6 +390,7 @@ class TestTaintedDict:
 # ======================================================================
 # unwrap() and collect_sources()
 # ======================================================================
+
 
 class TestUtilities:
     def test_unwrap_tainted_value(self, user_source):
@@ -433,6 +443,7 @@ class TestUtilities:
 # ======================================================================
 # Taint Laundering Prevention — TaintedStr subclasses str
 # ======================================================================
+
 
 class TestTaintLaunderingPrevention:
     """Verify that TaintedStr IS a str subclass so it passes isinstance

@@ -8,7 +8,6 @@ import pytest
 
 from hermes_katana.proxy.injector import (
     PROVIDER_REGISTRY,
-    Provider,
     get_provider_for_domain,
     inject_credentials,
     list_providers,
@@ -19,6 +18,7 @@ from hermes_katana.proxy.injector import (
 # ---------------------------------------------------------------------------
 # Mock objects
 # ---------------------------------------------------------------------------
+
 
 class MockHeaders(dict):
     pass
@@ -38,6 +38,7 @@ class MockFlow:
 # ---------------------------------------------------------------------------
 # Provider registry tests
 # ---------------------------------------------------------------------------
+
 
 class TestProviderRegistry:
     def test_registry_has_12_plus_providers(self):

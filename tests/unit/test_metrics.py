@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hermes_katana.metrics import MetricsCollector, MetricsSummary
+from hermes_katana.metrics import MetricsCollector
 
 
 @pytest.fixture(autouse=True)

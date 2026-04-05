@@ -106,13 +106,9 @@ class TestCompatSnapshots:
             replace_existing=True,
         )
 
-        copied = (
-            fixtures_root
-            / "hermes-v1.2.3-extended-snapshot"
-            / "hermes"
-            / "ui"
-            / "banner.py"
-        ).read_text(encoding="utf-8")
+        copied = (fixtures_root / "hermes-v1.2.3-extended-snapshot" / "hermes" / "ui" / "banner.py").read_text(
+            encoding="utf-8"
+        )
         assert copied == "# refreshed\n"
 
     def test_refresh_snapshot_matrix_main_supports_dry_run(self, tmp_dir, capsys):
@@ -211,6 +207,4 @@ class TestCompatSnapshots:
         assert records
         for record in records:
             assert record.provenance["verification_mode"] == "tree_sha256"
-            assert record.provenance["source_tree_sha256"] == compute_tree_sha256(
-                repo_fixtures_root / record.directory
-            )
+            assert record.provenance["source_tree_sha256"] == compute_tree_sha256(repo_fixtures_root / record.directory)

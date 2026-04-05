@@ -84,8 +84,7 @@ def _direct_call_detector(tool_name: str, *, via_chain: bool = False) -> None:
             warning = {
                 "tool": tool_name,
                 "message": (
-                    f"Tool '{tool_name}' invoked outside the middleware chain — "
-                    f"security checks may have been bypassed"
+                    f"Tool '{tool_name}' invoked outside the middleware chain — security checks may have been bypassed"
                 ),
                 "timestamp": time.time(),
             }

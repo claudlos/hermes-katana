@@ -5,9 +5,6 @@ from __future__ import annotations
 import json
 import os
 import threading
-import time
-import tempfile
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -16,6 +13,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # 1. Fork safety — TaintTracker._reset_instance
 # ---------------------------------------------------------------------------
+
 
 class TestForkSafety:
     def test_reset_instance_clears_singleton(self):
@@ -46,6 +44,7 @@ class TestForkSafety:
         """os.register_at_fork should have been called at import time."""
         # Just verify _reset_instance is callable as a classmethod
         from hermes_katana.taint.tracker import TaintTracker
+
         assert callable(TaintTracker._reset_instance)
 
 
@@ -53,9 +52,10 @@ class TestForkSafety:
 # 2. Flow history flush
 # ---------------------------------------------------------------------------
 
+
 class TestHistoryFlush:
     def test_flush_triggers_on_overflow(self, tmp_path):
-        from hermes_katana.taint.flow import FlowAnalyzer, FlowAnalysis, FlowDecision
+        from hermes_katana.taint.flow import FlowAnalyzer
         from hermes_katana.taint.labels import TaintLabel, Source, TrustLevel
         from hermes_katana.taint.value import TaintedStr
 
@@ -64,7 +64,6 @@ class TestHistoryFlush:
 
         # Patch the flush method to track calls
         flush_called = []
-        orig_flush = analyzer._flush_history_to_disk
 
         def mock_flush(entries):
             flush_called.append(len(entries))
@@ -86,13 +85,15 @@ class TestHistoryFlush:
 
     def test_flush_method_exists(self):
         from hermes_katana.taint.flow import FlowAnalyzer
+
         analyzer = FlowAnalyzer()
-        assert hasattr(analyzer, '_flush_history_to_disk')
+        assert hasattr(analyzer, "_flush_history_to_disk")
 
 
 # ---------------------------------------------------------------------------
 # 3. Access log HMAC verification
 # ---------------------------------------------------------------------------
+
 
 class TestAccessLogHMAC:
     def test_log_and_verify(self, tmp_path):
@@ -150,6 +151,7 @@ class TestAccessLogHMAC:
 # 4. Secure delete with fsync
 # ---------------------------------------------------------------------------
 
+
 class TestSecureDelete:
     def test_secure_delete_uses_fsync(self, tmp_path):
         from hermes_katana.vault.migrate import _secure_delete_from_file
@@ -179,6 +181,7 @@ class TestSecureDelete:
 # 5. Rotation journal recovery
 # ---------------------------------------------------------------------------
 
+
 class TestRotationJournal:
     def test_no_journal_returns_false(self, tmp_path):
         """recover_rotation returns False when no journal exists."""
@@ -199,17 +202,20 @@ class TestRotationJournal:
         """Rotation should create and clean up journal file."""
         # Just verify the code path exists
         from hermes_katana.vault.store import Vault
-        assert hasattr(Vault, 'recover_rotation')
+
+        assert hasattr(Vault, "recover_rotation")
 
 
 # ---------------------------------------------------------------------------
 # 6. Installer permission checks
 # ---------------------------------------------------------------------------
 
+
 class TestInstallerPermissions:
     def test_validate_normal_file(self, tmp_path):
         from hermes_katana.installer.patches import (
-            validate_patch_target, Patch,
+            validate_patch_target,
+            Patch,
         )
 
         target = tmp_path / "test.py"
@@ -229,7 +235,8 @@ class TestInstallerPermissions:
 
     def test_validate_nonexistent_file(self, tmp_path):
         from hermes_katana.installer.patches import (
-            validate_patch_target, Patch,
+            validate_patch_target,
+            Patch,
         )
 
         target = tmp_path / "nonexistent.py"
@@ -247,7 +254,8 @@ class TestInstallerPermissions:
 
     def test_validate_symlink_detected(self, tmp_path):
         from hermes_katana.installer.patches import (
-            validate_patch_target, Patch,
+            validate_patch_target,
+            Patch,
         )
 
         real = tmp_path / "real.py"
@@ -288,6 +296,7 @@ class TestInstallerPermissions:
 # ---------------------------------------------------------------------------
 # 7. Config validation
 # ---------------------------------------------------------------------------
+
 
 class TestConfigValidation:
     def test_path_traversal_rejected(self):

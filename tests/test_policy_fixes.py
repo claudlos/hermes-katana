@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import threading
-import time
-
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -44,11 +41,7 @@ class TestBalancedUnknownToolDefault:
         from hermes_katana.policy.models import PolicyResult
 
         engine = PolicyEngine.with_defaults("balanced")
-        taint_ctx = {
-            "tainted_fields": {
-                "data": {"is_tainted": True, "source": "web", "labels": [], "level": 5}
-            }
-        }
+        taint_ctx = {"tainted_fields": {"data": {"is_tainted": True, "source": "web", "labels": [], "level": 5}}}
         result = engine.evaluate("totally_unknown_tool_xyz", {"data": "hello"}, taint_ctx)
         assert result.action in (PolicyResult.ESCALATE, PolicyResult.DENY)
 
@@ -123,7 +116,6 @@ class TestPolicyThreadSafety:
 
     def test_concurrent_evaluate_and_replace(self):
         from hermes_katana.policy.engine import PolicyEngine
-        from hermes_katana.policy.models import Policy, PolicyResult
 
         engine = PolicyEngine.with_defaults("balanced")
         errors = []
@@ -186,9 +178,7 @@ class TestMiddlewareExecutionOrder:
         if "katana.audit" in names and "katana.policy" in names:
             audit_idx = names.index("katana.audit")
             policy_idx = names.index("katana.policy")
-            assert audit_idx < policy_idx, (
-                f"Audit should execute before policy. Order: {names}"
-            )
+            assert audit_idx < policy_idx, f"Audit should execute before policy. Order: {names}"
 
 
 # ---------------------------------------------------------------------------

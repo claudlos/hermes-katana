@@ -180,7 +180,6 @@ CORE_PATCHES: list[Patch] = [
         sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook",
         critical=True,
     ),
-
     # -----------------------------------------------------------------------
     # 2. Dispatcher bootstrap
     # -----------------------------------------------------------------------
@@ -203,7 +202,6 @@ CORE_PATCHES: list[Patch] = [
         sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap",
         critical=True,
     ),
-
     # -----------------------------------------------------------------------
     # 3. Escalation denial audit finalization
     # -----------------------------------------------------------------------
@@ -233,13 +231,10 @@ CORE_PATCHES: list[Patch] = [
                             pass
                         raise PermissionError(
                             f"Katana escalation denied for '{{tool_name}}'"
-                        )""".format(
-            sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit"
-        ),
+                        )""".format(sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit"),
         sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit",
         critical=True,
     ),
-
     # -----------------------------------------------------------------------
     # 4. Proxy environment variables
     # -----------------------------------------------------------------------
@@ -271,13 +266,10 @@ CORE_PATCHES: list[Patch] = [
                 env["no_proxy"] = _no_proxy
         except ImportError:
             pass
-        # --- End Katana proxy injection ---""".format(
-            sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars"
-        ),
+        # --- End Katana proxy injection ---""".format(sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars"),
         sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars",
         critical=True,
     ),
-
     # -----------------------------------------------------------------------
     # 5. Banner integration
     # -----------------------------------------------------------------------
@@ -302,13 +294,10 @@ CORE_PATCHES: list[Patch] = [
                 console.print(_katana_status)
         except ImportError:
             pass
-        # --- End Katana banner ---""".format(
-            sentinel=f"{_SENTINEL_PREFIX} banner_integration"
-        ),
+        # --- End Katana banner ---""".format(sentinel=f"{_SENTINEL_PREFIX} banner_integration"),
         sentinel=f"{_SENTINEL_PREFIX} banner_integration",
         critical=False,
     ),
-
     # -----------------------------------------------------------------------
     # 6. Docker proxy forwarding
     # -----------------------------------------------------------------------
@@ -349,13 +338,10 @@ CORE_PATCHES: list[Patch] = [
                     env["REQUESTS_CA_BUNDLE"] = "/tmp/katana-ca.pem"
         except ImportError:
             pass
-        # --- End Katana Docker proxy ---""".format(
-            sentinel=f"{_SENTINEL_PREFIX} docker_proxy_forwarding"
-        ),
+        # --- End Katana Docker proxy ---""".format(sentinel=f"{_SENTINEL_PREFIX} docker_proxy_forwarding"),
         sentinel=f"{_SENTINEL_PREFIX} docker_proxy_forwarding",
         critical=False,
     ),
-
     # -----------------------------------------------------------------------
     # 7. Gateway command scanning
     # -----------------------------------------------------------------------
@@ -391,9 +377,7 @@ CORE_PATCHES: list[Patch] = [
                     }}
         except ImportError:
             pass
-        # --- End Katana gateway scanning ---""".format(
-            sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning"
-        ),
+        # --- End Katana gateway scanning ---""".format(sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning"),
         sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning",
         critical=False,
     ),
@@ -424,9 +408,7 @@ def validate_patch_target(target_file: Path, patch: Patch) -> list[str]:
         return issues
 
     if target_file.is_symlink():
-        issues.append(
-            f"Target is a symlink (potential symlink attack): {target_file}"
-        )
+        issues.append(f"Target is a symlink (potential symlink attack): {target_file}")
 
     if not target_file.is_file():
         issues.append(f"Target is not a regular file: {target_file}")
@@ -435,16 +417,10 @@ def validate_patch_target(target_file: Path, patch: Patch) -> list[str]:
     try:
         st = target_file.stat()
         if st.st_mode & (stat.S_ISUID | stat.S_ISGID):
-            issues.append(
-                f"Target has setuid/setgid bits set: {target_file} "
-                f"(mode: {oct(st.st_mode)})"
-            )
+            issues.append(f"Target has setuid/setgid bits set: {target_file} (mode: {oct(st.st_mode)})")
         current_uid = os.getuid()
         if st.st_uid != current_uid and current_uid != 0:
-            issues.append(
-                f"Target owned by uid {st.st_uid}, not current user "
-                f"({current_uid}): {target_file}"
-            )
+            issues.append(f"Target owned by uid {st.st_uid}, not current user ({current_uid}): {target_file}")
         if not os.access(target_file, os.W_OK):
             issues.append(f"No write permission on target: {target_file}")
     except OSError as exc:
@@ -512,11 +488,13 @@ def apply_patches(
 
         # Check if already applied
         if _is_patch_applied(target_file, patch):
-            results.append(PatchResult(
-                name=patch.name,
-                status=PatchStatus.SKIPPED,
-                message=f"Already applied (sentinel found in {patch.target_file})",
-            ))
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.SKIPPED,
+                    message=f"Already applied (sentinel found in {patch.target_file})",
+                )
+            )
             continue
 
         # Check if target file exists
@@ -539,11 +517,13 @@ def apply_patches(
                 logger.warning("Patch %s: %s", patch.name, issue)
             critical_issues = [i for i in issues if "setuid" in i or "symlink" in i]
             if critical_issues:
-                results.append(PatchResult(
-                    name=patch.name,
-                    status=PatchStatus.ERROR,
-                    message=f"Permission validation failed: {'; '.join(critical_issues)}",
-                ))
+                results.append(
+                    PatchResult(
+                        name=patch.name,
+                        status=PatchStatus.ERROR,
+                        message=f"Permission validation failed: {'; '.join(critical_issues)}",
+                    )
+                )
                 continue
 
         # Create backup before patching
@@ -555,11 +535,13 @@ def apply_patches(
         try:
             content = target_file.read_text(encoding="utf-8")
         except OSError as exc:
-            results.append(PatchResult(
-                name=patch.name,
-                status=PatchStatus.ERROR,
-                message=f"Cannot read {patch.target_file}: {exc}",
-            ))
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR,
+                    message=f"Cannot read {patch.target_file}: {exc}",
+                )
+            )
             continue
 
         # Search for the anchor text
@@ -579,18 +561,22 @@ def apply_patches(
         try:
             new_content = content.replace(patch.search_text, patch.replace_text, 1)
             target_file.write_text(new_content, encoding="utf-8")
-            results.append(PatchResult(
-                name=patch.name,
-                status=PatchStatus.APPLIED,
-                message=f"Applied to {patch.target_file}",
-            ))
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.APPLIED,
+                    message=f"Applied to {patch.target_file}",
+                )
+            )
             logger.info("Patch %s applied to %s", patch.name, patch.target_file)
         except OSError as exc:
-            results.append(PatchResult(
-                name=patch.name,
-                status=PatchStatus.ERROR,
-                message=f"Write failed for {patch.target_file}: {exc}",
-            ))
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR,
+                    message=f"Write failed for {patch.target_file}: {exc}",
+                )
+            )
 
     return results
 
@@ -693,48 +679,58 @@ def revert_patches(
 
         # Check if patch is actually applied
         if not _is_patch_applied(target_file, patch):
-            results.append(PatchResult(
-                name=patch.name,
-                status=PatchStatus.SKIPPED,
-                message=f"Not applied (sentinel not found in {patch.target_file})",
-            ))
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.SKIPPED,
+                    message=f"Not applied (sentinel not found in {patch.target_file})",
+                )
+            )
             continue
 
         # Read current content
         try:
             content = target_file.read_text(encoding="utf-8")
         except OSError as exc:
-            results.append(PatchResult(
-                name=patch.name,
-                status=PatchStatus.ERROR,
-                message=f"Cannot read {patch.target_file}: {exc}",
-            ))
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR,
+                    message=f"Cannot read {patch.target_file}: {exc}",
+                )
+            )
             continue
 
         # Revert: replace the patched text back to original
         if patch.replace_text not in content:
-            results.append(PatchResult(
-                name=patch.name,
-                status=PatchStatus.ERROR,
-                message=f"Replacement text not found in {patch.target_file} (manually modified?)",
-            ))
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR,
+                    message=f"Replacement text not found in {patch.target_file} (manually modified?)",
+                )
+            )
             continue
 
         try:
             new_content = content.replace(patch.replace_text, patch.search_text, 1)
             target_file.write_text(new_content, encoding="utf-8")
-            results.append(PatchResult(
-                name=patch.name,
-                status=PatchStatus.REVERTED,
-                message=f"Reverted in {patch.target_file}",
-            ))
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.REVERTED,
+                    message=f"Reverted in {patch.target_file}",
+                )
+            )
             logger.info("Patch %s reverted in %s", patch.name, patch.target_file)
         except OSError as exc:
-            results.append(PatchResult(
-                name=patch.name,
-                status=PatchStatus.ERROR,
-                message=f"Write failed for {patch.target_file}: {exc}",
-            ))
+            results.append(
+                PatchResult(
+                    name=patch.name,
+                    status=PatchStatus.ERROR,
+                    message=f"Write failed for {patch.target_file}: {exc}",
+                )
+            )
 
     return results
 
@@ -814,7 +810,4 @@ def get_patch_status(
     """
     target = Path(target)
     patches = patches or CORE_PATCHES
-    return {
-        patch.name: _is_patch_applied(target / patch.target_file, patch)
-        for patch in patches
-    }
+    return {patch.name: _is_patch_applied(target / patch.target_file, patch) for patch in patches}

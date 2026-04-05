@@ -54,12 +54,8 @@ class RateTracker:
     _MAX_CLIENTS: int = 10_000
 
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-    _windows: dict[str, deque[float]] = field(
-        default_factory=lambda: defaultdict(deque), repr=False
-    )
-    _violations: dict[str, int] = field(
-        default_factory=lambda: defaultdict(int), repr=False
-    )
+    _windows: dict[str, deque[float]] = field(default_factory=lambda: defaultdict(deque), repr=False)
+    _violations: dict[str, int] = field(default_factory=lambda: defaultdict(int), repr=False)
 
     def check(self, client_id: str) -> tuple[bool, int]:
         """Check if a request from client_id is within rate limits.
@@ -84,10 +80,7 @@ class RateTracker:
             violations = self._violations[client_id]
             effective_limit = max(
                 1,
-                int(
-                    self.max_requests
-                    / (self.escalation_factor ** min(violations, 5))
-                ),
+                int(self.max_requests / (self.escalation_factor ** min(violations, 5))),
             )
 
             if len(window) >= effective_limit:
@@ -184,10 +177,7 @@ class KatanaAddon:
         if not self.config.allowed_domains:
             return True  # No allowlist = all domains allowed
         host_lower = host.lower()
-        return any(
-            host_lower == d or host_lower.endswith(f".{d}")
-            for d in self.config.allowed_domains
-        )
+        return any(host_lower == d or host_lower.endswith(f".{d}") for d in self.config.allowed_domains)
 
     def _body_too_large(self, body: Optional[bytes]) -> bool:
         """Check if a body exceeds the scan size limit."""
@@ -279,9 +269,7 @@ class KatanaAddon:
         if not self._is_allowed_domain(host):
             self._increment_stat("requests_blocked_domain")
             logger.warning("Blocked request to non-allowed domain: %s", host)
-            flow.response = _make_block_response(
-                403, f"Domain not in allowlist: {host}"
-            )
+            flow.response = _make_block_response(403, f"Domain not in allowlist: {host}")
             self._log_audit(
                 "POLICY_DECISION",
                 f"domain_block:{host}",
@@ -300,9 +288,7 @@ class KatanaAddon:
                 client_id,
                 count,
             )
-            flow.response = _make_block_response(
-                429, "Rate limit exceeded"
-            )
+            flow.response = _make_block_response(429, "Rate limit exceeded")
             self._log_audit(
                 "RATE_ANOMALY",
                 f"rate_limit:{client_id}",
@@ -356,7 +342,7 @@ class KatanaAddon:
 
         # Scan query parameters
         try:
-            if hasattr(flow.request, 'query') and flow.request.query:
+            if hasattr(flow.request, "query") and flow.request.query:
                 for qname, qvalue in flow.request.query.items():
                     q_result = self._scan_text(qvalue, direction="request")
                     if q_result["is_blocked"]:
@@ -390,9 +376,12 @@ class KatanaAddon:
             if self._body_too_large(body):
                 logger.warning(
                     "Oversized request body (%d bytes) from %s to %s — scanning first %d bytes",
-                    len(body), client_id, host, self.config.max_body_scan_size,
+                    len(body),
+                    client_id,
+                    host,
+                    self.config.max_body_scan_size,
                 )
-                scan_body = body[:self.config.max_body_scan_size]
+                scan_body = body[: self.config.max_body_scan_size]
                 self._increment_stat("requests_oversized")
             try:
                 text = scan_body.decode("utf-8", errors="replace")
@@ -465,7 +454,9 @@ class KatanaAddon:
                         f"[HermesKatana] Response header blocked: {rh_result['summary']}".encode()
                     )
                     flow.response.status_code = 502
-                    self._log_audit("SCAN_RESULT", f"response_header_scan:{host}:{hdr_name}", "deny", rh_result["summary"])
+                    self._log_audit(
+                        "SCAN_RESULT", f"response_header_scan:{host}:{hdr_name}", "deny", rh_result["summary"]
+                    )
                     return
         except Exception as exc:
             logger.debug("Response header scan error: %s", exc)
@@ -475,9 +466,11 @@ class KatanaAddon:
             if self._body_too_large(body):
                 logger.warning(
                     "Oversized response body (%d bytes) from %s — scanning first %d bytes",
-                    len(body), host, self.config.max_body_scan_size,
+                    len(body),
+                    host,
+                    self.config.max_body_scan_size,
                 )
-                scan_body = body[:self.config.max_body_scan_size]
+                scan_body = body[: self.config.max_body_scan_size]
                 self._increment_stat("responses_oversized")
             try:
                 text = scan_body.decode("utf-8", errors="replace")
@@ -492,9 +485,7 @@ class KatanaAddon:
                         scan_result["summary"],
                     )
                     # Replace response body with warning
-                    flow.response.set_content(
-                        b"[HermesKatana] Response blocked by security policy."
-                    )
+                    flow.response.set_content(b"[HermesKatana] Response blocked by security policy.")
                     flow.response.status_code = 502
                     self._log_audit(
                         "SCAN_RESULT",
@@ -523,9 +514,7 @@ class KatanaAddon:
         # Inject X-Katana-Scanned header (opt-in — GAP 3.7)
         if self.config.add_scanned_header:
             try:
-                flow.response.headers["X-Katana-Scanned"] = (
-                    "true" if scanned else "passthrough"
-                )
+                flow.response.headers["X-Katana-Scanned"] = "true" if scanned else "passthrough"
             except AttributeError:
                 pass
 
@@ -584,12 +573,18 @@ class KatanaAddon:
                 logger.warning("WebSocket message blocked: %s", scan_result["summary"])
                 msg.content = b"[HermesKatana] Message blocked by security policy."
                 self._log_audit(
-                    "SCAN_RESULT", "websocket_scan", "deny", scan_result["summary"],
+                    "SCAN_RESULT",
+                    "websocket_scan",
+                    "deny",
+                    scan_result["summary"],
                 )
             elif scan_result["finding_count"] > 0:
                 self._increment_stat("ws_messages_warned")
                 self._log_audit(
-                    "SCAN_RESULT", "websocket_scan", "warn", scan_result["summary"],
+                    "SCAN_RESULT",
+                    "websocket_scan",
+                    "warn",
+                    scan_result["summary"],
                 )
         except Exception as exc:
             logger.debug("WebSocket scan error: %s", exc)

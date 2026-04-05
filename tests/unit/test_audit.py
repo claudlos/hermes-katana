@@ -17,6 +17,7 @@ from hermes_katana.audit.trail import (
 # AuditEntry
 # ======================================================================
 
+
 class TestAuditEntry:
     def test_create_entry(self):
         entry = AuditEntry(
@@ -66,6 +67,7 @@ class TestAuditEntry:
 # ======================================================================
 # AuditTrail — append and hash chain
 # ======================================================================
+
 
 class TestAuditTrailAppend:
     def test_append_entry(self, audit_path):
@@ -117,6 +119,7 @@ class TestAuditTrailAppend:
 # Chain verification
 # ======================================================================
 
+
 class TestChainVerification:
     def test_valid_chain_verifies(self, audit_path):
         trail = AuditTrail(path=audit_path)
@@ -161,6 +164,7 @@ class TestChainVerification:
 # ======================================================================
 # Query with filters
 # ======================================================================
+
 
 class TestAuditQuery:
     def test_query_by_event_type(self, audit_path):
@@ -208,6 +212,7 @@ class TestAuditQuery:
 # ======================================================================
 # Stats
 # ======================================================================
+
 
 class TestAuditStats:
     def test_stats_counts(self, audit_path):

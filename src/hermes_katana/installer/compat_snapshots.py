@@ -166,17 +166,14 @@ def build_snapshot_record(
     """Create registry metadata for one supported snapshot."""
     snapshot_name = snapshot_id(version, profile)
     if profile == "core":
-        description = (
-            f"Pinned Hermes {version} core checkout layout with only required patch targets."
-        )
+        description = f"Pinned Hermes {version} core checkout layout with only required patch targets."
         expected = {
             "critical_patches": "applied",
             "optional_patches": "skipped_cleanly",
         }
     else:
         description = (
-            f"Pinned Hermes {version} extended checkout layout with optional UI, Docker, "
-            "and gateway patch targets."
+            f"Pinned Hermes {version} extended checkout layout with optional UI, Docker, and gateway patch targets."
         )
         expected = {"all_patches": "applied"}
 
@@ -251,8 +248,7 @@ def verify_source_provenance(
         expected_tree_sha256 = _normalize_sha256(source_tree_sha256, label="source tree checksum")
         if expected_tree_sha256 != actual_tree_sha256:
             raise ValueError(
-                "Source tree checksum mismatch: "
-                f"expected {expected_tree_sha256}, got {actual_tree_sha256}"
+                f"Source tree checksum mismatch: expected {expected_tree_sha256}, got {actual_tree_sha256}"
             )
         verification_tags.append("tree_sha256")
 
@@ -264,8 +260,7 @@ def verify_source_provenance(
         actual_archive_sha256 = compute_file_sha256(archive_path)
         if normalized_archive_sha256 != actual_archive_sha256:
             raise ValueError(
-                "Source archive checksum mismatch: "
-                f"expected {normalized_archive_sha256}, got {actual_archive_sha256}"
+                f"Source archive checksum mismatch: expected {normalized_archive_sha256}, got {actual_archive_sha256}"
             )
         archive_name = archive_path.name
         verification_tags.append("archive_sha256")
@@ -325,8 +320,7 @@ def refresh_snapshot_matrix(
         missing = [relative for relative in relative_paths if not (source_root / relative).exists()]
         if missing:
             raise FileNotFoundError(
-                f"Hermes source checkout is missing paths for profile '{profile}': "
-                + ", ".join(missing)
+                f"Hermes source checkout is missing paths for profile '{profile}': " + ", ".join(missing)
             )
 
         record = build_snapshot_record(
@@ -459,10 +453,7 @@ def main(argv: list[str] | None = None) -> int:
     if provenance:
         print(f"Source tree sha256: {provenance['source_tree_sha256']}")
         if provenance.get("source_archive"):
-            print(
-                "Source archive verified: "
-                f"{provenance['source_archive']} ({provenance['source_archive_sha256']})"
-            )
+            print(f"Source archive verified: {provenance['source_archive']} ({provenance['source_archive_sha256']})")
         elif provenance.get("verification_mode") == "unverified_preview":
             print(
                 "Source provenance not verified in preview. Re-run with --source-archive "

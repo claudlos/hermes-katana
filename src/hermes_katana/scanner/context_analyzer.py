@@ -184,9 +184,7 @@ def _instruction_density(text: str) -> float:
     if not sentences:
         return 0.0
 
-    imperative_count = sum(
-        1 for s in sentences if _IMPERATIVE_STARTERS.match(s)
-    )
+    imperative_count = sum(1 for s in sentences if _IMPERATIVE_STARTERS.match(s))
     return imperative_count / len(sentences)
 
 
@@ -290,32 +288,36 @@ class ConversationAnalyzer:
             if effective_drift > self.topic_drift_threshold:
                 contribution = 0.15 * (1.0 - confidence_reduction)
                 turn_risk += contribution
-                alerts.append(ContextAlert(
-                    alert_type="topic_drift",
-                    message=(
-                        f"Significant topic change detected (drift={topic_drift:.2f}). "
-                        f"Previous turn similarity: {similarity:.2f}"
-                    ),
-                    severity="medium" if (topic_drift < 0.85 or security_discussion) else "high",
-                    turn_index=turn_index,
-                    score_contribution=contribution,
-                ))
+                alerts.append(
+                    ContextAlert(
+                        alert_type="topic_drift",
+                        message=(
+                            f"Significant topic change detected (drift={topic_drift:.2f}). "
+                            f"Previous turn similarity: {similarity:.2f}"
+                        ),
+                        severity="medium" if (topic_drift < 0.85 or security_discussion) else "high",
+                        turn_index=turn_index,
+                        score_contribution=contribution,
+                    )
+                )
 
         # --- Instruction density ---
         effective_inst_density = inst_density * (1.0 - confidence_reduction)
         if effective_inst_density > self.instruction_threshold:
             contribution = 0.2 * effective_inst_density
             turn_risk += contribution
-            alerts.append(ContextAlert(
-                alert_type="instruction_density",
-                message=(
-                    f"High instruction density detected ({inst_density:.2f}). "
-                    f"Turn contains many imperative statements."
-                ),
-                severity="medium" if inst_density < 0.7 else "high",
-                turn_index=turn_index,
-                score_contribution=contribution,
-            ))
+            alerts.append(
+                ContextAlert(
+                    alert_type="instruction_density",
+                    message=(
+                        f"High instruction density detected ({inst_density:.2f}). "
+                        f"Turn contains many imperative statements."
+                    ),
+                    severity="medium" if inst_density < 0.7 else "high",
+                    turn_index=turn_index,
+                    score_contribution=contribution,
+                )
+            )
 
         # --- Persona shift ---
         persona_shift = False
@@ -331,17 +333,19 @@ class ConversationAnalyzer:
                 persona_shift = True
                 contribution = 0.1
                 turn_risk += contribution
-                alerts.append(ContextAlert(
-                    alert_type="persona_shift",
-                    message=(
-                        f"Pronoun usage shifted: first-person delta={first_delta:.2f}, "
-                        f"second-person delta={second_delta:.2f}. "
-                        f"May indicate transition from casual to commanding tone."
-                    ),
-                    severity="low",
-                    turn_index=turn_index,
-                    score_contribution=contribution,
-                ))
+                alerts.append(
+                    ContextAlert(
+                        alert_type="persona_shift",
+                        message=(
+                            f"Pronoun usage shifted: first-person delta={first_delta:.2f}, "
+                            f"second-person delta={second_delta:.2f}. "
+                            f"May indicate transition from casual to commanding tone."
+                        ),
+                        severity="low",
+                        turn_index=turn_index,
+                        score_contribution=contribution,
+                    )
+                )
         elif len(self._turn_history) >= 1:
             # Establish baseline after first turn
             self._baseline_persona = persona
@@ -355,32 +359,36 @@ class ConversationAnalyzer:
             if all(r > 0 for r in recent_risks) and turn_risk > 0:
                 contribution = 0.15
                 self._cumulative_risk += contribution
-                alerts.append(ContextAlert(
-                    alert_type="sustained_risk",
-                    message=(
-                        f"Risk detected across {len(recent_risks)+1} consecutive turns. "
-                        f"Recent turn risks: {[f'{r:.2f}' for r in recent_risks]}"
-                    ),
-                    severity="high",
-                    turn_index=turn_index,
-                    score_contribution=contribution,
-                ))
+                alerts.append(
+                    ContextAlert(
+                        alert_type="sustained_risk",
+                        message=(
+                            f"Risk detected across {len(recent_risks) + 1} consecutive turns. "
+                            f"Recent turn risks: {[f'{r:.2f}' for r in recent_risks]}"
+                        ),
+                        severity="high",
+                        turn_index=turn_index,
+                        score_contribution=contribution,
+                    )
+                )
 
         cumulative = min(self._cumulative_risk, 1.0)
 
         # --- Store turn data ---
-        self._turn_history.append({
-            "turn_index": turn_index,
-            "word_freq": word_freq,
-            "instruction_density": inst_density,
-            "persona": persona,
-            "topic_drift": topic_drift,
-            "turn_risk": turn_risk,
-        })
+        self._turn_history.append(
+            {
+                "turn_index": turn_index,
+                "word_freq": word_freq,
+                "instruction_density": inst_density,
+                "persona": persona,
+                "topic_drift": topic_drift,
+                "turn_risk": turn_risk,
+            }
+        )
 
         # Trim to window
         if len(self._turn_history) > self.window_size:
-            self._turn_history = self._turn_history[-self.window_size:]
+            self._turn_history = self._turn_history[-self.window_size :]
 
         return ContextAnalysis(
             turn_index=turn_index,

@@ -17,8 +17,10 @@ from hermes_katana.middleware.chain import (
 # Test middleware implementations
 # ======================================================================
 
+
 class AllowMiddleware(KatanaMiddleware):
     """Always allows calls."""
+
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         ctx.extras[f"visited_{self.name}"] = True
         return DispatchDecision.ALLOW
@@ -26,6 +28,7 @@ class AllowMiddleware(KatanaMiddleware):
 
 class DenyMiddleware(KatanaMiddleware):
     """Always denies calls."""
+
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         ctx.extras[f"visited_{self.name}"] = True
         ctx.deny(f"Denied by {self.name}")
@@ -34,6 +37,7 @@ class DenyMiddleware(KatanaMiddleware):
 
 class EscalateMiddleware(KatanaMiddleware):
     """Always escalates calls."""
+
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         ctx.extras[f"visited_{self.name}"] = True
         ctx.escalate(f"Escalated by {self.name}")
@@ -42,6 +46,7 @@ class EscalateMiddleware(KatanaMiddleware):
 
 class RecordingMiddleware(KatanaMiddleware):
     """Records pre/post visits for order verification."""
+
     def __init__(self, name: str, record: list, *, priority: int = 0):
         super().__init__(name=name, priority=priority)
         self.record = record
@@ -57,6 +62,7 @@ class RecordingMiddleware(KatanaMiddleware):
 # ======================================================================
 # Chain execution order
 # ======================================================================
+
 
 class TestChainExecutionOrder:
     def test_pre_dispatch_runs_in_priority_order(self):
@@ -109,6 +115,7 @@ class TestChainExecutionOrder:
 # DENY short-circuits
 # ======================================================================
 
+
 class TestDenyShortCircuit:
     def test_deny_stops_chain(self):
         chain = MiddlewareChain()
@@ -151,6 +158,7 @@ class TestDenyShortCircuit:
 # ESCALATE propagation
 # ======================================================================
 
+
 class TestEscalatePropagation:
     def test_escalate_sticky(self):
         chain = MiddlewareChain()
@@ -177,6 +185,7 @@ class TestEscalatePropagation:
 # ======================================================================
 # Chain management
 # ======================================================================
+
 
 class TestChainManagement:
     def test_add_and_list(self):
@@ -231,6 +240,7 @@ class TestChainManagement:
 # CallContext
 # ======================================================================
 
+
 class TestCallContext:
     def test_deny_prevents_downgrade(self):
         ctx = CallContext(tool_name="test")
@@ -257,6 +267,7 @@ class TestCallContext:
 # ======================================================================
 # Full lifecycle: execute()
 # ======================================================================
+
 
 class TestExecuteLifecycle:
     def test_execute_full_lifecycle(self):
@@ -303,15 +314,18 @@ class TestExecuteLifecycle:
 # create_default_chain
 # ======================================================================
 
+
 class TestCreateDefaultChain:
     def test_create_default_chain_returns_chain(self):
         from hermes_katana.middleware.integration import create_default_chain
+
         chain = create_default_chain()
         assert isinstance(chain, MiddlewareChain)
         assert len(chain) > 0
 
     def test_create_default_chain_has_expected_middleware(self):
         from hermes_katana.middleware.integration import create_default_chain
+
         chain = create_default_chain()
         names = {mw.name for mw in chain.list_middleware()}
         # Should have at least taint, scan, policy, audit

@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 # Cross-platform file locking
 # ---------------------------------------------------------------------------
 
+
 def _lock_file(fp: Any) -> None:
     """Acquire an exclusive file lock (cross-platform).
 
@@ -50,9 +51,11 @@ def _lock_file(fp: Any) -> None:
     """
     if platform.system() == "Windows":
         import msvcrt
+
         msvcrt.locking(fp.fileno(), msvcrt.LK_NBLCK, 1)
     else:
         import fcntl
+
         fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
@@ -60,15 +63,18 @@ def _unlock_file(fp: Any) -> None:
     """Release a file lock (cross-platform)."""
     if platform.system() == "Windows":
         import msvcrt
+
         msvcrt.locking(fp.fileno(), msvcrt.LK_UNLCK, 1)
     else:
         import fcntl
+
         fcntl.flock(fp.fileno(), fcntl.LOCK_UN)
 
 
 # ---------------------------------------------------------------------------
 # PID file management
 # ---------------------------------------------------------------------------
+
 
 def default_pid_path() -> Path:
     """Return the default PID file path."""
@@ -201,11 +207,10 @@ def _is_process_running(pid: int) -> bool:
     try:
         if platform.system() == "Windows":
             import ctypes
+
             kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            handle = kernel32.OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
-            )
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
             if handle:
                 kernel32.CloseHandle(handle)
                 return True
@@ -220,6 +225,7 @@ def _is_process_running(pid: int) -> bool:
 # ---------------------------------------------------------------------------
 # Health check server
 # ---------------------------------------------------------------------------
+
 
 class _HealthCheckServer(threading.Thread):
     """Simple HTTP health check endpoint."""
@@ -259,9 +265,7 @@ class _HealthCheckServer(threading.Thread):
                 pass  # Suppress default HTTP logging
 
         try:
-            self._server = http.server.HTTPServer(
-                ("127.0.0.1", self.port), Handler
-            )
+            self._server = http.server.HTTPServer(("127.0.0.1", self.port), Handler)
             self._server.serve_forever()
         except Exception as exc:
             logger.debug("Health check server error: %s", exc)
@@ -275,6 +279,7 @@ class _HealthCheckServer(threading.Thread):
 # ---------------------------------------------------------------------------
 # KatanaProxy
 # ---------------------------------------------------------------------------
+
 
 class KatanaProxy:
     """Manages the HermesKatana MITM proxy lifecycle.
@@ -408,14 +413,12 @@ class KatanaProxy:
             if returncode is not None:
                 self._process = None
                 raise RuntimeError(
-                    "Proxy process exited during startup "
-                    f"(exit code {returncode}). Check that mitmproxy is installed."
+                    f"Proxy process exited during startup (exit code {returncode}). Check that mitmproxy is installed."
                 )
             pid = self._process.pid
         except FileNotFoundError:
             raise RuntimeError(
-                "mitmproxy is not installed or not found on PATH. "
-                "Install it with: pip install mitmproxy"
+                "mitmproxy is not installed or not found on PATH. Install it with: pip install mitmproxy"
             )
 
         # Write PID file
@@ -443,9 +446,7 @@ class KatanaProxy:
 
         # Start health check server if configured
         if self.config.health_check_port:
-            self._health_server = _HealthCheckServer(
-                self.config.health_check_port, self
-            )
+            self._health_server = _HealthCheckServer(self.config.health_check_port, self)
             self._health_server.start()
             logger.info(
                 "Health check endpoint at http://127.0.0.1:%d/health",
@@ -550,9 +551,7 @@ class KatanaProxy:
             if info is None:
                 continue
             if not _is_process_running(info.pid):
-                logger.warning(
-                    "Proxy process (PID %d) died, restarting...", info.pid
-                )
+                logger.warning("Proxy process (PID %d) died, restarting...", info.pid)
                 with self._lock:
                     try:
                         self._start_proxy()

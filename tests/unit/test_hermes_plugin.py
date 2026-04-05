@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from hermes_katana import hermes_plugin
-from hermes_katana.exceptions import EscalationRequired, KatanaSecurityError
+from hermes_katana.exceptions import KatanaSecurityError
 
 
 # ---------------------------------------------------------------------------

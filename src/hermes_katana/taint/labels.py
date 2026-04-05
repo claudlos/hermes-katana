@@ -26,6 +26,7 @@ __all__ = [
 # Trust level
 # ---------------------------------------------------------------------------
 
+
 @unique
 class TrustLevel(Enum):
     """How much the runtime trusts a particular data source."""
@@ -43,6 +44,7 @@ class TrustLevel(Enum):
 # ---------------------------------------------------------------------------
 # Taint labels
 # ---------------------------------------------------------------------------
+
 
 @unique
 class TaintLabel(Enum):
@@ -134,6 +136,7 @@ def default_trust_for(label: TaintLabel) -> TrustLevel:
 # ---------------------------------------------------------------------------
 # Source — records *where* a value came from
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class Source:
@@ -306,6 +309,7 @@ class Source:
 # ---------------------------------------------------------------------------
 # Reader — declares *who* may read values with given labels
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class Reader:

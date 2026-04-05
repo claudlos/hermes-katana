@@ -110,11 +110,7 @@ def discover_checkout_root(start: str | Path | None = None) -> Optional[Path]:
 
 def load_checkout_state(checkout_root: str | Path | None = None) -> Optional[CheckoutRuntimeState]:
     """Load the installed checkout config and normalize it for runtime use."""
-    root = (
-        Path(checkout_root).expanduser().resolve()
-        if checkout_root is not None
-        else discover_checkout_root()
-    )
+    root = Path(checkout_root).expanduser().resolve() if checkout_root is not None else discover_checkout_root()
     if root is None:
         return None
 
@@ -158,9 +154,7 @@ def load_checkout_state(checkout_root: str | Path | None = None) -> Optional[Che
     }
 
     audit_enabled = bool(audit_cfg.get("enabled", global_config.audit_enabled))
-    audit_dir = _resolve_checkout_path(root, audit_cfg.get("trail_dir")) or (
-        root / KATANA_CONFIG_DIR / "audit"
-    )
+    audit_dir = _resolve_checkout_path(root, audit_cfg.get("trail_dir")) or (root / KATANA_CONFIG_DIR / "audit")
     audit_path = audit_dir / "audit.jsonl" if audit_enabled else None
 
     proxy_enabled = bool(proxy_cfg.get("enabled", global_config.proxy_enabled))
@@ -392,11 +386,7 @@ def _collect_vault_values(vault: Any) -> set[str]:
         return set()
 
     try:
-        return {
-            value
-            for key in vault.list_keys()
-            if (value := vault.get(key))
-        }
+        return {value for key in vault.list_keys() if (value := vault.get(key))}
     except Exception:
         logger.debug("Runtime bootstrap could not collect vault values", exc_info=True)
         return set()

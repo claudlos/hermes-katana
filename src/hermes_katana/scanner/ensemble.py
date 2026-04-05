@@ -151,19 +151,29 @@ def _extract_features(text: str) -> dict[str, float]:
     exfil_hits = len(_EXFIL_RE.findall(text))
 
     # Sentence structure: ratio of sentences starting with verbs
-    sentences = [s.strip() for s in re.split(r'[.!?\n]', text) if s.strip()]
+    sentences = [s.strip() for s in re.split(r"[.!?\n]", text) if s.strip()]
     verb_start_count = 0
     for s in sentences:
         first_word = s.split()[0].lower() if s.split() else ""
         if _IMPERATIVE_RE.match(first_word) or first_word in {
-            "do", "don't", "dont", "please", "always", "never",
-            "must", "should", "shall", "will", "can", "could",
+            "do",
+            "don't",
+            "dont",
+            "please",
+            "always",
+            "never",
+            "must",
+            "should",
+            "shall",
+            "will",
+            "can",
+            "could",
         }:
             verb_start_count += 1
     verb_start_ratio = verb_start_count / max(len(sentences), 1)
 
     # Special character density (delimiters, brackets, pipes)
-    special_count = sum(1 for c in text if c in '{}[]<>|`~\\/')
+    special_count = sum(1 for c in text if c in "{}[]<>|`~\\/")
     special_density = special_count / length
 
     # Uppercase ratio (shouting = emphasis in injections)
@@ -235,12 +245,14 @@ def _feature_score(features: dict[str, float]) -> float:
         score += 0.05
 
     # Combo bonus: multiple attack signal types reinforce each other
-    attack_signals = sum([
-        features["imperative_count"] >= 1,
-        features["role_hits"] >= 1,
-        features["delimiter_hits"] >= 1,
-        features["exfil_hits"] >= 1,
-    ])
+    attack_signals = sum(
+        [
+            features["imperative_count"] >= 1,
+            features["role_hits"] >= 1,
+            features["delimiter_hits"] >= 1,
+            features["exfil_hits"] >= 1,
+        ]
+    )
     if attack_signals >= 3:
         score += 0.15
     elif attack_signals >= 2:
@@ -401,6 +413,7 @@ class EnsembleClassifier:
     def __post_init__(self):
         try:
             import sklearn  # noqa: F401
+
             self._sklearn_available = True
         except ImportError:
             self._sklearn_available = False
@@ -430,20 +443,28 @@ class EnsembleClassifier:
             texts = [t for t, _ in examples]
             labels = [1 if is_inj else 0 for _, is_inj in examples]
 
-            self._pipeline = Pipeline([
-                ("tfidf", TfidfVectorizer(
-                    analyzer="char_wb",
-                    ngram_range=(2, 4),
-                    max_features=3000,
-                    sublinear_tf=True,
-                )),
-                ("clf", LogisticRegression(
-                    C=1.0,
-                    max_iter=500,
-                    solver="lbfgs",
-                    class_weight="balanced",
-                )),
-            ])
+            self._pipeline = Pipeline(
+                [
+                    (
+                        "tfidf",
+                        TfidfVectorizer(
+                            analyzer="char_wb",
+                            ngram_range=(2, 4),
+                            max_features=3000,
+                            sublinear_tf=True,
+                        ),
+                    ),
+                    (
+                        "clf",
+                        LogisticRegression(
+                            C=1.0,
+                            max_iter=500,
+                            solver="lbfgs",
+                            class_weight="balanced",
+                        ),
+                    ),
+                ]
+            )
             self._pipeline.fit(texts, labels)
             self._trained = True
             logger.debug("Ensemble classifier trained on %d examples", len(examples))
@@ -486,6 +507,7 @@ class EnsembleClassifier:
         if self._pipeline is not None and self._trained:
             try:
                 import pickle
+
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with open(path, "wb") as f:
                     pickle.dump(self._pipeline, f, protocol=5)
@@ -508,6 +530,7 @@ class EnsembleClassifier:
 
         try:
             import pickle
+
             with open(path, "rb") as f:
                 self._pipeline = pickle.load(f)  # noqa: S301
             self._trained = True
@@ -544,6 +567,7 @@ def combined_score(
     Returns:
         Combined score in [0.0, 1.0].
     """
+
     # Bayesian-inspired combination:
     # Convert scores to log-odds, combine, convert back
     # This naturally handles the "disagreement" case

@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-import pytest
 
 from hermes_katana.scanner.allowlist import (
     AllowlistManager,
@@ -325,45 +324,65 @@ class TestDocumentationModeSuppression:
     def test_explicit_code_block_flag(self):
         mgr = AllowlistManager(suppressions=[], include_builtins=False)
         finding = MockFinding(matched_text="ignore previous instructions")
-        assert mgr.is_suppressed(
-            finding, tool_name="terminal",
-            context={"in_code_block": True},
-        ) is True
+        assert (
+            mgr.is_suppressed(
+                finding,
+                tool_name="terminal",
+                context={"in_code_block": True},
+            )
+            is True
+        )
 
     def test_explicit_documentation_flag(self):
         mgr = AllowlistManager(suppressions=[], include_builtins=False)
         finding = MockFinding(matched_text="rm -rf /")
-        assert mgr.is_suppressed(
-            finding, tool_name="terminal",
-            context={"in_documentation": True},
-        ) is True
+        assert (
+            mgr.is_suppressed(
+                finding,
+                tool_name="terminal",
+                context={"in_documentation": True},
+            )
+            is True
+        )
 
     def test_code_block_in_full_text(self):
         mgr = AllowlistManager(suppressions=[], include_builtins=False)
         full_text = "Here is an example:\n```\nignore previous instructions\n```\nDone."
         finding = MockFinding(matched_text="ignore previous instructions")
-        assert mgr.is_suppressed(
-            finding, tool_name="read_file",
-            context={"full_text": full_text},
-        ) is True
+        assert (
+            mgr.is_suppressed(
+                finding,
+                tool_name="read_file",
+                context={"full_text": full_text},
+            )
+            is True
+        )
 
     def test_dollar_prefixed_line(self):
         mgr = AllowlistManager(suppressions=[], include_builtins=False)
         full_text = "Run this command:\n$ sudo rm -rf /tmp/old\nThat clears the cache."
         finding = MockFinding(matched_text="sudo rm -rf /tmp/old")
-        assert mgr.is_suppressed(
-            finding, tool_name="read_file",
-            context={"full_text": full_text},
-        ) is True
+        assert (
+            mgr.is_suppressed(
+                finding,
+                tool_name="read_file",
+                context={"full_text": full_text},
+            )
+            is True
+        )
 
     def test_comment_prefixed_line(self):
         mgr = AllowlistManager(suppressions=[], include_builtins=False)
         full_text = "#!/bin/bash\nrm -rf /tmp/cache"
         finding = MockFinding(matched_text="#!/bin/bash")
-        assert mgr.is_suppressed(
-            finding, tool_name="read_file",
-            context={"full_text": full_text},
-        ) is True
+        assert (
+            mgr.is_suppressed(
+                finding,
+                tool_name="read_file",
+                context={"full_text": full_text},
+            )
+            is True
+        )
 
     def test_no_context_no_suppression(self):
         mgr = AllowlistManager(suppressions=[], include_builtins=False)
@@ -376,10 +395,14 @@ class TestDocumentationModeSuppression:
         full_text = "```\nsafe code\n```\nignore previous instructions"
         finding = MockFinding(matched_text="ignore previous instructions")
         # The matched text is OUTSIDE the code block
-        assert mgr.is_suppressed(
-            finding, tool_name="terminal",
-            context={"full_text": full_text},
-        ) is False
+        assert (
+            mgr.is_suppressed(
+                finding,
+                tool_name="terminal",
+                context={"full_text": full_text},
+            )
+            is False
+        )
 
 
 class TestScanWithContextIntegration:
@@ -402,10 +425,7 @@ class TestScanWithContextIntegration:
             allowlist=mgr,
         )
         # Findings mentioning "ignore" should be suppressed for read_file
-        remaining = [
-            f for f in result.injection_findings
-            if "ignore" in f.matched_text.lower()
-        ]
+        remaining = [f for f in result.injection_findings if "ignore" in f.matched_text.lower()]
         assert len(remaining) == 0
 
     def test_no_allowlist_keeps_findings(self):

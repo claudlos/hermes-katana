@@ -126,13 +126,15 @@ def _sp(
     flags: int = 0,
 ) -> None:
     """Register a secret pattern."""
-    _SECRET_PATTERNS.append((
-        name,
-        re.compile(pattern, flags),
-        category,
-        severity,
-        description,
-    ))
+    _SECRET_PATTERNS.append(
+        (
+            name,
+            re.compile(pattern, flags),
+            category,
+            severity,
+            description,
+        )
+    )
 
 
 # AWS Access Key ID (starts with AKIA, 20 chars)
@@ -326,6 +328,7 @@ _sp(
 # Shannon entropy calculation for unknown secret formats
 # ---------------------------------------------------------------------------
 
+
 def shannon_entropy(text: str) -> float:
     """Calculate Shannon entropy of a string.
 
@@ -359,9 +362,7 @@ def shannon_entropy(text: str) -> float:
 
 
 # Pattern for high-entropy candidate strings
-_ENTROPY_CANDIDATE = re.compile(
-    r"(?:^|[=:'\"\s])([A-Za-z0-9+/\-_]{16,}={0,3})(?:['\"\s,;]|$)"
-)
+_ENTROPY_CANDIDATE = re.compile(r"(?:^|[=:'\"\s])([A-Za-z0-9+/\-_]{16,}={0,3})(?:['\"\s,;]|$)")
 
 # Minimum entropy threshold for flagging (bits per character)
 _ENTROPY_THRESHOLD = 4.5
@@ -373,6 +374,7 @@ _ENTROPY_MIN_LENGTH = 16
 # ---------------------------------------------------------------------------
 # Multi-encoding detection
 # ---------------------------------------------------------------------------
+
 
 def _decode_rot13(text: str) -> str:
     """Decode ROT13 encoded text."""
@@ -436,33 +438,35 @@ def _scan_in_encoding(
     if vault_values:
         for vault_val in vault_values:
             if vault_val and vault_val in decoded:
-                findings.append(SecretFinding(
-                    pattern_name=f"vault_match_{encoding_name}",
-                    category=SecretCategory.VAULT_MATCH,
-                    severity=SecretSeverity.CRITICAL,
-                    matched_text=_mask_secret(vault_val),
-                    position=(0, len(text)),
-                    description=(
-                        f"Vault secret found in {encoding_name}-encoded content."
-                    ),
-                    encoding=encoding_name,
-                    confidence=1.0,
-                ))
+                findings.append(
+                    SecretFinding(
+                        pattern_name=f"vault_match_{encoding_name}",
+                        category=SecretCategory.VAULT_MATCH,
+                        severity=SecretSeverity.CRITICAL,
+                        matched_text=_mask_secret(vault_val),
+                        position=(0, len(text)),
+                        description=(f"Vault secret found in {encoding_name}-encoded content."),
+                        encoding=encoding_name,
+                        confidence=1.0,
+                    )
+                )
 
     # Check against known patterns
     for name, pattern, category, severity, desc in _SECRET_PATTERNS:
         for match in pattern.finditer(decoded):
             secret = match.group(1) if match.lastindex else match.group()
-            findings.append(SecretFinding(
-                pattern_name=f"{name}_{encoding_name}",
-                category=SecretCategory.ENCODED_SECRET,
-                severity=severity,
-                matched_text=_mask_secret(secret),
-                position=(0, len(text)),
-                description=f"{desc} (found in {encoding_name}-encoded content)",
-                encoding=encoding_name,
-                confidence=0.90,
-            ))
+            findings.append(
+                SecretFinding(
+                    pattern_name=f"{name}_{encoding_name}",
+                    category=SecretCategory.ENCODED_SECRET,
+                    severity=severity,
+                    matched_text=_mask_secret(secret),
+                    position=(0, len(text)),
+                    description=f"{desc} (found in {encoding_name}-encoded content)",
+                    encoding=encoding_name,
+                    confidence=0.90,
+                )
+            )
 
     return findings
 
@@ -470,6 +474,7 @@ def _scan_in_encoding(
 # ---------------------------------------------------------------------------
 # Chunked/split secret detection
 # ---------------------------------------------------------------------------
+
 
 def scan_for_secrets_chunked(
     chunks: list[str],
@@ -499,16 +504,18 @@ def scan_for_secrets_chunked(
     for i, chunk in enumerate(chunks):
         chunk_findings = scan_for_secrets(chunk, vault_values)
         for f in chunk_findings:
-            findings.append(SecretFinding(
-                pattern_name=f.pattern_name,
-                category=f.category,
-                severity=f.severity,
-                matched_text=f.matched_text,
-                position=f.position,
-                description=f"{f.description} (in chunk {i})",
-                encoding=f.encoding,
-                confidence=f.confidence,
-            ))
+            findings.append(
+                SecretFinding(
+                    pattern_name=f.pattern_name,
+                    category=f.category,
+                    severity=f.severity,
+                    matched_text=f.matched_text,
+                    position=f.position,
+                    description=f"{f.description} (in chunk {i})",
+                    encoding=f.encoding,
+                    confidence=f.confidence,
+                )
+            )
 
     # Check concatenations of adjacent chunks (limit combinatorial explosion)
     if len(chunks) <= 10:
@@ -519,23 +526,20 @@ def scan_for_secrets_chunked(
                     combo_findings = scan_for_secrets(combined, vault_values)
                     for f in combo_findings:
                         # Check if this wasn't found in individual chunks
-                        is_new = not any(
-                            ef.pattern_name == f.pattern_name
-                            for ef in findings
-                        )
+                        is_new = not any(ef.pattern_name == f.pattern_name for ef in findings)
                         if is_new:
-                            findings.append(SecretFinding(
-                                pattern_name=f.pattern_name,
-                                category=f.category,
-                                severity=f.severity,
-                                matched_text=f.matched_text,
-                                position=f.position,
-                                description=(
-                                    f"{f.description} (split across chunks {i}-{j-1})"
-                                ),
-                                encoding="chunked",
-                                confidence=f.confidence * 0.9,  # Slightly lower confidence
-                            ))
+                            findings.append(
+                                SecretFinding(
+                                    pattern_name=f.pattern_name,
+                                    category=f.category,
+                                    severity=f.severity,
+                                    matched_text=f.matched_text,
+                                    position=f.position,
+                                    description=(f"{f.description} (split across chunks {i}-{j - 1})"),
+                                    encoding="chunked",
+                                    confidence=f.confidence * 0.9,  # Slightly lower confidence
+                                )
+                            )
 
     # Check vault values across combined chunks
     if vault_values:
@@ -550,19 +554,21 @@ def scan_for_secrets_chunked(
                     cumulative += len(chunk)
                 else:
                     # Not in any single chunk - it's split
-                    findings.append(SecretFinding(
-                        pattern_name="vault_match_split",
-                        category=SecretCategory.VAULT_MATCH,
-                        severity=SecretSeverity.CRITICAL,
-                        matched_text=_mask_secret(vault_val),
-                        position=(0, len(full_text)),
-                        description=(
-                            "Vault secret found split across multiple chunks. "
-                            "This is likely a deliberate evasion attempt."
-                        ),
-                        encoding="chunked",
-                        confidence=1.0,
-                    ))
+                    findings.append(
+                        SecretFinding(
+                            pattern_name="vault_match_split",
+                            category=SecretCategory.VAULT_MATCH,
+                            severity=SecretSeverity.CRITICAL,
+                            matched_text=_mask_secret(vault_val),
+                            position=(0, len(full_text)),
+                            description=(
+                                "Vault secret found split across multiple chunks. "
+                                "This is likely a deliberate evasion attempt."
+                            ),
+                            encoding="chunked",
+                            confidence=1.0,
+                        )
+                    )
 
     return findings
 
@@ -570,6 +576,7 @@ def scan_for_secrets_chunked(
 # ---------------------------------------------------------------------------
 # Main scanning function
 # ---------------------------------------------------------------------------
+
 
 def scan_for_secrets(
     text: str,
@@ -617,15 +624,17 @@ def scan_for_secrets(
             else:
                 secret = match.group()
                 pos = (match.start(), match.end())
-            findings.append(SecretFinding(
-                pattern_name=name,
-                category=category,
-                severity=severity,
-                matched_text=_mask_secret(secret),
-                position=pos,
-                description=description,
-                confidence=0.95,
-            ))
+            findings.append(
+                SecretFinding(
+                    pattern_name=name,
+                    category=category,
+                    severity=severity,
+                    matched_text=_mask_secret(secret),
+                    position=pos,
+                    description=description,
+                    confidence=0.95,
+                )
+            )
 
     # --- 2. Vault value matching ---
     if vault_values:
@@ -637,18 +646,19 @@ def scan_for_secrets(
                 idx = text.find(vault_val, start)
                 if idx < 0:
                     break
-                findings.append(SecretFinding(
-                    pattern_name="vault_exact_match",
-                    category=SecretCategory.VAULT_MATCH,
-                    severity=SecretSeverity.CRITICAL,
-                    matched_text=_mask_secret(vault_val),
-                    position=(idx, idx + len(vault_val)),
-                    description=(
-                        "Exact match against a known vault secret value. "
-                        "This secret is being leaked in plaintext."
-                    ),
-                    confidence=1.0,
-                ))
+                findings.append(
+                    SecretFinding(
+                        pattern_name="vault_exact_match",
+                        category=SecretCategory.VAULT_MATCH,
+                        severity=SecretSeverity.CRITICAL,
+                        matched_text=_mask_secret(vault_val),
+                        position=(idx, idx + len(vault_val)),
+                        description=(
+                            "Exact match against a known vault secret value. This secret is being leaked in plaintext."
+                        ),
+                        confidence=1.0,
+                    )
+                )
                 start = idx + 1
 
     # --- 3. Entropy-based detection ---
@@ -658,10 +668,7 @@ def scan_for_secrets(
             continue
 
         # Skip if already caught by a known pattern
-        already_found = any(
-            f.position[0] <= match.start(1) < f.position[1]
-            for f in findings
-        )
+        already_found = any(f.position[0] <= match.start(1) < f.position[1] for f in findings)
         if already_found:
             continue
 
@@ -669,18 +676,20 @@ def scan_for_secrets(
         if entropy >= _ENTROPY_THRESHOLD:
             # Higher entropy = higher confidence
             conf = min(0.5 + (entropy - _ENTROPY_THRESHOLD) * 0.2, 0.85)
-            findings.append(SecretFinding(
-                pattern_name="high_entropy",
-                category=SecretCategory.HIGH_ENTROPY,
-                severity=SecretSeverity.MEDIUM,
-                matched_text=_mask_secret(candidate),
-                position=(match.start(1), match.end(1)),
-                description=(
-                    f"High-entropy string detected (entropy: {entropy:.2f} bits). "
-                    "This may be an API key, token, or secret in an unknown format."
-                ),
-                confidence=conf,
-            ))
+            findings.append(
+                SecretFinding(
+                    pattern_name="high_entropy",
+                    category=SecretCategory.HIGH_ENTROPY,
+                    severity=SecretSeverity.MEDIUM,
+                    matched_text=_mask_secret(candidate),
+                    position=(match.start(1), match.end(1)),
+                    description=(
+                        f"High-entropy string detected (entropy: {entropy:.2f} bits). "
+                        "This may be an API key, token, or secret in an unknown format."
+                    ),
+                    confidence=conf,
+                )
+            )
 
     # --- 4. Multi-encoding detection ---
     # Check base64 blobs
@@ -688,9 +697,7 @@ def scan_for_secrets(
     for match in base64_pattern.finditer(text):
         decoded = _try_decode_base64(match.group())
         if decoded and len(decoded) >= 8:
-            encoded_findings = _scan_in_encoding(
-                match.group(), decoded, "base64", vault_values
-            )
+            encoded_findings = _scan_in_encoding(match.group(), decoded, "base64", vault_values)
             findings.extend(encoded_findings)
 
     # Check hex blobs
@@ -699,9 +706,7 @@ def scan_for_secrets(
         hex_str = match.group(1) if match.group(1) else match.group()
         decoded = _try_decode_hex(hex_str)
         if decoded and len(decoded) >= 8:
-            encoded_findings = _scan_in_encoding(
-                match.group(), decoded, "hex", vault_values
-            )
+            encoded_findings = _scan_in_encoding(match.group(), decoded, "hex", vault_values)
             findings.extend(encoded_findings)
 
     # Check URL-encoded content
@@ -709,9 +714,7 @@ def scan_for_secrets(
     for match in url_pattern.finditer(text):
         decoded = _try_decode_url(match.group())
         if decoded and len(decoded) >= 8:
-            encoded_findings = _scan_in_encoding(
-                match.group(), decoded, "url_encoded", vault_values
-            )
+            encoded_findings = _scan_in_encoding(match.group(), decoded, "url_encoded", vault_values)
             findings.extend(encoded_findings)
 
     # Check reversed text (for reversed secrets)
@@ -719,38 +722,38 @@ def scan_for_secrets(
         reversed_text = _decode_reverse(text)
         for vault_val in vault_values:
             if vault_val and len(vault_val) >= 8 and vault_val in reversed_text:
-                findings.append(SecretFinding(
-                    pattern_name="vault_match_reversed",
-                    category=SecretCategory.VAULT_MATCH,
-                    severity=SecretSeverity.CRITICAL,
-                    matched_text=_mask_secret(vault_val),
-                    position=(0, len(text)),
-                    description=(
-                        "Vault secret found in reversed text. "
-                        "This is a deliberate obfuscation attempt."
-                    ),
-                    encoding="reversed",
-                    confidence=0.95,
-                ))
+                findings.append(
+                    SecretFinding(
+                        pattern_name="vault_match_reversed",
+                        category=SecretCategory.VAULT_MATCH,
+                        severity=SecretSeverity.CRITICAL,
+                        matched_text=_mask_secret(vault_val),
+                        position=(0, len(text)),
+                        description=("Vault secret found in reversed text. This is a deliberate obfuscation attempt."),
+                        encoding="reversed",
+                        confidence=0.95,
+                    )
+                )
 
     # Check ROT13
     if vault_values:
         rot13_text = _decode_rot13(text)
         for vault_val in vault_values:
             if vault_val and len(vault_val) >= 8 and vault_val in rot13_text:
-                findings.append(SecretFinding(
-                    pattern_name="vault_match_rot13",
-                    category=SecretCategory.VAULT_MATCH,
-                    severity=SecretSeverity.CRITICAL,
-                    matched_text=_mask_secret(vault_val),
-                    position=(0, len(text)),
-                    description=(
-                        "Vault secret found in ROT13-encoded text. "
-                        "This is a deliberate obfuscation attempt."
-                    ),
-                    encoding="rot13",
-                    confidence=0.95,
-                ))
+                findings.append(
+                    SecretFinding(
+                        pattern_name="vault_match_rot13",
+                        category=SecretCategory.VAULT_MATCH,
+                        severity=SecretSeverity.CRITICAL,
+                        matched_text=_mask_secret(vault_val),
+                        position=(0, len(text)),
+                        description=(
+                            "Vault secret found in ROT13-encoded text. This is a deliberate obfuscation attempt."
+                        ),
+                        encoding="rot13",
+                        confidence=0.95,
+                    )
+                )
 
     # Deduplicate findings at same position
     seen_positions: set[tuple[int, int, str]] = set()

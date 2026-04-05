@@ -130,7 +130,7 @@ class MetricsCollector:
             with self._lock:
                 self._latency_samples.append((tool_name, latency_ms))
                 if len(self._latency_samples) > self._max_latency_samples:
-                    self._latency_samples = self._latency_samples[-self._max_latency_samples:]
+                    self._latency_samples = self._latency_samples[-self._max_latency_samples :]
 
     def record_scan_hit(
         self,
@@ -213,17 +213,14 @@ class MetricsCollector:
         lines.append("# HELP katana_tool_calls_total Tool calls by tool and decision")
         lines.append("# TYPE katana_tool_calls_total counter")
         for (tool, decision), count in sorted(self._tool_calls.items()):
-            lines.append(
-                f'katana_tool_calls_total{{tool="{tool}",decision="{decision}"}} {count}'
-            )
+            lines.append(f'katana_tool_calls_total{{tool="{tool}",decision="{decision}"}} {count}')
 
         lines.append("# HELP katana_scan_hits_total Scanner findings by type")
         lines.append("# TYPE katana_scan_hits_total counter")
         for key, count in sorted(self._scan_hits.items()):
             scanner, category, severity = key
             lines.append(
-                f'katana_scan_hits_total{{scanner="{scanner}",'
-                f'category="{category}",severity="{severity}"}} {count}'
+                f'katana_scan_hits_total{{scanner="{scanner}",category="{category}",severity="{severity}"}} {count}'
             )
 
         lines.append("# HELP katana_taint_flows_total Taint flow checks by result")
@@ -231,16 +228,13 @@ class MetricsCollector:
         for key, count in sorted(self._taint_flows.items()):
             source, target, decision = key
             lines.append(
-                f'katana_taint_flows_total{{source="{source}",'
-                f'target="{target}",decision="{decision}"}} {count}'
+                f'katana_taint_flows_total{{source="{source}",target="{target}",decision="{decision}"}} {count}'
             )
 
         lines.append("# HELP katana_policy_evals_total Policy evaluations by result")
         lines.append("# TYPE katana_policy_evals_total counter")
         for (result,), count in sorted(self._policy_evals.items()):
-            lines.append(
-                f'katana_policy_evals_total{{result="{result}"}} {count}'
-            )
+            lines.append(f'katana_policy_evals_total{{result="{result}"}} {count}')
 
         lines.append(
             f"# HELP katana_uptime_seconds Collector uptime\n"

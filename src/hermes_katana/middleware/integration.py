@@ -141,7 +141,9 @@ class KatanaTaintMiddleware(KatanaMiddleware):
                     "source": origins[0] if origins else "unknown",
                     "labels": labels,
                     "readers": [r.name for r in tainted_val.readers] if tainted_val.readers else [],
-                    "level": max((s.label.value if hasattr(s.label, "value") else 5) for s in sources) if sources else 0,
+                    "level": max((s.label.value if hasattr(s.label, "value") else 5) for s in sources)
+                    if sources
+                    else 0,
                 }
 
                 # Check flow
@@ -156,8 +158,7 @@ class KatanaTaintMiddleware(KatanaMiddleware):
                 elif flow_decision == FlowDecision.ASK_USER and worst_flow != FlowDecision.DENY:
                     worst_flow = FlowDecision.ASK_USER
                     ctx.escalate(
-                        f"Taint escalation: field '{arg_name}' "
-                        f"requires human approval for tool '{ctx.tool_name}'"
+                        f"Taint escalation: field '{arg_name}' requires human approval for tool '{ctx.tool_name}'"
                     )
 
         # Merge taint context into the call context
@@ -287,9 +288,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
         ctx.extras["scan_risk_score"] = worst_score
 
         if worst_score >= self._block_threshold:
-            findings_summary = "; ".join(
-                r.summary for r in all_results if r.has_findings
-            )
+            findings_summary = "; ".join(r.summary for r in all_results if r.has_findings)
             ctx.deny(f"Scanner blocked: {findings_summary}")
             return DispatchDecision.DENY
 
@@ -393,18 +392,12 @@ class KatanaPolicyMiddleware(KatanaMiddleware):
 
         # Deny-by-default for unknown tools with tainted args
         if result.matched_policy is None and ctx.taint_context.get("tainted_fields"):
-            ctx.deny(
-                f"Unknown tool '{ctx.tool_name}' with tainted arguments — "
-                f"deny by default (no matching policy)"
-            )
+            ctx.deny(f"Unknown tool '{ctx.tool_name}' with tainted arguments — deny by default (no matching policy)")
             return DispatchDecision.DENY
 
         # Escalate unknown tools with clean args (fail-closed)
         if result.matched_policy is None:
-            ctx.escalate(
-                f"Unknown tool '{ctx.tool_name}' — "
-                f"escalate by default (no matching policy)"
-            )
+            ctx.escalate(f"Unknown tool '{ctx.tool_name}' — escalate by default (no matching policy)")
             return DispatchDecision.ESCALATE
 
         if result.action == PolicyResult.DENY:

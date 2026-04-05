@@ -278,7 +278,11 @@ BALANCED_POLICIES: dict[str, Any] = {
             "description": "Block terminal commands matching exfiltration patterns when tainted.",
             "tool_pattern": "terminal",
             "conditions": [
-                {"field": "command", "operator": "matches_pattern", "value": r".*(curl|wget|nc|ncat|ssh|scp|ftp|rsync|socat)\s+.*"},
+                {
+                    "field": "command",
+                    "operator": "matches_pattern",
+                    "value": r".*(curl|wget|nc|ncat|ssh|scp|ftp|rsync|socat)\s+.*",
+                },
                 {"field": "*", "operator": "contains_taint", "value": True},
             ],
             "action": "deny",
@@ -290,7 +294,11 @@ BALANCED_POLICIES: dict[str, Any] = {
             "description": "Block terminal with dangerous patterns AND high taint (level >= 7).",
             "tool_pattern": "terminal",
             "conditions": [
-                {"field": "command", "operator": "matches_pattern", "value": r".*(rm\s+-rf|mkfs|dd\s+if=|chmod\s+777|>\s*/etc/|eval\s|base64\s+-d).*"},
+                {
+                    "field": "command",
+                    "operator": "matches_pattern",
+                    "value": r".*(rm\s+-rf|mkfs|dd\s+if=|chmod\s+777|>\s*/etc/|eval\s|base64\s+-d).*",
+                },
                 {"field": "*", "operator": "taint_level_gte", "value": 7},
             ],
             "action": "deny",
@@ -302,7 +310,11 @@ BALANCED_POLICIES: dict[str, Any] = {
             "description": "Escalate terminal with dangerous patterns AND medium taint (4-6).",
             "tool_pattern": "terminal",
             "conditions": [
-                {"field": "command", "operator": "matches_pattern", "value": r".*(rm\s+-rf|mkfs|dd\s+if=|chmod\s+777|>\s*/etc/|eval\s|base64\s+-d).*"},
+                {
+                    "field": "command",
+                    "operator": "matches_pattern",
+                    "value": r".*(rm\s+-rf|mkfs|dd\s+if=|chmod\s+777|>\s*/etc/|eval\s|base64\s+-d).*",
+                },
                 {"field": "*", "operator": "taint_level_gte", "value": 4},
             ],
             "action": "escalate",
@@ -317,8 +329,11 @@ BALANCED_POLICIES: dict[str, Any] = {
             ),
             "tool_pattern": "terminal",
             "conditions": [
-                {"field": "command", "operator": "matches_pattern",
-                 "value": r"^\s*(sudo\s+)?(ls|cat|echo|pwd|cd|head|tail|wc|sort|uniq|grep|find|which|whoami|date|env|printenv|uname|df|du|free|ps|top|file|stat|id|hostname|uptime|tree|less|more|diff|basename|dirname|realpath|python3?|node|cargo|rustc|make|cmake)\b.*"},
+                {
+                    "field": "command",
+                    "operator": "matches_pattern",
+                    "value": r"^\s*(sudo\s+)?(ls|cat|echo|pwd|cd|head|tail|wc|sort|uniq|grep|find|which|whoami|date|env|printenv|uname|df|du|free|ps|top|file|stat|id|hostname|uptime|tree|less|more|diff|basename|dirname|realpath|python3?|node|cargo|rustc|make|cmake)\b.*",
+                },
                 {"field": "*", "operator": "taint_level_lte", "value": 3},
             ],
             "action": "allow",
@@ -330,8 +345,11 @@ BALANCED_POLICIES: dict[str, Any] = {
             "description": "Allow read-only git subcommands with low taint.",
             "tool_pattern": "terminal",
             "conditions": [
-                {"field": "command", "operator": "matches_pattern",
-                 "value": r"^\s*(sudo\s+)?git\s+(status|log|diff|show|branch|tag|remote|stash|describe|shortlog|reflog|config|ls-files|ls-tree)\b.*"},
+                {
+                    "field": "command",
+                    "operator": "matches_pattern",
+                    "value": r"^\s*(sudo\s+)?git\s+(status|log|diff|show|branch|tag|remote|stash|describe|shortlog|reflog|config|ls-files|ls-tree)\b.*",
+                },
                 {"field": "*", "operator": "taint_level_lte", "value": 3},
             ],
             "action": "allow",
@@ -343,8 +361,11 @@ BALANCED_POLICIES: dict[str, Any] = {
             "description": "Allow pip/npm install with low taint (common dev workflow).",
             "tool_pattern": "terminal",
             "conditions": [
-                {"field": "command", "operator": "matches_pattern",
-                 "value": r"^\s*(sudo\s+)?(pip3?|npm|npx|yarn)\s+(install|list|show|info|search|outdated|audit)\b.*"},
+                {
+                    "field": "command",
+                    "operator": "matches_pattern",
+                    "value": r"^\s*(sudo\s+)?(pip3?|npm|npx|yarn)\s+(install|list|show|info|search|outdated|audit)\b.*",
+                },
                 {"field": "*", "operator": "taint_level_lte", "value": 3},
             ],
             "action": "allow",
@@ -356,8 +377,11 @@ BALANCED_POLICIES: dict[str, Any] = {
             "description": "Escalate benign commands with medium taint (4-6) — probably fine but check.",
             "tool_pattern": "terminal",
             "conditions": [
-                {"field": "command", "operator": "matches_pattern",
-                 "value": r"^\s*(sudo\s+)?(ls|cat|echo|pwd|head|tail|wc|grep|find|which|whoami|date|env|git\s+(status|log|diff))\b.*"},
+                {
+                    "field": "command",
+                    "operator": "matches_pattern",
+                    "value": r"^\s*(sudo\s+)?(ls|cat|echo|pwd|head|tail|wc|grep|find|which|whoami|date|env|git\s+(status|log|diff))\b.*",
+                },
                 {"field": "*", "operator": "taint_level_gte", "value": 4},
                 {"field": "*", "operator": "taint_level_lte", "value": 6},
             ],
@@ -671,10 +695,7 @@ BALANCED_POLICIES: dict[str, Any] = {
 PERMISSIVE_POLICIES: dict[str, Any] = {
     "name": "permissive",
     "version": "1.0.0",
-    "description": (
-        "Minimal friction: log all tainted tool calls but only hard-block "
-        "obvious exfiltration patterns."
-    ),
+    "description": ("Minimal friction: log all tainted tool calls but only hard-block obvious exfiltration patterns."),
     "author": "HermesKatana",
     "metadata": {"security_level": "low", "recommended_for": "experimentation"},
     "policies": [

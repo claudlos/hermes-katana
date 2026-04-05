@@ -67,34 +67,36 @@ _SECRET_KEY_PATTERNS: list[re.Pattern[str]] = [
 ]
 
 # Keys to always skip (not secrets)
-_SKIP_KEYS: frozenset[str] = frozenset({
-    "PATH",
-    "HOME",
-    "USER",
-    "SHELL",
-    "LANG",
-    "TERM",
-    "PWD",
-    "OLDPWD",
-    "HOSTNAME",
-    "LOGNAME",
-    "DISPLAY",
-    "XDG_SESSION_TYPE",
-    "XDG_RUNTIME_DIR",
-    "XDG_DATA_DIRS",
-    "XDG_CONFIG_DIRS",
-    "EDITOR",
-    "VISUAL",
-    "PAGER",
-    "SHLVL",
-    "_",
-    "TMPDIR",
-    "TEMP",
-    "TMP",
-    "PYTHONPATH",
-    "VIRTUAL_ENV",
-    "CONDA_PREFIX",
-})
+_SKIP_KEYS: frozenset[str] = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "SHELL",
+        "LANG",
+        "TERM",
+        "PWD",
+        "OLDPWD",
+        "HOSTNAME",
+        "LOGNAME",
+        "DISPLAY",
+        "XDG_SESSION_TYPE",
+        "XDG_RUNTIME_DIR",
+        "XDG_DATA_DIRS",
+        "XDG_CONFIG_DIRS",
+        "EDITOR",
+        "VISUAL",
+        "PAGER",
+        "SHLVL",
+        "_",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "PYTHONPATH",
+        "VIRTUAL_ENV",
+        "CONDA_PREFIX",
+    }
+)
 
 
 def _is_secret_key(name: str) -> bool:
@@ -126,6 +128,7 @@ class MigrationResult:
 # ---------------------------------------------------------------------------
 # Source scanners
 # ---------------------------------------------------------------------------
+
 
 def _scan_env_vars() -> dict[str, str]:
     """Scan environment variables for secrets.
@@ -173,6 +176,7 @@ def _scan_hermes_config(config_path: Optional[Path] = None) -> dict[str, str]:
     found: dict[str, str] = {}
     try:
         import yaml
+
         with open(config_path, "r") as fp:
             data = yaml.safe_load(fp)
 
@@ -193,9 +197,17 @@ def _extract_secrets_from_dict(
 ) -> None:
     """Recursively extract secret-looking values from a dict."""
     secret_keys = {
-        "api_key", "api_token", "secret_key", "secret",
-        "password", "token", "access_key", "credentials",
-        "auth_key", "auth_token", "private_key",
+        "api_key",
+        "api_token",
+        "secret_key",
+        "secret",
+        "password",
+        "token",
+        "access_key",
+        "credentials",
+        "auth_key",
+        "auth_token",
+        "private_key",
     }
 
     for key, value in data.items():
@@ -257,6 +269,7 @@ def _scan_dotenv(dotenv_path: Optional[Path] = None) -> dict[str, str]:
 # Secure delete
 # ---------------------------------------------------------------------------
 
+
 def _secure_delete_env_var(key: str) -> bool:
     """Remove a secret from environment variables.
 
@@ -309,6 +322,7 @@ def _secure_delete_from_file(
 
         modified = False
         for pattern in patterns:
+
             def _zero_replace(m: re.Match) -> str:
                 prefix = m.group(1)
                 value = m.group(2)
@@ -341,6 +355,7 @@ def _secure_delete_from_file(
 # ---------------------------------------------------------------------------
 # Migration main function
 # ---------------------------------------------------------------------------
+
 
 def discover_secrets(
     config_path: Optional[Path] = None,

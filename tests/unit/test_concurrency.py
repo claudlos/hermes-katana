@@ -6,11 +6,9 @@ under concurrent operations.
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 from unittest.mock import patch as mock_patch
 
 import pytest
@@ -130,8 +128,6 @@ class TestVaultConcurrency:
         # Pre-populate
         for i in range(20):
             vault.set(f"remove_key_{i}", f"val_{i}")
-
-        errors = []
 
         def remover(key_id: int):
             try:
@@ -309,11 +305,13 @@ class TestConfigHardening:
         """Valid domain entries should pass."""
         from hermes_katana.config import KatanaConfig
 
-        cfg = KatanaConfig(domain_allowlist=[
-            "api.example.com",
-            "*.internal.co",
-            "localhost",
-        ])
+        cfg = KatanaConfig(
+            domain_allowlist=[
+                "api.example.com",
+                "*.internal.co",
+                "localhost",
+            ]
+        )
         assert cfg.domain_allowlist == ["api.example.com", "*.internal.co", "localhost"]
 
     def test_invalid_preset_rejected(self):

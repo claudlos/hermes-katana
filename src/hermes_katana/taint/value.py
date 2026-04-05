@@ -635,7 +635,7 @@ class TaintedStr(str):
         for i, part in enumerate(parts):
             # For whitespace splitting, skip whitespace to find the part
             if sep is None:
-                while cursor < len(self_raw) and self_raw[cursor] in ' \t\n\r\x0b\x0c':
+                while cursor < len(self_raw) and self_raw[cursor] in " \t\n\r\x0b\x0c":
                     cursor += 1
             start = cursor
             stop = start + len(part)

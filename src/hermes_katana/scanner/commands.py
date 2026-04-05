@@ -29,50 +29,52 @@ from enum import Enum
 # Confusable homoglyph map: maps visually similar Unicode characters
 # (e.g. Cyrillic, Greek) to their ASCII equivalents for security matching.
 # This handles cases that NFKD normalization alone cannot resolve.
-_CONFUSABLE_MAP = str.maketrans({
-    '\u0430': 'a',  # Cyrillic а -> a
-    '\u0435': 'e',  # Cyrillic е -> e
-    '\u043e': 'o',  # Cyrillic о -> o
-    '\u0440': 'r',  # Cyrillic р -> r
-    '\u0441': 'c',  # Cyrillic с -> c
-    '\u0443': 'y',  # Cyrillic у -> y (visual similarity)
-    '\u0445': 'x',  # Cyrillic х -> x
-    '\u0456': 'i',  # Cyrillic і -> i
-    '\u0458': 'j',  # Cyrillic ј -> j
-    '\u04bb': 'h',  # Cyrillic һ -> h
-    '\u043d': 'n',  # Cyrillic н -> n (some fonts)
-    '\u043c': 'm',  # Cyrillic м -> m (some fonts)
-    '\u0442': 't',  # Cyrillic т -> t (some fonts)
-    '\u03b1': 'a',  # Greek α -> a
-    '\u03b5': 'e',  # Greek ε -> e
-    '\u03bf': 'o',  # Greek ο -> o
-    '\u03c1': 'r',  # Greek ρ -> r (visual)
-    '\u03b9': 'i',  # Greek ι -> i
-    '\u03ba': 'k',  # Greek κ -> k
-    '\u0391': 'A',  # Greek Α -> A
-    '\u0392': 'B',  # Greek Β -> B
-    '\u0395': 'E',  # Greek Ε -> E
-    '\u0397': 'H',  # Greek Η -> H
-    '\u0399': 'I',  # Greek Ι -> I
-    '\u039a': 'K',  # Greek Κ -> K
-    '\u039c': 'M',  # Greek Μ -> M
-    '\u039d': 'N',  # Greek Ν -> N
-    '\u039f': 'O',  # Greek Ο -> O
-    '\u03a1': 'P',  # Greek Ρ -> P
-    '\u03a4': 'T',  # Greek Τ -> T
-    '\u03a5': 'Y',  # Greek Υ -> Y
-    '\u03a7': 'X',  # Greek Χ -> X
-    '\u03b6': 'z',  # Greek ζ -> z (visual)
-    '\u2010': '-',  # Hyphen
-    '\u2011': '-',  # Non-breaking hyphen
-    '\u2012': '-',  # Figure dash
-    '\u2013': '-',  # En dash
-    '\u2014': '-',  # Em dash
-    '\u2015': '-',  # Horizontal bar
-    '\u2212': '-',  # Minus sign
-    '\uff0f': '/',  # Fullwidth solidus
-    '\uff5c': '|',  # Fullwidth vertical bar
-})
+_CONFUSABLE_MAP = str.maketrans(
+    {
+        "\u0430": "a",  # Cyrillic а -> a
+        "\u0435": "e",  # Cyrillic е -> e
+        "\u043e": "o",  # Cyrillic о -> o
+        "\u0440": "r",  # Cyrillic р -> r
+        "\u0441": "c",  # Cyrillic с -> c
+        "\u0443": "y",  # Cyrillic у -> y (visual similarity)
+        "\u0445": "x",  # Cyrillic х -> x
+        "\u0456": "i",  # Cyrillic і -> i
+        "\u0458": "j",  # Cyrillic ј -> j
+        "\u04bb": "h",  # Cyrillic һ -> h
+        "\u043d": "n",  # Cyrillic н -> n (some fonts)
+        "\u043c": "m",  # Cyrillic м -> m (some fonts)
+        "\u0442": "t",  # Cyrillic т -> t (some fonts)
+        "\u03b1": "a",  # Greek α -> a
+        "\u03b5": "e",  # Greek ε -> e
+        "\u03bf": "o",  # Greek ο -> o
+        "\u03c1": "r",  # Greek ρ -> r (visual)
+        "\u03b9": "i",  # Greek ι -> i
+        "\u03ba": "k",  # Greek κ -> k
+        "\u0391": "A",  # Greek Α -> A
+        "\u0392": "B",  # Greek Β -> B
+        "\u0395": "E",  # Greek Ε -> E
+        "\u0397": "H",  # Greek Η -> H
+        "\u0399": "I",  # Greek Ι -> I
+        "\u039a": "K",  # Greek Κ -> K
+        "\u039c": "M",  # Greek Μ -> M
+        "\u039d": "N",  # Greek Ν -> N
+        "\u039f": "O",  # Greek Ο -> O
+        "\u03a1": "P",  # Greek Ρ -> P
+        "\u03a4": "T",  # Greek Τ -> T
+        "\u03a5": "Y",  # Greek Υ -> Y
+        "\u03a7": "X",  # Greek Χ -> X
+        "\u03b6": "z",  # Greek ζ -> z (visual)
+        "\u2010": "-",  # Hyphen
+        "\u2011": "-",  # Non-breaking hyphen
+        "\u2012": "-",  # Figure dash
+        "\u2013": "-",  # En dash
+        "\u2014": "-",  # Em dash
+        "\u2015": "-",  # Horizontal bar
+        "\u2212": "-",  # Minus sign
+        "\uff0f": "/",  # Fullwidth solidus
+        "\uff5c": "|",  # Fullwidth vertical bar
+    }
+)
 
 __all__ = [
     "CommandSeverity",
@@ -188,13 +190,15 @@ def _cp(
     flags: int = re.IGNORECASE,
 ) -> None:
     """Register a command pattern."""
-    _COMMAND_PATTERNS.append((
-        name,
-        re.compile(pattern, flags),
-        category,
-        severity,
-        description,
-    ))
+    _COMMAND_PATTERNS.append(
+        (
+            name,
+            re.compile(pattern, flags),
+            category,
+            severity,
+            description,
+        )
+    )
 
 
 # ============================
@@ -922,7 +926,7 @@ _cp(
 # ---------------------------------------------------------------------------
 
 _RE_BACKTICK = re.compile(r"`([^`]+)`")
-_RE_PATH_PREFIX = re.compile(r'(?:/usr)?(?:/local)?/s?bin/')
+_RE_PATH_PREFIX = re.compile(r"(?:/usr)?(?:/local)?/s?bin/")
 
 
 def _strip_shell_quotes(cmd: str) -> str:
@@ -936,9 +940,9 @@ def _strip_shell_quotes(cmd: str) -> str:
     - Path prefixes:  /usr/bin/wget -> wget
     """
     # Strip content from single-quoted fragments (preserve content between quotes)
-    cmd = re.sub(r"'([^']*)'", r'\1', cmd)
+    cmd = re.sub(r"'([^']*)'", r"\1", cmd)
     # Strip content from double-quoted fragments
-    cmd = re.sub(r'"([^"]*)"', r'\1', cmd)
+    cmd = re.sub(r'"([^"]*)"', r"\1", cmd)
     # Strip backslash before letters
     cmd = re.sub(r"\\(?=[a-zA-Z])", "", cmd)
     # Strip path prefixes so /usr/bin/wget -> wget, /bin/bash -> bash
@@ -949,6 +953,7 @@ def _strip_shell_quotes(cmd: str) -> str:
 # ---------------------------------------------------------------------------
 # Main detection function
 # ---------------------------------------------------------------------------
+
 
 def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
     """Detect dangerous patterns in a command string.
@@ -984,7 +989,7 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
     # lookalikes, then NFKD-normalize and fold to ASCII.
     # Use str.__str__ to extract raw string before encoding to avoid
     # TaintedStr.encode() warning — taint is not needed after ASCII folding.
-    cmd_raw = str.__str__(cmd) if hasattr(cmd, 'sources') else cmd
+    cmd_raw = str.__str__(cmd) if hasattr(cmd, "sources") else cmd
     confusable_fixed = cmd_raw.translate(_CONFUSABLE_MAP)
     normalized = unicodedata.normalize("NFKD", confusable_fixed)
     cmd = normalized.encode("ascii", "ignore").decode("ascii")
@@ -998,17 +1003,19 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
     findings: list[CommandFinding] = []
 
     # Scan both original and quote-stripped versions
-    for variant in ((cmd, stripped) if stripped != cmd else (cmd,)):
+    for variant in (cmd, stripped) if stripped != cmd else (cmd,):
         for name, pattern, category, severity, description in _COMMAND_PATTERNS:
             for match in pattern.finditer(variant):
-                findings.append(CommandFinding(
-                    pattern_name=name,
-                    severity=severity,
-                    matched_text=match.group(),
-                    category=category,
-                    position=(match.start(), match.end()),
-                    description=description,
-                ))
+                findings.append(
+                    CommandFinding(
+                        pattern_name=name,
+                        severity=severity,
+                        matched_text=match.group(),
+                        category=category,
+                        position=(match.start(), match.end()),
+                        description=description,
+                    )
+                )
 
     # Backtick substitution: extract and recursively scan backtick content
     for bt_match in _RE_BACKTICK.finditer(cmd):
@@ -1018,32 +1025,36 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
         # Backtick = command substitution = execution. Flag download commands
         # inside backticks even without pipe-to-shell, since the backtick
         # itself executes the result.
-        if not sub_findings and re.search(r'\b(?:curl|wget)\s+', content):
-            findings.append(CommandFinding(
-                pattern_name="backtick_download_exec",
-                severity=CommandSeverity.CRITICAL,
-                matched_text=bt_match.group(),
-                category=CommandCategory.PIPE_TO_SHELL,
-                position=(bt_match.start(), bt_match.end()),
-                description="Download command inside backtick substitution - downloaded content is executed.",
-            ))
+        if not sub_findings and re.search(r"\b(?:curl|wget)\s+", content):
+            findings.append(
+                CommandFinding(
+                    pattern_name="backtick_download_exec",
+                    severity=CommandSeverity.CRITICAL,
+                    matched_text=bt_match.group(),
+                    category=CommandCategory.PIPE_TO_SHELL,
+                    position=(bt_match.start(), bt_match.end()),
+                    description="Download command inside backtick substitution - downloaded content is executed.",
+                )
+            )
 
     # Replace backtick expressions with a dangerous placeholder so the
     # surrounding command is checked in full, e.g. "rm -rf `echo /`" -> "rm -rf /"
     if _RE_BACKTICK.search(cmd):
         cmd_expanded = _RE_BACKTICK.sub("/", cmd)
         expanded_stripped = _strip_shell_quotes(cmd_expanded)
-        for exp_variant in ((cmd_expanded, expanded_stripped) if expanded_stripped != cmd_expanded else (cmd_expanded,)):
+        for exp_variant in (cmd_expanded, expanded_stripped) if expanded_stripped != cmd_expanded else (cmd_expanded,):
             for name, pattern, category, severity, description in _COMMAND_PATTERNS:
                 for match in pattern.finditer(exp_variant):
-                    findings.append(CommandFinding(
-                        pattern_name=name,
-                        severity=severity,
-                        matched_text=match.group(),
-                        category=category,
-                        position=(match.start(), match.end()),
-                        description=description,
-                    ))
+                    findings.append(
+                        CommandFinding(
+                            pattern_name=name,
+                            severity=severity,
+                            matched_text=match.group(),
+                            category=category,
+                            position=(match.start(), match.end()),
+                            description=description,
+                        )
+                    )
 
     # Sort by severity
     severity_order = {

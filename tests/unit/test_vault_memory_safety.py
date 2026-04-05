@@ -71,6 +71,7 @@ class TestVaultEnvVarCleanup:
         with patch.dict(os.environ, {"HERMES_KATANA_VAULT_KEY": encoded}):
             with patch.dict("sys.modules", {"keyring": None}):
                 from hermes_katana.vault.store import _get_master_key
+
                 result = _get_master_key()
                 assert "HERMES_KATANA_VAULT_KEY" not in os.environ
                 assert result == test_key

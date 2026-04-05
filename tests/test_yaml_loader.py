@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -122,9 +120,7 @@ class TestValidatePolicyYaml:
                 {
                     "name": "bad_op",
                     "tool_pattern": "*",
-                    "conditions": [
-                        {"field": "*", "operator": "nonexistent_op", "value": True}
-                    ],
+                    "conditions": [{"field": "*", "operator": "nonexistent_op", "value": True}],
                 }
             ],
         }
@@ -185,9 +181,7 @@ class TestValidatePolicyYaml:
         for action in ("allow", "deny", "escalate", "log_only"):
             data = {
                 "name": "test",
-                "policies": [
-                    {"name": f"test_{action}", "tool_pattern": "*", "action": action}
-                ],
+                "policies": [{"name": f"test_{action}", "tool_pattern": "*", "action": action}],
             }
             errors = validate_policy_yaml(data)
             assert not any("action" in e for e in errors), f"Action {action} should be valid"
@@ -197,9 +191,7 @@ class TestValidatePolicyYaml:
 
         data = {
             "name": "test",
-            "policies": [
-                {"name": "bad_conds", "tool_pattern": "*", "conditions": "not a list"}
-            ],
+            "policies": [{"name": "bad_conds", "tool_pattern": "*", "conditions": "not a list"}],
         }
         errors = validate_policy_yaml(data)
         assert any("conditions" in e and "list" in e for e in errors)
@@ -209,9 +201,7 @@ class TestValidatePolicyYaml:
 
         data = {
             "name": "test",
-            "policies": [
-                {"name": "bad_cond", "tool_pattern": "*", "conditions": ["string"]}
-            ],
+            "policies": [{"name": "bad_cond", "tool_pattern": "*", "conditions": ["string"]}],
         }
         errors = validate_policy_yaml(data)
         assert any("mapping" in e.lower() for e in errors)
@@ -332,9 +322,7 @@ class TestInheritance:
         data = {
             "name": "custom-extended",
             "extends": "balanced",
-            "policies": [
-                {"name": "custom_rule", "tool_pattern": "my_tool", "action": "deny", "priority": 200}
-            ],
+            "policies": [{"name": "custom_rule", "tool_pattern": "my_tool", "action": "deny", "priority": 200}],
         }
         fp = _write_yaml(tmp_path, "extended.yaml", data)
         ps = load_policy_file(fp)
@@ -349,9 +337,7 @@ class TestInheritance:
         data = {
             "name": "custom-unknown-parent",
             "extends": "nonexistent_parent",
-            "policies": [
-                {"name": "solo", "tool_pattern": "*", "action": "allow", "priority": 1}
-            ],
+            "policies": [{"name": "solo", "tool_pattern": "*", "action": "allow", "priority": 1}],
         }
         fp = _write_yaml(tmp_path, "unknown_parent.yaml", data)
         with pytest.raises(PolicyValidationError, match="unknown parent"):
