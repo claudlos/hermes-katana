@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-import warnings
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -985,7 +984,7 @@ class TaintedBytes(bytes):
         created_at: Optional[float] = None,
     ) -> "TaintedBytes":
         if isinstance(value, TaintedBytes):
-            raw = bytes.__bytes__(value) if hasattr(bytes, "__bytes__") else bytes(value)
+            raw = bytes(value)
         elif isinstance(value, (bytes, bytearray, memoryview)):
             raw = bytes(value)
         elif isinstance(value, TaintedValue):
@@ -1019,7 +1018,7 @@ class TaintedBytes(bytes):
     @property
     def value(self) -> bytes:
         """Return the raw bytes value."""
-        return bytes(bytes.__bytes__(self)) if hasattr(bytes, "__bytes__") else bytes(self)
+        return bytes(self)
 
     @property
     def labels(self) -> "frozenset[TaintLabel]":
