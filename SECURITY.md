@@ -4,7 +4,7 @@
 
 | Version | Supported          |
 |---------|--------------------|
-| 1.0.x   | Yes                |
+| 2.0.x   | Yes                |
 | < 1.0   | No                 |
 
 ## Reporting a Vulnerability
@@ -12,7 +12,7 @@
 If you discover a security vulnerability in HermesKatana, please report it responsibly:
 
 1. **Do not** open a public GitHub issue for security vulnerabilities.
-2. Email **account-holder@example.com** with:
+2. Email **claudlos@users.noreply.github.com** with:
    - A description of the vulnerability
    - Steps to reproduce
    - Potential impact assessment
