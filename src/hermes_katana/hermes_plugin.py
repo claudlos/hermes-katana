@@ -95,42 +95,33 @@ def register(context: Any) -> None:
 
     # Register the katana_status tool.
     # The Hermes register_tool API requires a ``toolset`` parameter.
+    # Schema must be the inner dict only — register_tool wraps it in
+    # {"type": "function", "function": schema} automatically.
+    _katana_schema = {
+        "name": "katana_status",
+        "description": (
+            "Show HermesKatana security status: active policy, "
+            "middleware chain, scan stats, and taint tracker state."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    }
     try:
         context.register_tool(
             name="katana_status",
             toolset="katana",
-            schema={
-                "type": "function",
-                "function": {
-                    "name": "katana_status",
-                    "description": (
-                        "Show HermesKatana security status: active policy, "
-                        "middleware chain, scan stats, and taint tracker state."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": [],
-                    },
-                },
-            },
+            schema=_katana_schema,
             handler=_handle_katana_status,
             description="HermesKatana security status",
         )
     except TypeError:
-        # Fallback for PluginContext implementations with different signatures
-        # (e.g., our test mock which doesn't require toolset)
         try:
             context.register_tool(
                 name="katana_status",
-                schema={
-                    "type": "function",
-                    "function": {
-                        "name": "katana_status",
-                        "description": "Show HermesKatana security status",
-                        "parameters": {"type": "object", "properties": {}, "required": []},
-                    },
-                },
+                schema=_katana_schema,
                 handler=_handle_katana_status,
             )
         except Exception:

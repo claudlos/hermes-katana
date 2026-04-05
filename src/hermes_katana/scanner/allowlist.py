@@ -191,6 +191,74 @@ _BUILTIN_SUPPRESSIONS: list[Suppression] = [
         category_pattern="*secret*",
         reason="Searching for security-sensitive patterns is a valid audit operation",
     ),
+    # --- New: SQL keywords in DB-adjacent tools (query builders, ORMs) ---
+    Suppression(
+        id="builtin-sql-orm",
+        pattern=r"\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY)\b",
+        tool_pattern="*sql*",
+        category_pattern="*",
+        reason="SQL keywords are normal in SQL/ORM tools",
+    ),
+    Suppression(
+        id="builtin-sql-migration",
+        pattern=r"\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE)\b",
+        tool_pattern="*migrat*",
+        category_pattern="*",
+        reason="SQL keywords are normal in migration tools",
+    ),
+    # --- New: Shell commands in documentation context ---
+    Suppression(
+        id="builtin-shell-in-docs",
+        pattern=r"(\$\s*(sudo|rm|chmod|chown|kill|curl|wget|apt|pip)|```(bash|sh|shell|console))",
+        tool_pattern="*",
+        category_pattern="*command*",
+        reason="Shell commands in docs/code blocks are explanatory, not executable",
+    ),
+    # --- New: API key patterns in vault/config tools ---
+    Suppression(
+        id="builtin-keys-config",
+        pattern=r"(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|bearer)",
+        tool_pattern="*config*",
+        category_pattern="*secret*",
+        reason="Config tools legitimately reference key/token field names",
+    ),
+    Suppression(
+        id="builtin-keys-env",
+        pattern=r"(API_KEY|SECRET_KEY|AUTH_TOKEN|BEARER|AWS_ACCESS)",
+        tool_pattern="*env*",
+        category_pattern="*secret*",
+        reason="Environment variable tools handle credential names",
+    ),
+    # --- New: Password patterns in auth/credential management ---
+    Suppression(
+        id="builtin-password-auth",
+        pattern=r"(password|passwd|credentials?|authenticate|login|bcrypt|argon2|hash)",
+        tool_pattern="*auth*",
+        category_pattern="*",
+        reason="Auth tools legitimately handle password/credential patterns",
+    ),
+    Suppression(
+        id="builtin-password-credential",
+        pattern=r"(password|passwd|credentials?|secret|private[_-]?key)",
+        tool_pattern="*credential*",
+        category_pattern="*",
+        reason="Credential management tools handle passwords by design",
+    ),
+    # --- New: Webhook URLs in integration/notification tools ---
+    Suppression(
+        id="builtin-webhook-integration",
+        pattern=r"(webhook|callback|https?://[^\s]+(hook|notify|alert|event|slack|services))",
+        tool_pattern="*integrat*",
+        category_pattern="*",
+        reason="Integration tools legitimately use webhook URLs",
+    ),
+    Suppression(
+        id="builtin-webhook-notify",
+        pattern=r"(webhook|callback|https?://[^\s]+/(hook|notify|slack|discord))",
+        tool_pattern="*notif*",
+        category_pattern="*",
+        reason="Notification tools legitimately use webhook URLs",
+    ),
 ]
 
 
@@ -241,7 +309,12 @@ class AllowlistManager:
             finding: A scanner finding object. Must have ``matched_text``
                      attribute and optionally ``category``.
             tool_name: The tool that triggered the scan.
-            context: Optional extra context (unused, reserved for future use).
+            context: Optional extra context dict. Recognized keys:
+
+                - ``in_code_block`` (bool): Text is inside a fenced code block.
+                - ``in_documentation`` (bool): Text is part of documentation.
+                - ``full_text`` (str): The full surrounding text (used for
+                  automatic documentation-mode detection).
 
         Returns:
             True if the finding matches an active suppression.
@@ -252,6 +325,15 @@ class AllowlistManager:
         cat_attr = getattr(finding, "category", None)
         if cat_attr is not None:
             category = cat_attr.value if hasattr(cat_attr, "value") else str(cat_attr)
+
+        ctx = context or {}
+
+        # --- Documentation mode suppression ---
+        if self._is_documentation_context(matched_text, ctx):
+            logger.debug(
+                "Finding suppressed by documentation mode: %s", matched_text[:80],
+            )
+            return True
 
         for sup in self.suppressions:
             if not sup.is_active:
@@ -266,6 +348,43 @@ class AllowlistManager:
                     "Finding suppressed by %s (%s): %s",
                     sup.id, sup.reason, matched_text[:80],
                 )
+                return True
+
+        return False
+
+    # ------------------------------------------------------------------
+    # Documentation-mode detection
+    # ------------------------------------------------------------------
+
+    _CODE_BLOCK_RE = re.compile(r"```[\s\S]*?```", re.MULTILINE)
+    _DOC_LINE_RE = re.compile(r"^\s*(\$|#!?/|>>>|\.\.\.|//|/\*|\*)", re.MULTILINE)
+
+    @staticmethod
+    def _is_documentation_context(
+        matched_text: str,
+        ctx: dict[str, Any],
+    ) -> bool:
+        """Return True if the matched text appears to be in documentation.
+
+        Checks explicit context flags first, then falls back to heuristic
+        detection on the full surrounding text.
+        """
+        # Explicit flags from caller
+        if ctx.get("in_code_block") or ctx.get("in_documentation"):
+            return True
+
+        full_text = ctx.get("full_text", "")
+        if not full_text:
+            return False
+
+        # Check if matched_text falls inside a fenced code block
+        for m in AllowlistManager._CODE_BLOCK_RE.finditer(full_text):
+            if matched_text in m.group():
+                return True
+
+        # Check if the line containing matched_text starts with $ or #
+        for line in full_text.splitlines():
+            if matched_text in line and AllowlistManager._DOC_LINE_RE.match(line):
                 return True
 
         return False

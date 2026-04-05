@@ -52,6 +52,8 @@ class ConditionOperator(str, enum.Enum):
     ARGUMENT_MATCHES – true when a specific argument value matches a pattern
                        (inspects the raw argument, not taint metadata).
     TAINT_LEVEL_GTE  – true when the taint severity level is >= the given int.
+    TAINT_LEVEL_LTE  – true when the taint severity level is <= the given int
+                       (useful for "low taint = allow" rules).
     HAS_LABEL        – true when a specific taint label is present.
     """
 
@@ -61,6 +63,7 @@ class ConditionOperator(str, enum.Enum):
     MATCHES_PATTERN = "matches_pattern"
     ARGUMENT_MATCHES = "argument_matches"
     TAINT_LEVEL_GTE = "taint_level_gte"
+    TAINT_LEVEL_LTE = "taint_level_lte"
     HAS_LABEL = "has_label"
 
 

@@ -178,7 +178,7 @@ _cp(
 
 _cp(
     "shred_wipe",
-    r"\b(?:shred|wipe|secure-delete|srm)\s+",
+    r"(?:^|(?<=[\s;|&]))(?:sudo\s+)?(?:shred|wipe|secure-delete|srm)\s+(?:--|/|-[a-zA-Z])\S",
     CommandCategory.FILESYSTEM_DESTRUCTION,
     CommandSeverity.HIGH,
     "Secure deletion/wiping - irrecoverably destroys data.",
@@ -258,7 +258,7 @@ _cp(
 
 _cp(
     "shutdown_reboot",
-    r"\b(?:shutdown|reboot|halt|poweroff|init\s+[06])\b",
+    r"(?:^|(?<=[\s;|&]))(?:sudo\s+)?(?:shutdown|reboot|halt|poweroff|init\s+[06])\s+(?:-[a-zA-Z]|\+\d|now|0)\b",
     CommandCategory.SYSTEM_OPERATION,
     CommandSeverity.CRITICAL,
     "System shutdown/reboot command.",

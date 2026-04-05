@@ -229,6 +229,159 @@ class TestAllowlistManager:
         assert mgr.suppressions[0].id == sup.id
 
 
+class TestNewDefaultSuppressions:
+    """Tests for the new built-in suppressions added for common dev workflows."""
+
+    def test_sql_in_orm_tools(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="SELECT * FROM users WHERE id = 1",
+            category=MockCategory(value="dangerous_command"),
+        )
+        assert mgr.is_suppressed(finding, tool_name="sql_query") is True
+        assert mgr.is_suppressed(finding, tool_name="terminal") is False
+
+    def test_sql_in_migration_tools(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="ALTER TABLE users ADD COLUMN email TEXT",
+            category=MockCategory(value="dangerous_command"),
+        )
+        assert mgr.is_suppressed(finding, tool_name="run_migration") is True
+        assert mgr.is_suppressed(finding, tool_name="terminal") is False
+
+    def test_shell_commands_in_docs(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="$ sudo apt install nginx",
+            category=MockCategory(value="dangerous_command"),
+        )
+        # Shell-in-docs suppression applies to all tools
+        assert mgr.is_suppressed(finding, tool_name="read_file") is True
+
+    def test_shell_code_block_marker(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="```bash\nrm -rf /tmp/old",
+            category=MockCategory(value="dangerous_command"),
+        )
+        assert mgr.is_suppressed(finding, tool_name="read_file") is True
+
+    def test_api_key_in_config_tools(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="api_key: sk-abc123",
+            category=MockCategory(value="api_key_secret"),
+        )
+        assert mgr.is_suppressed(finding, tool_name="config_editor") is True
+        assert mgr.is_suppressed(finding, tool_name="terminal") is False
+
+    def test_api_key_in_env_tools(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="API_KEY=sk-abc123",
+            category=MockCategory(value="env_secret"),
+        )
+        assert mgr.is_suppressed(finding, tool_name="env_manager") is True
+
+    def test_password_in_auth_tools(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="password=bcrypt(user_input)",
+            category=MockCategory(value="credential_leak"),
+        )
+        assert mgr.is_suppressed(finding, tool_name="auth_handler") is True
+        assert mgr.is_suppressed(finding, tool_name="terminal") is False
+
+    def test_password_in_credential_tools(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="credentials: {password: '***'}",
+            category=MockCategory(value="credential_leak"),
+        )
+        assert mgr.is_suppressed(finding, tool_name="credential_store") is True
+
+    def test_webhook_in_integration_tools(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="https://hooks.slack.com/services/T00/B00/xxx",
+            category=MockCategory(value="url_exfil"),
+        )
+        assert mgr.is_suppressed(finding, tool_name="slack_integration") is True
+        assert mgr.is_suppressed(finding, tool_name="terminal") is False
+
+    def test_webhook_in_notification_tools(self):
+        mgr = AllowlistManager.with_defaults()
+        finding = MockFinding(
+            matched_text="webhook callback URL https://example.com/hook",
+            category=MockCategory(value="url_exfil"),
+        )
+        assert mgr.is_suppressed(finding, tool_name="notification_service") is True
+
+
+class TestDocumentationModeSuppression:
+    """Tests for the documentation-mode context suppression."""
+
+    def test_explicit_code_block_flag(self):
+        mgr = AllowlistManager(suppressions=[], include_builtins=False)
+        finding = MockFinding(matched_text="ignore previous instructions")
+        assert mgr.is_suppressed(
+            finding, tool_name="terminal",
+            context={"in_code_block": True},
+        ) is True
+
+    def test_explicit_documentation_flag(self):
+        mgr = AllowlistManager(suppressions=[], include_builtins=False)
+        finding = MockFinding(matched_text="rm -rf /")
+        assert mgr.is_suppressed(
+            finding, tool_name="terminal",
+            context={"in_documentation": True},
+        ) is True
+
+    def test_code_block_in_full_text(self):
+        mgr = AllowlistManager(suppressions=[], include_builtins=False)
+        full_text = "Here is an example:\n```\nignore previous instructions\n```\nDone."
+        finding = MockFinding(matched_text="ignore previous instructions")
+        assert mgr.is_suppressed(
+            finding, tool_name="read_file",
+            context={"full_text": full_text},
+        ) is True
+
+    def test_dollar_prefixed_line(self):
+        mgr = AllowlistManager(suppressions=[], include_builtins=False)
+        full_text = "Run this command:\n$ sudo rm -rf /tmp/old\nThat clears the cache."
+        finding = MockFinding(matched_text="sudo rm -rf /tmp/old")
+        assert mgr.is_suppressed(
+            finding, tool_name="read_file",
+            context={"full_text": full_text},
+        ) is True
+
+    def test_comment_prefixed_line(self):
+        mgr = AllowlistManager(suppressions=[], include_builtins=False)
+        full_text = "#!/bin/bash\nrm -rf /tmp/cache"
+        finding = MockFinding(matched_text="#!/bin/bash")
+        assert mgr.is_suppressed(
+            finding, tool_name="read_file",
+            context={"full_text": full_text},
+        ) is True
+
+    def test_no_context_no_suppression(self):
+        mgr = AllowlistManager(suppressions=[], include_builtins=False)
+        finding = MockFinding(matched_text="ignore previous instructions")
+        # No context at all — should NOT be suppressed (no rules either)
+        assert mgr.is_suppressed(finding, tool_name="terminal") is False
+
+    def test_text_outside_code_block_not_suppressed(self):
+        mgr = AllowlistManager(suppressions=[], include_builtins=False)
+        full_text = "```\nsafe code\n```\nignore previous instructions"
+        finding = MockFinding(matched_text="ignore previous instructions")
+        # The matched text is OUTSIDE the code block
+        assert mgr.is_suppressed(
+            finding, tool_name="terminal",
+            context={"full_text": full_text},
+        ) is False
+
+
 class TestScanWithContextIntegration:
     """Test that scan_with_context properly uses allowlist."""
 

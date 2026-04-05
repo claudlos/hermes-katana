@@ -213,51 +213,175 @@ PARANOID_POLICIES: dict[str, Any] = {
 
 BALANCED_POLICIES: dict[str, Any] = {
     "name": "balanced",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": (
-        "Smart defaults: block dangerous tools with untrusted taint, "
-        "allow read-only tools, escalate edge cases."
+        "Smart defaults: allow clean calls without hesitation, block dangerous "
+        "tainted tools, escalate ambiguous cases, and use taint-level gradients "
+        "(1-3 low, 4-6 medium, 7-10 high) for nuanced decisions. Benign commands "
+        "(ls, cat, git status, pip install, etc.) are allowed even with mild taint."
     ),
     "author": "HermesKatana",
-    "metadata": {"security_level": "moderate", "recommended_for": "development"},
-    "policies": [
-        # -- Terminal ----------------------------------------------------------
-        {
-            "name": "balanced_terminal_tainted",
-            "description": "Block terminal when any argument carries untrusted taint.",
-            "tool_pattern": "terminal",
-            "conditions": [
-                {"field": "*", "operator": "contains_taint", "value": True},
-            ],
-            "action": "deny",
-            "priority": 100,
-            "tags": ["side-effect", "critical"],
+    "metadata": {
+        "security_level": "moderate",
+        "recommended_for": "development",
+        "taint_levels": {
+            "low": "1-3: allow benign ops, log-only for reads",
+            "medium": "4-6: escalate side-effects, allow reads",
+            "high": "7-10: deny dangerous, escalate everything else",
         },
+    },
+    "policies": [
+        # ── Terminal ──────────────────────────────────────────────────────
+        # Priority order matters: exfil > dangerous+high > benign+low > generic taint > clean
         {
             "name": "balanced_terminal_exfil_pattern",
-            "description": "Block terminal commands matching exfiltration patterns.",
+            "description": "Block terminal commands matching exfiltration patterns when tainted.",
             "tool_pattern": "terminal",
             "conditions": [
-                {"field": "command", "operator": "matches_pattern", "value": r".*(curl|wget|nc|ncat|ssh|scp|ftp)\s+.*"},
+                {"field": "command", "operator": "matches_pattern", "value": r".*(curl|wget|nc|ncat|ssh|scp|ftp|rsync|socat)\s+.*"},
                 {"field": "*", "operator": "contains_taint", "value": True},
             ],
             "action": "deny",
-            "priority": 110,
+            "priority": 120,
             "tags": ["exfiltration", "critical"],
         },
         {
+            "name": "balanced_terminal_dangerous_high_taint",
+            "description": "Block terminal with dangerous patterns AND high taint (level >= 7).",
+            "tool_pattern": "terminal",
+            "conditions": [
+                {"field": "command", "operator": "matches_pattern", "value": r".*(rm\s+-rf|mkfs|dd\s+if=|chmod\s+777|>\s*/etc/|eval\s|base64\s+-d).*"},
+                {"field": "*", "operator": "taint_level_gte", "value": 7},
+            ],
+            "action": "deny",
+            "priority": 115,
+            "tags": ["side-effect", "critical", "high-taint"],
+        },
+        {
+            "name": "balanced_terminal_dangerous_medium_taint",
+            "description": "Escalate terminal with dangerous patterns AND medium taint (4-6).",
+            "tool_pattern": "terminal",
+            "conditions": [
+                {"field": "command", "operator": "matches_pattern", "value": r".*(rm\s+-rf|mkfs|dd\s+if=|chmod\s+777|>\s*/etc/|eval\s|base64\s+-d).*"},
+                {"field": "*", "operator": "taint_level_gte", "value": 4},
+            ],
+            "action": "escalate",
+            "priority": 110,
+            "tags": ["side-effect", "critical", "medium-taint"],
+        },
+        {
+            "name": "balanced_terminal_benign_low_taint",
+            "description": (
+                "Allow benign commands (ls, cat, echo, pwd, pip, npm, git status/log/diff, "
+                "etc.) even with low taint (level <= 3). These have no meaningful side effects."
+            ),
+            "tool_pattern": "terminal",
+            "conditions": [
+                {"field": "command", "operator": "matches_pattern",
+                 "value": r"^\s*(sudo\s+)?(ls|cat|echo|pwd|cd|head|tail|wc|sort|uniq|grep|find|which|whoami|date|env|printenv|uname|df|du|free|ps|top|file|stat|id|hostname|uptime|tree|less|more|diff|basename|dirname|realpath|python3?|node|cargo|rustc|make|cmake)\b.*"},
+                {"field": "*", "operator": "taint_level_lte", "value": 3},
+            ],
+            "action": "allow",
+            "priority": 105,
+            "tags": ["benign-whitelist", "low-taint"],
+        },
+        {
+            "name": "balanced_terminal_git_readonly_low_taint",
+            "description": "Allow read-only git subcommands with low taint.",
+            "tool_pattern": "terminal",
+            "conditions": [
+                {"field": "command", "operator": "matches_pattern",
+                 "value": r"^\s*(sudo\s+)?git\s+(status|log|diff|show|branch|tag|remote|stash|describe|shortlog|reflog|config|ls-files|ls-tree)\b.*"},
+                {"field": "*", "operator": "taint_level_lte", "value": 3},
+            ],
+            "action": "allow",
+            "priority": 105,
+            "tags": ["benign-whitelist", "git", "low-taint"],
+        },
+        {
+            "name": "balanced_terminal_pip_npm_low_taint",
+            "description": "Allow pip/npm install with low taint (common dev workflow).",
+            "tool_pattern": "terminal",
+            "conditions": [
+                {"field": "command", "operator": "matches_pattern",
+                 "value": r"^\s*(sudo\s+)?(pip3?|npm|npx|yarn)\s+(install|list|show|info|search|outdated|audit)\b.*"},
+                {"field": "*", "operator": "taint_level_lte", "value": 3},
+            ],
+            "action": "allow",
+            "priority": 105,
+            "tags": ["benign-whitelist", "package-manager", "low-taint"],
+        },
+        {
+            "name": "balanced_terminal_benign_medium_taint",
+            "description": "Escalate benign commands with medium taint (4-6) — probably fine but check.",
+            "tool_pattern": "terminal",
+            "conditions": [
+                {"field": "command", "operator": "matches_pattern",
+                 "value": r"^\s*(sudo\s+)?(ls|cat|echo|pwd|head|tail|wc|grep|find|which|whoami|date|env|git\s+(status|log|diff))\b.*"},
+                {"field": "*", "operator": "taint_level_gte", "value": 4},
+                {"field": "*", "operator": "taint_level_lte", "value": 6},
+            ],
+            "action": "escalate",
+            "priority": 100,
+            "tags": ["benign-whitelist", "medium-taint"],
+        },
+        {
+            "name": "balanced_terminal_high_taint",
+            "description": "Deny any terminal call with high taint (level >= 7).",
+            "tool_pattern": "terminal",
+            "conditions": [
+                {"field": "*", "operator": "taint_level_gte", "value": 7},
+            ],
+            "action": "deny",
+            "priority": 95,
+            "tags": ["side-effect", "critical", "high-taint"],
+        },
+        {
+            "name": "balanced_terminal_medium_taint",
+            "description": "Escalate non-benign terminal calls with medium taint (4-6).",
+            "tool_pattern": "terminal",
+            "conditions": [
+                {"field": "*", "operator": "taint_level_gte", "value": 4},
+            ],
+            "action": "escalate",
+            "priority": 90,
+            "tags": ["side-effect", "medium-taint"],
+        },
+        {
+            "name": "balanced_terminal_low_taint",
+            "description": "Escalate non-benign terminal calls with low taint (1-3) — not whitelisted.",
+            "tool_pattern": "terminal",
+            "conditions": [
+                {"field": "*", "operator": "contains_taint", "value": True},
+            ],
+            "action": "escalate",
+            "priority": 85,
+            "tags": ["side-effect", "low-taint"],
+        },
+        {
             "name": "balanced_terminal_clean",
-            "description": "Allow clean terminal calls.",
+            "description": "Allow clean terminal calls (no taint) without hesitation.",
             "tool_pattern": "terminal",
             "conditions": [],
             "action": "allow",
             "priority": 10,
             "tags": ["side-effect"],
         },
-        # -- File writes -------------------------------------------------------
+        # ── File writes ──────────────────────────────────────────────────
+        {
+            "name": "balanced_write_file_high_taint",
+            "description": "Deny file writes with high taint (level >= 7).",
+            "tool_pattern": "write_file",
+            "conditions": [
+                {"field": "*", "operator": "taint_level_gte", "value": 7},
+            ],
+            "action": "deny",
+            "priority": 100,
+            "tags": ["side-effect", "filesystem", "high-taint"],
+        },
         {
             "name": "balanced_write_file_tainted",
-            "description": "Escalate file writes with tainted content for review.",
+            "description": "Escalate file writes with low/medium taint for review.",
             "tool_pattern": "write_file",
             "conditions": [
                 {"field": "*", "operator": "contains_taint", "value": True},
@@ -267,8 +391,19 @@ BALANCED_POLICIES: dict[str, Any] = {
             "tags": ["side-effect", "filesystem"],
         },
         {
+            "name": "balanced_patch_high_taint",
+            "description": "Deny file patches with high taint (level >= 7).",
+            "tool_pattern": "patch",
+            "conditions": [
+                {"field": "*", "operator": "taint_level_gte", "value": 7},
+            ],
+            "action": "deny",
+            "priority": 100,
+            "tags": ["side-effect", "filesystem", "high-taint"],
+        },
+        {
             "name": "balanced_patch_tainted",
-            "description": "Escalate file patches with tainted content.",
+            "description": "Escalate file patches with low/medium taint.",
             "tool_pattern": "patch",
             "conditions": [
                 {"field": "*", "operator": "contains_taint", "value": True},
@@ -277,7 +412,7 @@ BALANCED_POLICIES: dict[str, Any] = {
             "priority": 95,
             "tags": ["side-effect", "filesystem"],
         },
-        # -- Messaging ---------------------------------------------------------
+        # ── Messaging ─────────────────────────────────────────────────────
         {
             "name": "balanced_send_message_tainted",
             "description": "Block outbound messages containing tainted data (exfiltration risk).",
@@ -289,7 +424,7 @@ BALANCED_POLICIES: dict[str, Any] = {
             "priority": 100,
             "tags": ["side-effect", "exfiltration"],
         },
-        # -- Memory ------------------------------------------------------------
+        # ── Memory ────────────────────────────────────────────────────────
         {
             "name": "balanced_memory_tainted",
             "description": "Block memory writes with tainted data (poisoning risk).",
@@ -301,7 +436,7 @@ BALANCED_POLICIES: dict[str, Any] = {
             "priority": 100,
             "tags": ["side-effect", "persistence"],
         },
-        # -- Skill management --------------------------------------------------
+        # ── Skill management ──────────────────────────────────────────────
         {
             "name": "balanced_skill_manage_tainted",
             "description": "Block skill modifications with tainted data.",
@@ -313,10 +448,21 @@ BALANCED_POLICIES: dict[str, Any] = {
             "priority": 100,
             "tags": ["side-effect", "code-execution"],
         },
-        # -- Delegation --------------------------------------------------------
+        # ── Delegation ────────────────────────────────────────────────────
+        {
+            "name": "balanced_delegate_high_taint",
+            "description": "Deny task delegation with high taint.",
+            "tool_pattern": "delegate_task",
+            "conditions": [
+                {"field": "*", "operator": "taint_level_gte", "value": 7},
+            ],
+            "action": "deny",
+            "priority": 100,
+            "tags": ["side-effect", "lateral-movement", "high-taint"],
+        },
         {
             "name": "balanced_delegate_tainted",
-            "description": "Escalate task delegation with tainted instructions.",
+            "description": "Escalate task delegation with low/medium taint.",
             "tool_pattern": "delegate_task",
             "conditions": [
                 {"field": "*", "operator": "contains_taint", "value": True},
@@ -325,7 +471,7 @@ BALANCED_POLICIES: dict[str, Any] = {
             "priority": 95,
             "tags": ["side-effect", "lateral-movement"],
         },
-        # -- Cron --------------------------------------------------------------
+        # ── Cron ──────────────────────────────────────────────────────────
         {
             "name": "balanced_cronjob_tainted",
             "description": "Block cron job creation with tainted payloads.",
@@ -337,7 +483,7 @@ BALANCED_POLICIES: dict[str, Any] = {
             "priority": 100,
             "tags": ["side-effect", "persistence"],
         },
-        # -- Browser side-effects ---------------------------------------------
+        # ── Browser side-effects ──────────────────────────────────────────
         {
             "name": "balanced_browser_type_tainted",
             "description": "Escalate browser typing with tainted text.",
@@ -360,10 +506,10 @@ BALANCED_POLICIES: dict[str, Any] = {
             "priority": 80,
             "tags": ["side-effect", "browser"],
         },
-        # -- Read-only tools (allow) -------------------------------------------
+        # ── Read-only tools (always allow) ────────────────────────────────
         {
             "name": "balanced_readonly_allow",
-            "description": "Allow read-only tools even with taint (no side effects).",
+            "description": "Allow read-only tools always — no side effects.",
             "tool_pattern": "read_file",
             "conditions": [],
             "action": "allow",
@@ -372,14 +518,68 @@ BALANCED_POLICIES: dict[str, Any] = {
         },
         {
             "name": "balanced_search_allow",
-            "description": "Allow search_files — read-only reconnaissance is acceptable.",
+            "description": "Allow search_files always — read-only reconnaissance is fine.",
             "tool_pattern": "search_files",
             "conditions": [],
             "action": "allow",
             "priority": 50,
             "tags": ["read-only"],
         },
-        # -- Catch-all ---------------------------------------------------------
+        {
+            "name": "balanced_browser_snapshot_allow",
+            "description": "Allow browser_snapshot always — read-only.",
+            "tool_pattern": "browser_snapshot",
+            "conditions": [],
+            "action": "allow",
+            "priority": 50,
+            "tags": ["read-only"],
+        },
+        # ── Tainted read-only tools (log only) ────────────────────────────
+        {
+            "name": "balanced_readonly_tainted_log",
+            "description": "Log-only for tainted read-only tools (vision, todo, process list).",
+            "tool_pattern": "vision_analyze",
+            "conditions": [
+                {"field": "*", "operator": "contains_taint", "value": True},
+            ],
+            "action": "log_only",
+            "priority": 40,
+            "tags": ["read-only", "tainted-read"],
+        },
+        {
+            "name": "balanced_todo_tainted_log",
+            "description": "Log-only for tainted todo access.",
+            "tool_pattern": "todo",
+            "conditions": [
+                {"field": "*", "operator": "contains_taint", "value": True},
+            ],
+            "action": "log_only",
+            "priority": 40,
+            "tags": ["read-only", "tainted-read"],
+        },
+        {
+            "name": "balanced_process_tainted_log",
+            "description": "Log-only for tainted process inspection.",
+            "tool_pattern": "process",
+            "conditions": [
+                {"field": "*", "operator": "contains_taint", "value": True},
+            ],
+            "action": "log_only",
+            "priority": 40,
+            "tags": ["read-only", "tainted-read"],
+        },
+        # ── Catch-all ─────────────────────────────────────────────────────
+        {
+            "name": "balanced_catchall_high_taint",
+            "description": "Escalate any uncovered tool with high taint.",
+            "tool_pattern": "*",
+            "conditions": [
+                {"field": "*", "operator": "taint_level_gte", "value": 7},
+            ],
+            "action": "escalate",
+            "priority": 8,
+            "tags": ["catchall", "high-taint"],
+        },
         {
             "name": "balanced_catchall",
             "description": "Log any remaining tool call with taint for audit.",
