@@ -150,7 +150,7 @@ Custom YAML policies with hot-reload:
 
 ```yaml
 name: my-policies
-version: "1.0.0"
+version: "2.0.0"
 extends: balanced
 policies:
   - name: block_crypto_mining

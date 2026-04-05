@@ -865,7 +865,7 @@ class KatanaInstaller:
         marker = target / KATANA_INSTALL_MARKER
         data = {
             "installed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "installer_version": "1.0.0",
+            "installer_version": "2.0.0",
             "patches": {r.name: {"status": r.status.value, "message": r.message} for r in results},
             "target": str(target),
         }

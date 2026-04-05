@@ -21,7 +21,7 @@ Usage::
     result = scan_input("user input text")
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 # Scanner — multi-layer attack detection
 from hermes_katana.scanner import ScanResult, ScanVerdict, scan_command, scan_input, scan_output

@@ -144,7 +144,7 @@ Edit the file:
 
 ```yaml
 name: my-org-policies
-version: "1.0.0"
+version: "2.0.0"
 extends: balanced
 policies:
   # Block crypto mining commands
