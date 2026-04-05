@@ -32,6 +32,20 @@ __all__ = [
     "migrate_secrets",
 ]
 
+
+def _safe_home() -> Optional[Path]:
+    """Return Path.home() or None if the home directory cannot be resolved.
+
+    On Windows, Path.home() raises RuntimeError when USERPROFILE/HOMEDRIVE are
+    unset (e.g. in isolated test environments that clear os.environ). Callers
+    use this helper to skip home-based candidate paths gracefully.
+    """
+    try:
+        return Path.home()
+    except (RuntimeError, KeyError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Known secret key patterns (env var names that are likely secrets)
 # ---------------------------------------------------------------------------
@@ -157,14 +171,23 @@ def _scan_hermes_config(config_path: Optional[Path] = None) -> dict[str, str]:
     """
     if config_path is None:
         # Search common locations
-        candidates = [
-            Path.home() / ".config" / "hermes" / "config.yaml",
-            Path.home() / ".config" / "hermes" / "config.yml",
-            Path.home() / ".hermes" / "config.yaml",
-            Path.home() / ".hermes" / "config.yml",
-            Path("config.yaml"),
-            Path("config.yml"),
-        ]
+        home = _safe_home()
+        candidates: list[Path] = []
+        if home is not None:
+            candidates.extend(
+                [
+                    home / ".config" / "hermes" / "config.yaml",
+                    home / ".config" / "hermes" / "config.yml",
+                    home / ".hermes" / "config.yaml",
+                    home / ".hermes" / "config.yml",
+                ]
+            )
+        candidates.extend(
+            [
+                Path("config.yaml"),
+                Path("config.yml"),
+            ]
+        )
         for candidate in candidates:
             if candidate.exists():
                 config_path = candidate
@@ -231,12 +254,16 @@ def _scan_dotenv(dotenv_path: Optional[Path] = None) -> dict[str, str]:
         Dict of {key_name: value} for detected secrets.
     """
     if dotenv_path is None:
-        candidates = [
-            Path(".env"),
-            Path.home() / ".env",
-            Path(".env.local"),
-            Path(".env.production"),
-        ]
+        home = _safe_home()
+        candidates: list[Path] = [Path(".env")]
+        if home is not None:
+            candidates.append(home / ".env")
+        candidates.extend(
+            [
+                Path(".env.local"),
+                Path(".env.production"),
+            ]
+        )
         for candidate in candidates:
             if candidate.exists():
                 dotenv_path = candidate

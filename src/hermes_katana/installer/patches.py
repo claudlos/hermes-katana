@@ -762,9 +762,11 @@ def validate_patch_target(target_file: Path, patch: Patch) -> list[str]:
         st = target_file.stat()
         if st.st_mode & (stat.S_ISUID | stat.S_ISGID):
             issues.append(f"Target has setuid/setgid bits set: {target_file} (mode: {oct(st.st_mode)})")
-        current_uid = os.getuid()
-        if st.st_uid != current_uid and current_uid != 0:
-            issues.append(f"Target owned by uid {st.st_uid}, not current user ({current_uid}): {target_file}")
+        # POSIX-only ownership check; Windows uses ACLs and has no os.getuid()
+        if hasattr(os, "getuid"):
+            current_uid = os.getuid()
+            if st.st_uid != current_uid and current_uid != 0:
+                issues.append(f"Target owned by uid {st.st_uid}, not current user ({current_uid}): {target_file}")
         if not os.access(target_file, os.W_OK):
             issues.append(f"No write permission on target: {target_file}")
     except OSError as exc:
