@@ -42,9 +42,11 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from hermes_katana.installer.patches import (
-    CORE_PATCHES,
+    CURRENT_CORE_PATCHES,
+    LEGACY_CORE_PATCHES,
     PatchResult,
     PatchStatus,
+    _detect_hermes_layout,
     apply_patches,
     get_patch_status,
     preview_apply_patches,
@@ -68,10 +70,21 @@ KATANA_BACKUP_DIR = ".katana-backups"
 KATANA_BACKUP_MANIFEST = "manifest.json"
 
 # Files required for a checkout to be patchable by this installer.
+# Legacy layout (Hermes v0.1.0)
 HERMES_MARKERS = [
     "hermes/__init__.py",
     "hermes/tools/dispatch.py",
     "hermes/tools/terminal.py",
+]
+
+# Current layout markers (post-v0.1.0)
+# NB: "hermes_cli" is a directory check to match _detect_hermes_layout() in
+# patches.py — keep these in sync, otherwise detect_hermes() and layout
+# detection can disagree on edge cases (dir exists without __init__.py).
+_HERMES_CURRENT_MARKERS = [
+    "tools/registry.py",
+    "hermes_cli",
+    "tools/terminal_tool.py",
 ]
 
 # Default configuration template
@@ -250,11 +263,30 @@ class KatanaInstaller:
         """Return the last backup manifest written by this installer."""
         return self._last_backup_manifest
 
+    def _patches_for(self, target: Path) -> list:
+        """Return the correct patch list for the Hermes layout at *target*.
+
+        Falls back to the current layout when detection raises (should only
+        happen if ``detect_hermes()`` was bypassed) but logs a warning so the
+        mismatch is visible instead of silently applying the wrong patches.
+        """
+        try:
+            layout = _detect_hermes_layout(target)
+        except ValueError as exc:
+            logger.warning(
+                "Could not detect Hermes layout at %s (%s); defaulting to current "
+                "layout. This usually means detect_hermes() was skipped.",
+                target,
+                exc,
+            )
+            layout = "current"
+        return LEGACY_CORE_PATCHES if layout == "legacy-v0.1.0" else CURRENT_CORE_PATCHES
+
     def detect_hermes(self, path: str | Path) -> bool:
         """Check if the given path is a Hermes checkout.
 
         Looks for known marker files that indicate a Hermes source tree.
-        Supports both standard and alternative directory layouts.
+        Supports both the legacy (v0.1.0) and current layout.
 
         Args:
             path: Path to check.
@@ -268,11 +300,16 @@ class KatanaInstaller:
             logger.debug("Not a directory: %s", target)
             return False
 
-        # The installer can only safely operate on checkouts that expose the
-        # files required by the critical Katana patches.
-        missing_markers = [marker for marker in HERMES_MARKERS if not (target / marker).exists()]
-        if not missing_markers:
-            logger.info("Hermes detected via required markers in %s", target)
+        # Current layout: tools/registry.py + hermes_cli/ (post-v0.1.0)
+        current_missing = [m for m in _HERMES_CURRENT_MARKERS if not (target / m).exists()]
+        if not current_missing:
+            logger.info("Hermes (current layout) detected in %s", target)
+            return True
+
+        # Legacy layout: hermes/ top-level package (v0.1.0)
+        legacy_missing = [m for m in HERMES_MARKERS if not (target / m).exists()]
+        if not legacy_missing:
+            logger.info("Hermes (legacy v0.1.0 layout) detected in %s", target)
             return True
 
         # A pyproject named "hermes" is not sufficient on its own; keep the
@@ -333,12 +370,27 @@ class KatanaInstaller:
             raise FileNotFoundError(f"Target path does not exist: {target}")
 
         if not self.detect_hermes(target):
-            raise ValueError(f"Not a Hermes checkout: {target}\nExpected marker files: {', '.join(HERMES_MARKERS)}")
+            raise ValueError(
+                f"Not a Hermes checkout: {target}\n"
+                f"Expected current-layout markers: {', '.join(_HERMES_CURRENT_MARKERS)}\n"
+                f"Or legacy v0.1.0 markers: {', '.join(HERMES_MARKERS)}"
+            )
 
-        logger.info("Installing Katana on %s", target)
+        # Select patch set based on layout
+        try:
+            layout = _detect_hermes_layout(target)
+        except ValueError:
+            layout = "current"  # default to current; detect_hermes already passed
+
+        if layout == "legacy-v0.1.0":
+            patches = LEGACY_CORE_PATCHES
+            logger.info("Installing Katana on %s (legacy v0.1.0 layout)", target)
+        else:
+            patches = CURRENT_CORE_PATCHES
+            logger.info("Installing Katana on %s (current layout)", target)
 
         if dry_run:
-            return preview_apply_patches(target)
+            return preview_apply_patches(target, patches=patches)
 
         if backup:
             manifest = self._create_backup(
@@ -362,7 +414,7 @@ class KatanaInstaller:
         self._generate_ca_cert(target)
 
         # 4. Apply patches
-        results = apply_patches(target)
+        results = apply_patches(target, patches=patches)
 
         # 5. Write install marker
         self._write_marker(target, results)
@@ -413,8 +465,10 @@ class KatanaInstaller:
 
         logger.info("Uninstalling Katana from %s", target)
 
+        patches = self._patches_for(target)
+
         if dry_run:
-            return preview_revert_patches(target)
+            return preview_revert_patches(target, patches=patches)
 
         if backup:
             manifest = self._create_backup(
@@ -427,7 +481,7 @@ class KatanaInstaller:
             logger.info("Created uninstall backup at %s", manifest.backup_root)
 
         # 1. Revert patches
-        results = revert_patches(target)
+        results = revert_patches(target, patches=patches)
 
         # 2. Remove .katana directory (reject if it's a symlink to prevent traversal)
         katana_dir = target / KATANA_CONFIG_DIR
@@ -574,11 +628,12 @@ class KatanaInstaller:
             return result
 
         # Check patches
-        result.patches_applied = get_patch_status(target)
+        patches = self._patches_for(target)
+        result.patches_applied = get_patch_status(target, patches=patches)
         for patch_name, applied in result.patches_applied.items():
             if not applied:
                 # Check if the patch is critical
-                patch = next((p for p in CORE_PATCHES if p.name == patch_name), None)
+                patch = next((p for p in patches if p.name == patch_name), None)
                 if patch and patch.critical:
                     result.issues.append(f"Critical patch not applied: {patch_name}")
                 else:
@@ -656,7 +711,7 @@ class KatanaInstaller:
         paths: list[Path] = []
         seen: set[Path] = set()
 
-        for patch in CORE_PATCHES:
+        for patch in self._patches_for(target):
             candidate = target / patch.target_file
             if candidate.exists() and candidate not in seen:
                 paths.append(candidate)

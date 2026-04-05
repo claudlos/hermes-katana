@@ -41,6 +41,9 @@ __all__ = [
     "preview_revert_patches",
     "get_patch_status",
     "CORE_PATCHES",
+    "LEGACY_CORE_PATCHES",
+    "CURRENT_CORE_PATCHES",
+    "_detect_hermes_layout",
 ]
 
 
@@ -122,13 +125,326 @@ class Patch:
 
 
 # ---------------------------------------------------------------------------
-# Core patches
+# Core patches (current Hermes layout — tools/registry.py, hermes_cli/, etc.)
 # ---------------------------------------------------------------------------
 
 # Sentinel prefix — all sentinels start with this for easy detection
 _SENTINEL_PREFIX = "# [KATANA-PATCH]"
 
-CORE_PATCHES: list[Patch] = [
+CURRENT_CORE_PATCHES: list[Patch] = [
+    # -----------------------------------------------------------------------
+    # 1. Tool dispatch hook  (tools/registry.py — sync dispatch)
+    # -----------------------------------------------------------------------
+    Patch(
+        name="tool_dispatch_hook",
+        description="Inject Katana middleware chain before tool execution",
+        target_file="tools/registry.py",
+        search_text="""\
+    def dispatch(self, name: str, args: dict, **kwargs) -> str:
+        \"\"\"Execute a tool handler by name.
+
+        * Async handlers are bridged automatically via ``_run_async()``.
+        * All exceptions are caught and returned as ``{"error": "..."}``
+          for consistent error format.
+        \"\"\"
+        entry = self._tools.get(name)
+        if not entry:
+            return json.dumps({"error": f"Unknown tool: {name}"})
+        try:
+            if entry.is_async:
+                from model_tools import _run_async
+                return _run_async(entry.handler(args, **kwargs))
+            return entry.handler(args, **kwargs)
+        except Exception as e:
+            logger.exception("Tool %s dispatch error: %s", name, e)
+            return json.dumps({"error": f"Tool execution failed: {type(e).__name__}: {e}"})""",
+        replace_text="""\
+    def dispatch(self, name: str, args: dict, **kwargs) -> str:
+        \"\"\"Execute a tool handler by name.
+
+        * Async handlers are bridged automatically via ``_run_async()``.
+        * All exceptions are caught and returned as ``{{"error": "..."}}``
+          for consistent error format.
+        \"\"\"
+        {sentinel}
+        # --- Katana middleware interception ---
+        try:
+            from hermes_katana.middleware import MiddlewareChain, CallContext, DispatchDecision
+            _katana_chain = getattr(self, '_katana_chain', None)
+            if _katana_chain is not None:
+                _katana_ctx = CallContext(tool_name=name, args=args)
+                _katana_decision = _katana_chain.execute_pre(_katana_ctx)
+                if _katana_decision == DispatchDecision.DENY:
+                    try:
+                        self._katana_record_denial(name, _katana_ctx)
+                    except Exception:
+                        pass
+                    return json.dumps({{
+                        "error": f"Katana blocked tool '{{name}}': "
+                        + "; ".join(_katana_ctx.deny_reasons)
+                    }})
+                if _katana_decision == DispatchDecision.ESCALATE:
+                    from model_tools import _run_async as _katana_run_async
+                    if not _katana_run_async(self._katana_escalate(_katana_ctx)):
+                        try:
+                            self._katana_record_denial(name, _katana_ctx)
+                        except Exception:
+                            pass
+                        return json.dumps({{
+                            "error": f"Katana escalation denied for '{{name}}'"
+                        }})
+        except ImportError:
+            _katana_chain = None
+        # --- End Katana middleware ---
+        entry = self._tools.get(name)
+        if not entry:
+            return json.dumps({{"error": f"Unknown tool: {{name}}"}})
+        try:
+            if entry.is_async:
+                from model_tools import _run_async
+                result = _run_async(entry.handler(args, **kwargs))
+            else:
+                result = entry.handler(args, **kwargs)
+            # --- Katana post-dispatch ---
+            try:
+                if _katana_chain is not None:
+                    _katana_ctx.tool_output = result
+                    _katana_chain.execute_post(_katana_ctx)
+            except (NameError, Exception):
+                pass
+            # --- End Katana post-dispatch ---
+            return result
+        except Exception as e:
+            logger.exception("Tool %s dispatch error: %s", name, e)
+            return json.dumps({{"error": f"Tool execution failed: {{type(e).__name__}}: {{e}}"}})""".format(
+            sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook"
+        ),
+        sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook",
+        critical=True,
+    ),
+    # -----------------------------------------------------------------------
+    # 2. Dispatcher bootstrap  (anchored to ToolRegistry.__init__)
+    # -----------------------------------------------------------------------
+    Patch(
+        name="dispatcher_bootstrap",
+        description="Initialize Katana middleware chain on ToolRegistry at construction time",
+        target_file="tools/registry.py",
+        search_text="""\
+    def __init__(self):
+        self._tools: Dict[str, ToolEntry] = {}
+        self._toolset_checks: Dict[str, Callable] = {}""",
+        replace_text="""\
+    def __init__(self):
+        self._tools: Dict[str, ToolEntry] = {{}}
+        self._toolset_checks: Dict[str, Callable] = {{}}
+        {sentinel}
+        # --- Katana bootstrap ---
+        try:
+            from hermes_katana.bootstrap import ensure_dispatcher_bootstrap
+            ensure_dispatcher_bootstrap(self)
+        except Exception:
+            pass
+        # --- End Katana bootstrap ---""".format(
+            sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap"
+        ),
+        sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap",
+        critical=True,
+    ),
+    # -----------------------------------------------------------------------
+    # 3. Escalation denial audit  (adds audit helper to ToolRegistry)
+    # -----------------------------------------------------------------------
+    Patch(
+        name="dispatcher_escalation_audit",
+        description="Add _katana_record_denial audit helper to ToolRegistry",
+        target_file="tools/registry.py",
+        search_text="""\
+    def get_all_tool_names(self) -> List[str]:
+        \"\"\"Return sorted list of all registered tool names.\"\"\"
+        return sorted(self._tools.keys())""",
+        replace_text="""\
+    {sentinel}
+    def _katana_record_denial(self, name: str, ctx) -> None:
+        \"\"\"Record a Katana-denied tool call for audit purposes.\"\"\"
+        try:
+            from hermes_katana.audit import record_denial
+            record_denial(tool_name=name, context=ctx)
+        except Exception:
+            pass
+
+    def get_all_tool_names(self) -> List[str]:
+        \"\"\"Return sorted list of all registered tool names.\"\"\"
+        return sorted(self._tools.keys())""".format(
+            sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit"
+        ),
+        sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit",
+        critical=True,
+    ),
+    # -----------------------------------------------------------------------
+    # 4. Proxy environment variables  (tools/terminal_tool.py — local env)
+    # -----------------------------------------------------------------------
+    Patch(
+        name="proxy_env_vars",
+        description="Inject HTTP_PROXY/HTTPS_PROXY into local subprocess environment",
+        target_file="tools/terminal_tool.py",
+        search_text="""\
+    if env_type == "local":
+        lc = local_config or {}
+        return _LocalEnvironment(cwd=cwd, timeout=timeout,
+                                 persistent=lc.get("persistent", False))""",
+        replace_text="""\
+    if env_type == "local":
+        lc = local_config or {{}}
+        {sentinel}
+        # --- Katana proxy injection ---
+        _katana_proxy_env = {{}}
+        try:
+            import os as _os
+            _katana_proxy = _os.environ.get("KATANA_PROXY_URL")
+            if _katana_proxy:
+                _katana_proxy_env["HTTP_PROXY"] = _katana_proxy
+                _katana_proxy_env["HTTPS_PROXY"] = _katana_proxy
+                _katana_proxy_env["http_proxy"] = _katana_proxy
+                _katana_proxy_env["https_proxy"] = _katana_proxy
+                _no_proxy = _os.environ.get("NO_PROXY", "localhost,127.0.0.1,::1")
+                _katana_proxy_env["NO_PROXY"] = _no_proxy
+                _katana_proxy_env["no_proxy"] = _no_proxy
+        except Exception:
+            pass
+        # --- End Katana proxy injection ---
+        return _LocalEnvironment(cwd=cwd, timeout=timeout,
+                                 persistent=lc.get("persistent", False),
+                                 env=_katana_proxy_env)""".format(
+            sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars"
+        ),
+        sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars",
+        critical=True,
+    ),
+    # -----------------------------------------------------------------------
+    # 5. Banner integration  (hermes_cli/banner.py)
+    # -----------------------------------------------------------------------
+    Patch(
+        name="banner_integration",
+        description="Show Katana protection status in the Hermes startup banner",
+        target_file="hermes_cli/banner.py",
+        search_text="""\
+    console.print()
+    term_width = shutil.get_terminal_size().columns
+    if term_width >= 95:
+        _logo = _bskin.banner_logo if _bskin and hasattr(_bskin, 'banner_logo') and _bskin.banner_logo else HERMES_AGENT_LOGO
+        console.print(_logo)
+        console.print()
+    console.print(outer_panel)""",
+        replace_text="""\
+    console.print()
+    term_width = shutil.get_terminal_size().columns
+    if term_width >= 95:
+        _logo = _bskin.banner_logo if _bskin and hasattr(_bskin, 'banner_logo') and _bskin.banner_logo else HERMES_AGENT_LOGO
+        console.print(_logo)
+        console.print()
+    console.print(outer_panel)
+    {sentinel}
+    # --- Katana banner integration ---
+    try:
+        from hermes_katana.cli.main import _format_katana_status
+        _katana_status = _format_katana_status()
+        if _katana_status:
+            console.print(_katana_status)
+    except ImportError:
+        pass
+    # --- End Katana banner ---""".format(sentinel=f"{_SENTINEL_PREFIX} banner_integration"),
+        sentinel=f"{_SENTINEL_PREFIX} banner_integration",
+        critical=False,
+    ),
+    # -----------------------------------------------------------------------
+    # 6. Docker proxy forwarding  (tools/environments/docker.py)
+    # -----------------------------------------------------------------------
+    Patch(
+        name="docker_proxy_forwarding",
+        description="Translate proxy address for Docker containers",
+        target_file="tools/environments/docker.py",
+        search_text="""\
+        # Build the per-exec environment: start with explicit docker_env values
+        # (static config), then overlay docker_forward_env / skill env_passthrough
+        # (dynamic from host process).  Forward values take precedence.
+        exec_env: dict[str, str] = dict(self._env)""",
+        replace_text="""\
+        # Build the per-exec environment: start with explicit docker_env values
+        # (static config), then overlay docker_forward_env / skill env_passthrough
+        # (dynamic from host process).  Forward values take precedence.
+        exec_env: dict[str, str] = dict(self._env)
+        {sentinel}
+        # --- Katana Docker proxy forwarding ---
+        try:
+            _katana_proxy = os.environ.get("KATANA_PROXY_URL")
+            if _katana_proxy:
+                import re as _re
+                _docker_proxy = _re.sub(
+                    r"(https?://)(localhost|127\\.0\\.0\\.1)",
+                    r"\\1host.docker.internal",
+                    _katana_proxy,
+                )
+                exec_env["HTTP_PROXY"] = _docker_proxy
+                exec_env["HTTPS_PROXY"] = _docker_proxy
+                exec_env["http_proxy"] = _docker_proxy
+                exec_env["https_proxy"] = _docker_proxy
+                _katana_ca = os.environ.get("KATANA_CA_CERT")
+                if _katana_ca:
+                    exec_env["KATANA_CA_CERT"] = _katana_ca
+                    exec_env["SSL_CERT_FILE"] = "/tmp/katana-ca.pem"
+                    exec_env["REQUESTS_CA_BUNDLE"] = "/tmp/katana-ca.pem"
+        except Exception:
+            pass
+        # --- End Katana Docker proxy ---""".format(sentinel=f"{_SENTINEL_PREFIX} docker_proxy_forwarding"),
+        sentinel=f"{_SENTINEL_PREFIX} docker_proxy_forwarding",
+        critical=False,
+    ),
+    # -----------------------------------------------------------------------
+    # 7. Gateway command scanning  (gateway/run.py — _handle_message_with_agent)
+    # -----------------------------------------------------------------------
+    Patch(
+        name="gateway_command_scanning",
+        description="Scan incoming gateway messages before agent execution",
+        target_file="gateway/run.py",
+        search_text="""\
+    async def _handle_message_with_agent(self, event, source, _quick_key: str):
+        \"\"\"Inner handler that runs under the _running_agents sentinel guard.\"\"\"
+
+        # Get or create session
+        session_entry = self.session_store.get_or_create_session(source)
+        session_key = session_entry.session_key""",
+        replace_text="""\
+    async def _handle_message_with_agent(self, event, source, _quick_key: str):
+        \"\"\"Inner handler that runs under the _running_agents sentinel guard.\"\"\"
+        {sentinel}
+        # --- Katana gateway scanning ---
+        try:
+            from hermes_katana.scanner import scan_command, scan_input, ScanVerdict
+            _msg_text = event.text or ""
+            _scan_result = scan_command(_msg_text) if _msg_text.startswith("!") else scan_input(_msg_text)
+            if _scan_result.verdict == ScanVerdict.BLOCK:
+                return (
+                    "\\u26a0\\ufe0f Katana security scan blocked this message: "
+                    + _scan_result.summary
+                )
+        except ImportError:
+            pass
+        # --- End Katana gateway scanning ---
+
+        # Get or create session
+        session_entry = self.session_store.get_or_create_session(source)
+        session_key = session_entry.session_key""".format(
+            sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning"
+        ),
+        sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning",
+        critical=False,
+    ),
+]
+
+# ---------------------------------------------------------------------------
+# Legacy patches (Hermes v0.1.0 layout — hermes/ top-level package)
+# ---------------------------------------------------------------------------
+
+LEGACY_CORE_PATCHES: list[Patch] = [
     # -----------------------------------------------------------------------
     # 1. Tool dispatch hook
     # -----------------------------------------------------------------------
@@ -382,6 +698,34 @@ CORE_PATCHES: list[Patch] = [
         critical=False,
     ),
 ]
+
+# ---------------------------------------------------------------------------
+# Layout detection and default alias
+# ---------------------------------------------------------------------------
+
+
+def _detect_hermes_layout(target: Path) -> str:
+    """Detect which Hermes layout is present in *target*.
+
+    Returns:
+        ``"current"``       — post-v0.1.0 layout (tools/registry.py + hermes_cli/)
+        ``"legacy-v0.1.0"`` — old layout with hermes/ top-level package
+
+    Raises:
+        ValueError: When neither layout is detected.
+    """
+    if (target / "hermes" / "tools" / "dispatch.py").exists():
+        return "legacy-v0.1.0"
+    if (target / "tools" / "registry.py").exists() and (target / "hermes_cli").exists():
+        return "current"
+    raise ValueError(
+        f"Unsupported Hermes layout in {target}: "
+        "neither hermes/tools/dispatch.py nor tools/registry.py + hermes_cli/ found"
+    )
+
+
+# Default alias — points to the current layout so existing callers continue to work.
+CORE_PATCHES: list[Patch] = CURRENT_CORE_PATCHES
 
 
 # ---------------------------------------------------------------------------

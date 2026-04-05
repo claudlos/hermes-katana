@@ -11,6 +11,7 @@ from hermes_katana.installer.compat_snapshots import CompatSnapshotRecord, load_
 _FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures" / "hermes_compat"
 HERMES_V010_CORE_SNAPSHOT = "hermes-v0.1.0-core-snapshot"
 HERMES_V010_EXTENDED_SNAPSHOT = "hermes-v0.1.0-extended-snapshot"
+HERMES_CURRENT_SNAPSHOT = "hermes-current-snapshot"
 
 
 @lru_cache(maxsize=1)
@@ -29,4 +30,12 @@ def fixture_checkout(fixture_id: str, tmp_dir: Path) -> Path:
     fixture = fixture_by_id(fixture_id)
     checkout = tmp_dir / fixture.directory
     shutil.copytree(_FIXTURE_ROOT / fixture.directory, checkout)
+    return checkout
+
+
+def fixture_checkout_direct(directory: str, tmp_dir: Path) -> Path:
+    """Copy a fixture directory by name (without requiring fixtures.json registration)."""
+    source = _FIXTURE_ROOT / directory
+    checkout = tmp_dir / directory
+    shutil.copytree(source, checkout)
     return checkout
