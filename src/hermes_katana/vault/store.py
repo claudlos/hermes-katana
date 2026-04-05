@@ -383,7 +383,9 @@ def _delete_master_key() -> None:
 
 def default_vault_path() -> Path:
     """Return the default vault file path without creating it."""
-    return Path.home() / ".config" / "hermes-katana" / "vault.json"
+    from hermes_katana._paths import home_or_fallback
+
+    return home_or_fallback() / ".config" / "hermes-katana" / "vault.json"
 
 
 def _default_vault_path() -> Path:
