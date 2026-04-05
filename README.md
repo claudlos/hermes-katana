@@ -292,12 +292,38 @@ HermesKatana's taint tracking system is inspired by Google DeepMind's CaMeL pape
 }
 ```
 
-Additional references: [camelup](https://github.com/jkminder/camelup) (Python CaMeL reference implementation), [hermes-aegis](https://github.com/lmfcfmf/hermes-aegis) (predecessor — proxy secret scrubbing, vault, command scanner).
+### Credits & Acknowledgments
+
+This project stands on the shoulders of excellent research and prior work:
+
+- **[CaMeL: Defeating Prompt Injections by Design](https://arxiv.org/abs/2503.18813)** — Debenedetti, Tramèr, et al. (Google DeepMind, 2025). The foundational paper that introduced capability-based security and taint tracking for LLM agents. HermesKatana extends CaMeL's value-level taint tracking to character-level granularity.
+- **[google-deepmind/dangerous-capabilities-evaluations](https://github.com/google-deepmind/dangerous-capabilities-evaluations)** — Google DeepMind's evaluation framework for dangerous AI capabilities, informing our adversarial eval design.
+- **[hermes-aegis](https://github.com/claudlos/hermes-aegis)** — The predecessor project by [@claudlos](https://github.com/claudlos). Pioneered the mitmproxy-based secret scrubbing proxy, encrypted vault, and command scanner patterns that HermesKatana builds upon.
+- **[Hermes Agent](https://github.com/hermes-ai/hermes)** — The AI agent runtime HermesKatana was designed to protect. The middleware chain architecture is tailored for Hermes's tool-dispatch pipeline.
+- **[NVIDIA NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)** — Inspiration for the declarative policy DSL approach and conversation-level rail concepts.
+- **[LLM Guard by Protect AI](https://github.com/protectai/llm-guard)** — Inspiration for modular scanner architecture and the input/output scanning pattern.
+- **[Invariant Labs](https://github.com/invariantlabs-ai/invariant)** — Inspiration for policy-as-code agent security and trace-level analysis concepts.
+- **[mitmproxy](https://mitmproxy.org/)** — The excellent HTTPS proxy that powers HermesKatana's network interception layer.
+
+### Research Bibliography
+
+The `docs/research/` directory contains 10 deep-dive research documents covering the academic and practical foundations:
+
+1. [Prompt Injection](docs/research/01-prompt-injection.md) — Attack taxonomy and defense strategies
+2. [Taint Tracking & Capabilities](docs/research/02-taint-tracking-capabilities.md) — CaMeL analysis and implementation design
+3. [MCP & Multi-Agent Security](docs/research/03-mcp-and-multiagent-security.md) — Securing agent communication protocols
+4. [Cryptography & Secret Management](docs/research/04-cryptography-secret-management.md) — Vault design decisions
+5. [Unicode Attacks](docs/research/05-unicode-attacks.md) — Homoglyphs, bidi overrides, invisible characters
+6. [Dangerous Commands & Container Security](docs/research/06-dangerous-commands-container-security.md) — Command pattern design
+7. [Behavioral Anomaly & Reactive Agents](docs/research/07-behavioral-anomaly-reactive-agents.md) — Multi-turn attack detection
+8. [Proxy Architecture](docs/research/08-proxy-architecture.md) — HTTPS interception design
+9. [Policy Engines](docs/research/09-policy-engines.md) — Declarative policy design survey
+10. [Benchmarking & Red-Teaming](docs/research/10-benchmarking-redteam.md) — Adversarial evaluation methodology
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+Apache 2.0 — see [LICENSE](LICENSE) for details.
 
-Copyright (c) 2026 Carlos
+Copyright (c) 2025 claudlos
