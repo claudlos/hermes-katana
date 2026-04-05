@@ -175,12 +175,21 @@ CURRENT_CORE_PATCHES: list[Patch] = [
                 _katana_ctx = CallContext(tool_name=name, args=args)
                 _katana_decision = _katana_chain.execute_pre(_katana_ctx)
                 if _katana_decision == DispatchDecision.DENY:
+                    try:
+                        self._katana_record_denial(name, _katana_ctx)
+                    except Exception:
+                        pass
                     return json.dumps({{
-                        "error": "Katana blocked tool '{{name}}': "
+                        "error": f"Katana blocked tool '{{name}}': "
                         + "; ".join(_katana_ctx.deny_reasons)
                     }})
                 if _katana_decision == DispatchDecision.ESCALATE:
-                    if not self._katana_escalate(_katana_ctx):
+                    from model_tools import _run_async as _katana_run_async
+                    if not _katana_run_async(self._katana_escalate(_katana_ctx)):
+                        try:
+                            self._katana_record_denial(name, _katana_ctx)
+                        except Exception:
+                            pass
                         return json.dumps({{
                             "error": f"Katana escalation denied for '{{name}}'"
                         }})

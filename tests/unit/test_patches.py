@@ -85,3 +85,44 @@ class TestCurrentCorePatches:
             f"Expected 3 optional patches, got {len(optional)}: "
             + ", ".join(p.name for p in optional)
         )
+
+    def test_tool_dispatch_hook_bridges_async_escalate(self):
+        """Regression: _katana_escalate is async; calling without await returns
+        a truthy coroutine → escalation never denies → security bypass.
+        The replacement MUST bridge via _run_async in the sync dispatch path."""
+        hook = next(p for p in CURRENT_CORE_PATCHES if p.name == "tool_dispatch_hook")
+        # Must NOT call the async escalate bare
+        assert "if not self._katana_escalate(" not in hook.replace_text, (
+            "tool_dispatch_hook calls async _katana_escalate without awaiting/bridging "
+            "— returns coroutine (truthy), escalation always passes (security bypass)"
+        )
+        # Must bridge via _run_async (dispatch is sync, can't await directly)
+        assert "_run_async" in hook.replace_text, (
+            "tool_dispatch_hook must bridge async _katana_escalate via _run_async"
+        )
+
+    def test_tool_dispatch_hook_deny_error_is_fstring(self):
+        """Regression: the DENY error message must be an f-string so {name} is
+        substituted with the actual tool name, not written literally."""
+        hook = next(p for p in CURRENT_CORE_PATCHES if p.name == "tool_dispatch_hook")
+        # replace_text has already been through .format(), so braces are single here.
+        # Check via regex: the opening quote must be preceded by 'f' (f-string),
+        # not a bare double-quote (plain string that writes literal {name}).
+        import re
+        assert not re.search(r'(?<![fF])"Katana blocked tool', hook.replace_text), (
+            'DENY error message must use f-string (f"...") so {name} is substituted, '
+            "otherwise the tool name is written literally into the target file"
+        )
+        assert 'f"Katana blocked tool' in hook.replace_text, (
+            'DENY error message must be an f-string: f"Katana blocked tool \'{name}\'..."'
+        )
+
+    def test_tool_dispatch_hook_records_denials(self):
+        """Regression: _katana_record_denial helper must be wired into DENY
+        and ESCALATE-denied paths; otherwise audit trail is missing."""
+        hook = next(p for p in CURRENT_CORE_PATCHES if p.name == "tool_dispatch_hook")
+        assert "_katana_record_denial" in hook.replace_text, (
+            "tool_dispatch_hook must call _katana_record_denial on DENY/ESCALATE-denied "
+            "paths — otherwise the audit helper added by dispatcher_escalation_audit "
+            "is dead code"
+        )
