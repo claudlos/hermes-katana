@@ -260,7 +260,9 @@ class AuditEntry(BaseModel):
 
 def default_audit_path() -> Path:
     """Return the default audit log file path without creating it."""
-    return Path.home() / ".config" / "hermes-katana" / "audit" / "audit.jsonl"
+    from hermes_katana._paths import home_or_fallback
+
+    return home_or_fallback() / ".config" / "hermes-katana" / "audit" / "audit.jsonl"
 
 
 def _default_audit_path() -> Path:
