@@ -100,8 +100,7 @@ class TestEncodeSurvival:
         # Desired: a TaintedBytes-like wrapper exposing .sources.
         # Today: plain bytes, no sources attribute.
         assert hasattr(encoded, "sources"), (
-            "TaintedStr.encode() must return a tainted-bytes wrapper "
-            "that carries source metadata forward."
+            "TaintedStr.encode() must return a tainted-bytes wrapper that carries source metadata forward."
         )
         labels = {s.label for s in encoded.sources}
         assert TaintLabel.WEB_CONTENT in labels
@@ -110,9 +109,7 @@ class TestEncodeSurvival:
         tracker = TaintTracker()
         tv = tracker.register(PAYLOAD, _web_src())
         round_tripped = tv.encode("utf-8").decode("utf-8")
-        assert hasattr(round_tripped, "sources"), (
-            ".encode().decode() must preserve taint across the round-trip."
-        )
+        assert hasattr(round_tripped, "sources"), ".encode().decode() must preserve taint across the round-trip."
         assert isinstance(round_tripped, (TaintedStr, TaintedValue))
 
 
@@ -131,13 +128,10 @@ class TestBase64Roundtrip:
         decoded = base64.b64decode(encoded).decode("utf-8")
         # Currently: decoded is a plain str → check_flow short-circuits to
         # ALLOW inside the analyzer (no sources).
-        assert isinstance(decoded, (TaintedStr, TaintedValue)), (
-            "base64 round-trip stripped taint — evasion path open."
-        )
+        assert isinstance(decoded, (TaintedStr, TaintedValue)), "base64 round-trip stripped taint — evasion path open."
         decision = tracker.check_flow(decoded, "terminal")
         assert decision == FlowDecision.DENY, (
-            f"base64-round-tripped web-tainted payload reached terminal "
-            f"with decision={decision.name} (expected DENY)."
+            f"base64-round-tripped web-tainted payload reached terminal with decision={decision.name} (expected DENY)."
         )
 
     def test_urlsafe_b64_roundtrip_flow_still_denied(self):
@@ -145,9 +139,7 @@ class TestBase64Roundtrip:
         tv = tracker.register(PAYLOAD, _mcp_src())
         encoded = base64.urlsafe_b64encode(tv.encode("utf-8"))
         decoded = base64.urlsafe_b64decode(encoded).decode("utf-8")
-        assert hasattr(decoded, "sources"), (
-            "urlsafe_b64 round-trip stripped taint."
-        )
+        assert hasattr(decoded, "sources"), "urlsafe_b64 round-trip stripped taint."
         assert tracker.check_flow(decoded, "terminal") == FlowDecision.DENY
 
     def test_b64_encode_only_is_tainted(self):
@@ -160,8 +152,7 @@ class TestBase64Roundtrip:
         tv = tracker.register(PAYLOAD, _web_src())
         encoded = base64.b64encode(tv.encode("utf-8"))
         assert hasattr(encoded, "sources"), (
-            "b64encode(tainted) produced untainted bytes — "
-            "attacker can ship encoded payload to sinks undetected."
+            "b64encode(tainted) produced untainted bytes — attacker can ship encoded payload to sinks undetected."
         )
 
 
@@ -189,9 +180,7 @@ class TestNestedTransforms:
         serialized = json.dumps({"cmd": tv})
         # If json.dumps returns a TaintedStr, .encode() should propagate.
         encoded = base64.b64encode(serialized.encode("utf-8"))
-        assert hasattr(encoded, "sources"), (
-            "nested json → b64 chain stripped taint."
-        )
+        assert hasattr(encoded, "sources"), "nested json → b64 chain stripped taint."
 
     def test_b64_inside_json_roundtrip(self):
         """Tainted → b64 → wrap in json → parse json → b64 decode."""
@@ -202,9 +191,7 @@ class TestNestedTransforms:
         parsed = json.loads(wrapper)
         inner = parsed["payload"]
         recovered = base64.b64decode(inner).decode("utf-8")
-        assert hasattr(recovered, "sources"), (
-            "b64-in-json round-trip stripped taint through json.loads."
-        )
+        assert hasattr(recovered, "sources"), "b64-in-json round-trip stripped taint through json.loads."
         assert tracker.check_flow(recovered, "terminal") == FlowDecision.DENY
 
 
@@ -222,9 +209,7 @@ class TestCodecModule:
         as_bytes = tv.encode("utf-8")
         hex_encoded = codecs.encode(as_bytes, "hex")
         hex_decoded = codecs.decode(hex_encoded, "hex").decode("utf-8")
-        assert hasattr(hex_decoded, "sources"), (
-            "codecs.encode/decode hex round-trip stripped taint."
-        )
+        assert hasattr(hex_decoded, "sources"), "codecs.encode/decode hex round-trip stripped taint."
         assert tracker.check_flow(hex_decoded, "terminal") == FlowDecision.DENY
 
     def test_rot13_codec_roundtrip(self):
@@ -233,9 +218,7 @@ class TestCodecModule:
         tv = tracker.register(PAYLOAD, _web_src())
         encoded = codecs.encode(str(tv), "rot_13")
         decoded = codecs.decode(encoded, "rot_13")
-        assert hasattr(decoded, "sources"), (
-            "rot13 codec round-trip stripped taint."
-        )
+        assert hasattr(decoded, "sources"), "rot13 codec round-trip stripped taint."
 
 
 # ---------------------------------------------------------------------------
@@ -263,9 +246,7 @@ class TestFullAttackChain:
             source_factory(),
         )
         # Launder through base64
-        laundered = base64.b64decode(
-            base64.b64encode(attacker_payload.encode("utf-8"))
-        ).decode("utf-8")
+        laundered = base64.b64decode(base64.b64encode(attacker_payload.encode("utf-8"))).decode("utf-8")
         # Flow check
         decision = tracker.check_flow(laundered, "terminal")
         assert decision == FlowDecision.DENY, (
