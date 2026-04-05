@@ -296,19 +296,21 @@ def _get_master_key() -> Optional[bytes]:
         import keyring
         raw = keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
         if raw is None:
-            return None
+            # Keyring exists but has no stored key — fall through to env var
+            raise KeyError("no key in keyring")
         return base64.b64decode(raw)
     except ImportError:
         logger.warning(
             "keyring package not installed, falling back to environment variable"
         )
-        raw_env = os.environ.pop("HERMES_KATANA_VAULT_KEY", None)
-        if raw_env:
-            return base64.b64decode(raw_env)
-        return None
     except Exception as exc:
-        logger.warning("Failed to read keyring: %s", exc)
-        return None
+        logger.warning("Failed to read keyring: %s, falling back to environment variable", exc)
+
+    # Fallback: check environment variable
+    raw_env = os.environ.pop("HERMES_KATANA_VAULT_KEY", None)
+    if raw_env:
+        return base64.b64decode(raw_env)
+    return None
 
 
 def _set_master_key(key: bytes) -> None:
@@ -329,7 +331,12 @@ def _set_master_key(key: bytes) -> None:
             "Store the key securely."
         )
     except Exception as exc:
-        raise VaultError(f"Failed to store master key in keyring: {exc}")
+        logger.warning(
+            "Failed to store master key in keyring: %s. "
+            "The key is held in memory for this session. "
+            "Set HERMES_KATANA_VAULT_KEY env var for persistence.",
+            exc,
+        )
 
 
 def _delete_master_key() -> None:

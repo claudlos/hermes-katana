@@ -1,0 +1,4 @@
+# file: /home/user/Documents/Code/hermes-katana/src/hermes_katana/policy/yaml_loader.py
+# hypothesis_version: 6.151.10
+
+[1.0, 5.0, 10.0, 120, '\n  • ', '**/*.yaml', '**/*.yml', '*.yaml', '*.yml', 'PolicyFileWatcher', 'action', 'allow', 'argument_matches', 'conditions', 'contains_taint', 'created_at', 'deny', 'escalate', 'extends', 'field', 'has_label', 'json', 'log_only', 'matches_pattern', 'name', 'operator', 'policies', 'priority', 'r', 'reader_lacks', 'source_is', 'taint_level_gte', 'tool_pattern', 'utf-8', 'w']

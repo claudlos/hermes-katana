@@ -234,12 +234,12 @@ class TestLoadPolicyFile:
         except PolicyValidationError:
             pass  # Acceptable if pydantic validation differs
 
-    def test_load_with_unknown_parent(self, tmp_path):
+    def test_load_with_unknown_parent_raises(self, tmp_path):
         data = dict(VALID_POLICY_YAML)
         data["extends"] = "nonexistent_parent"
         fp = _write_yaml(tmp_path / "child.yaml", data)
-        ps = load_policy_file(fp)
-        assert isinstance(ps, PolicySet)
+        with pytest.raises(PolicyValidationError, match="unknown parent"):
+            load_policy_file(fp)
 
     def test_string_path(self, tmp_path):
         fp = _write_yaml(tmp_path / "policy.yaml", VALID_POLICY_YAML)
@@ -288,10 +288,10 @@ class TestLoadPolicyDirectory:
 # ---------------------------------------------------------------------------
 
 class TestResolveInheritance:
-    def test_unknown_parent_returns_data(self):
+    def test_unknown_parent_raises(self):
         data = {"name": "child", "policies": []}
-        result = _resolve_inheritance(data, "nonexistent")
-        assert result == data
+        with pytest.raises(PolicyValidationError, match="unknown parent"):
+            _resolve_inheritance(data, "nonexistent")
 
     def test_known_parent_merges(self):
         with patch("hermes_katana.policy.yaml_loader.BUILTIN_POLICY_SETS", {

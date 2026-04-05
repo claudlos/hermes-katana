@@ -235,18 +235,15 @@ def load_policy_directory(
 def _resolve_inheritance(data: dict[str, Any], parent_name: str) -> dict[str, Any]:
     """Merge *data* on top of the named parent policy set.
 
-    The parent must be a built-in set name (paranoid, balanced, permissive)
-    or the inheritance is silently skipped with a warning.
+    The parent must be a built-in set name (paranoid, balanced, permissive).
+    Raises PolicyValidationError if the parent is unknown to fail closed.
     """
     parent_raw = BUILTIN_POLICY_SETS.get(parent_name)
     if parent_raw is None:
-        logger.warning(
-            "Policy set extends unknown parent '%s' — inheritance skipped. "
-            "Available built-in sets: %s",
-            parent_name,
-            ", ".join(sorted(BUILTIN_POLICY_SETS)),
+        raise PolicyValidationError(
+            f"Policy set extends unknown parent '{parent_name}'. "
+            f"Available built-in sets: {', '.join(sorted(BUILTIN_POLICY_SETS))}"
         )
-        return data
 
     # Build merged policy list: parent first, child overrides by name
     parent_policies = {p["name"]: p for p in parent_raw.get("policies", [])}
@@ -399,10 +396,22 @@ class PolicyFileWatcher:
                             self._directory,
                             recursive=self._recursive,
                         )
+                        # Count total YAML files to detect partial failures
+                        glob_fn = self._directory.rglob if self._recursive else self._directory.glob
+                        total_files = len(
+                            list(glob_fn("*.yaml")) + list(glob_fn("*.yml"))
+                        )
                         if not policy_sets:
                             logger.error(
                                 "Policy reload produced 0 valid policy sets — "
                                 "keeping previous policies to avoid security gap"
+                            )
+                        elif len(policy_sets) < total_files:
+                            logger.error(
+                                "Policy reload: only %d/%d files valid — "
+                                "keeping previous policies to avoid partial coverage loss",
+                                len(policy_sets),
+                                total_files,
                             )
                         else:
                             self._callback(policy_sets)
