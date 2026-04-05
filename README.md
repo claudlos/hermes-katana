@@ -16,7 +16,7 @@
 
 ---
 
-## Why HermesKatana?
+## Hermes Katana
 
 🛡️ **Only production CaMeL taint tracking** — Character-level data provenance inspired by [Google DeepMind's CaMeL paper](https://arxiv.org/abs/2503.18813). Every byte is tagged with its origin and tracked through all string operations.
 
