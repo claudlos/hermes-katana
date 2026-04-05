@@ -27,7 +27,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
-from hermes_katana.installer.patches import CORE_PATCHES
+from hermes_katana.installer.patches import (
+    CURRENT_CORE_PATCHES,
+    LEGACY_CORE_PATCHES,
+)
 
 REGISTRY_FILENAME = "fixtures.json"
 SUPPORTED_PROFILES = ("core", "extended")
@@ -95,19 +98,36 @@ class SourceProvenance:
         return payload
 
 
-def snapshot_paths_for_profile(profile: str) -> tuple[str, ...]:
+def snapshot_paths_for_profile(
+    profile: str, layout: str = "current"
+) -> tuple[str, ...]:
     """Return the file set required for a snapshot profile.
 
     Returns pyproject.toml plus all patch target files appropriate for the
     given profile.  Critical-only patches are included for "core"; all patches
     (critical and optional) are included for "extended".
+
+    Args:
+        profile: "core" or "extended".
+        layout:  "current" (post-v0.1.0) or "legacy-v0.1.0". Determines which
+                 patch list is consulted for target files. Defaults to
+                 "current" since that is the active Hermes layout.
     """
-    selected = {"pyproject.toml"}
-    include_optional = profile == "extended"
     if profile not in SUPPORTED_PROFILES:
         raise ValueError(f"Unsupported snapshot profile: {profile}")
+    if layout == "legacy-v0.1.0":
+        patches = LEGACY_CORE_PATCHES
+    elif layout == "current":
+        patches = CURRENT_CORE_PATCHES
+    else:
+        raise ValueError(
+            f"Unsupported snapshot layout: {layout!r}. "
+            "Expected 'current' or 'legacy-v0.1.0'."
+        )
 
-    for patch in CORE_PATCHES:
+    selected = {"pyproject.toml"}
+    include_optional = profile == "extended"
+    for patch in patches:
         if patch.critical or include_optional:
             selected.add(patch.target_file)
 

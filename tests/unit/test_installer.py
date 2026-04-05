@@ -112,8 +112,47 @@ class TestInstallerLayoutAwareness:
             encoding="utf-8",
         )
         installer = KatanaInstaller()
-        with pytest.raises(ValueError, match="Not a Hermes checkout"):
+        with pytest.raises(ValueError, match="Not a Hermes checkout") as exc_info:
             installer.install(unsupported)
+        # Error message must mention BOTH layouts so users of current Hermes
+        # checkouts aren't confused by legacy-only marker names.
+        msg = str(exc_info.value)
+        assert "current-layout markers" in msg, (
+            "install() error must list current-layout markers, not just legacy"
+        )
+        assert "tools/registry.py" in msg
+        assert "hermes_cli" in msg
+        assert "legacy v0.1.0 markers" in msg
+
+    def test_patches_for_warns_on_silent_fallback(self, tmp_dir, caplog):
+        """_patches_for() should log a warning when layout detection fails
+        instead of silently returning current-layout patches."""
+        import logging
+        unsupported = tmp_dir / "mystery"
+        unsupported.mkdir()
+        installer = KatanaInstaller()
+        with caplog.at_level(logging.WARNING, logger="hermes_katana.installer.installer"):
+            patches = installer._patches_for(unsupported)
+        assert any(
+            "Could not detect Hermes layout" in r.message for r in caplog.records
+        ), "silent fallback to 'current' layout must emit a warning"
+        # Falls back to current patches (safe default)
+        from hermes_katana.installer.patches import CURRENT_CORE_PATCHES
+        assert patches is CURRENT_CORE_PATCHES
+
+    def test_current_markers_match_detect_hermes_layout(self):
+        """_HERMES_CURRENT_MARKERS must be consistent with the paths checked
+        by _detect_hermes_layout() in patches.py. If they disagree,
+        detect_hermes() and _detect_hermes_layout() can return contradictory
+        results for edge-case checkouts."""
+        from hermes_katana.installer.installer import _HERMES_CURRENT_MARKERS
+        # Both modules must agree on these anchor paths.
+        assert "tools/registry.py" in _HERMES_CURRENT_MARKERS
+        assert "hermes_cli" in _HERMES_CURRENT_MARKERS
+        # The legacy-style "file inside dir" check must NOT be used — it
+        # allowed detect_hermes() to say False while _detect_hermes_layout()
+        # said "current" if the __init__.py was missing.
+        assert "hermes_cli/__init__.py" not in _HERMES_CURRENT_MARKERS
 
     def test_current_layout_verify_after_install(self, monkeypatch, tmp_dir):
         checkout = fixture_checkout_direct(HERMES_CURRENT_SNAPSHOT, tmp_dir)
