@@ -12,9 +12,10 @@ merged source/reader metadata so taint flows through the transform.
 
 Hooks installed by default
 --------------------------
-- ``base64``: b64encode, b64decode, urlsafe_b64encode, urlsafe_b64decode,
-  standard_b64encode, standard_b64decode, b16encode, b16decode,
-  b32encode, b32decode, b85encode, b85decode, a85encode, a85decode
+- ``base64``: b64encode, b64decode, encodebytes, decodebytes,
+  urlsafe_b64encode, urlsafe_b64decode, standard_b64encode, standard_b64decode,
+  b16encode, b16decode, b32encode, b32decode, b85encode, b85decode,
+  a85encode, a85decode
 - ``codecs``: encode, decode
 - ``json``: dumps, loads
 - ``urllib.parse``: quote, unquote, quote_plus, unquote_plus
@@ -74,19 +75,35 @@ def _has_taint(*values: Any) -> bool:
     return False
 
 
+def _collect_metadata_recursive(
+    value: Any,
+    all_sources: set,
+    all_readers: set,
+    deps: list,
+) -> None:
+    """Recursively collect sources, readers, and tainted dependencies."""
+    if isinstance(value, (TaintedStr, TaintedBytes, TaintedValue)):
+        all_sources.update(value.sources)
+        all_readers.update(value.readers)
+        deps.append(value)
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _collect_metadata_recursive(item, all_sources, all_readers, deps)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _collect_metadata_recursive(key, all_sources, all_readers, deps)
+            _collect_metadata_recursive(item, all_sources, all_readers, deps)
+
+
 def _merge_metadata(*values: Any) -> tuple:
     """Collect union of sources, readers, and dep list from tainted inputs."""
     all_sources: set = set()
     all_readers: set = set()
     deps: list = []
     for v in values:
-        if isinstance(v, (TaintedStr, TaintedBytes, TaintedValue)):
-            all_sources.update(v.sources)
-            all_readers.update(v.readers)
-            deps.append(v)
-        elif isinstance(v, (list, tuple, dict)):
-            nested = collect_sources(v)
-            all_sources.update(nested)
+        _collect_metadata_recursive(v, all_sources, all_readers, deps)
     return frozenset(all_sources), frozenset(all_readers), tuple(deps)
 
 
@@ -152,9 +169,10 @@ def _make_hook(original: Callable[..., Any], *, unwrap_args: bool = True) -> Cal
     """
 
     def hook(*args: Any, **kwargs: Any) -> Any:
-        if not _has_taint(*args):
+        taint_inputs = (*args, *kwargs.values())
+        if not _has_taint(*taint_inputs):
             return original(*args, **kwargs)
-        sources, readers, deps = _merge_metadata(*args)
+        sources, readers, deps = _merge_metadata(*taint_inputs)
         if unwrap_args:
             raw_args = tuple(unwrap(a) for a in args)
         else:
@@ -200,11 +218,11 @@ def _patch_json() -> None:
     original_loads = _json.loads
 
     def dumps_hook(obj: Any, *args: Any, **kwargs: Any) -> Any:
-        sources = collect_sources(obj)
-        if not sources:
+        sources, readers, deps = _merge_metadata(obj)
+        if not sources and not readers:
             return original_dumps(obj, *args, **kwargs)
         raw = original_dumps(unwrap(obj), *args, **kwargs)
-        return TaintedStr(value=raw, sources=sources)
+        return _wrap_result(raw, sources, readers, deps)
 
     def loads_hook(s: Any, *args: Any, **kwargs: Any) -> Any:
         if not isinstance(s, (TaintedStr, TaintedBytes, TaintedValue)):
@@ -232,6 +250,7 @@ def _patch_json() -> None:
 
 _BASE64_FUNCS = (
     "b64encode", "b64decode",
+    "encodebytes", "decodebytes",
     "urlsafe_b64encode", "urlsafe_b64decode",
     "standard_b64encode", "standard_b64decode",
     "b16encode", "b16decode",
@@ -244,7 +263,7 @@ _CODECS_FUNCS = ("encode", "decode")
 
 _URLPARSE_FUNCS = (
     "quote", "unquote", "quote_plus", "unquote_plus",
-    "quote_from_bytes",
+    "quote_from_bytes", "unquote_to_bytes",
 )
 
 _HTML_FUNCS = ("escape", "unescape")
