@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-import warnings
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -38,6 +37,7 @@ __all__ = [
     "TaintedValue",
     "CharTaint",
     "TaintedStr",
+    "TaintedBytes",
     "TaintedList",
     "TaintedDict",
     "unwrap",
@@ -304,12 +304,25 @@ class TaintedStr(str):
         created_at: Optional[float] = None,
         char_taint: Optional[CharTaint] = None,
     ) -> None:
-        # str is immutable — __new__ already set the string value
-        self.sources = sources
-        self.readers = readers
-        self.dependencies = dependencies
-        self.created_at = created_at or time.time()
-        self.char_taint = char_taint or CharTaint.uniform(len(self), sources)
+        # str is immutable — __new__ already set the string value.
+        #
+        # CPython's ``str()`` builtin on a str subclass invokes __init__ again
+        # with default args. If we blindly assigned ``self.sources = sources``
+        # (an empty frozenset), calling ``str(tainted)`` would destroy the
+        # taint metadata in place. Guard against that: only overwrite
+        # attributes when the caller actually passed non-default values OR
+        # when attributes haven't been set yet.
+        already_initialized = hasattr(self, "sources")
+        if not already_initialized or sources:
+            self.sources = sources
+        if not already_initialized or readers:
+            self.readers = readers
+        if not already_initialized or dependencies:
+            self.dependencies = dependencies
+        if not already_initialized or created_at is not None:
+            self.created_at = created_at or time.time()
+        if not already_initialized or char_taint is not None:
+            self.char_taint = char_taint or CharTaint.uniform(len(self), self.sources)
 
     # -- Backward compatibility: .value property ----------------------------
 
@@ -447,14 +460,22 @@ class TaintedStr(str):
             )
         return NotImplemented
 
-    def encode(self, encoding: str = "utf-8", errors: str = "strict") -> bytes:
-        """Encode to bytes, warning that taint metadata is lost."""
-        warnings.warn(
-            "TaintedStr.encode() returns plain bytes — taint metadata is lost. "
-            "Consider keeping the string as TaintedStr.",
-            stacklevel=2,
+    def encode(self, encoding: str = "utf-8", errors: str = "strict") -> TaintedBytes:
+        """Encode to ``TaintedBytes``, preserving taint metadata.
+
+        Historically this returned plain ``bytes`` and emitted a warning;
+        attackers could exploit the gap by laundering tainted data through
+        ``str.encode() → base64 → .decode()`` codec chains. Now the
+        resulting bytes carry the same sources, readers, and dependency
+        link forward.
+        """
+        raw = str.__str__(self).encode(encoding, errors)
+        return TaintedBytes(
+            value=raw,
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
         )
-        return str.__str__(self).encode(encoding, errors)
 
     def __mod__(self, args: Any) -> TaintedStr:
         """%-formatting with taint propagation."""
@@ -936,6 +957,175 @@ class TaintedDict(TaintedValue[dict[K, V]], MutableMapping[K, V]):
 
 
 # ---------------------------------------------------------------------------
+# TaintedBytes — bytes subclass that carries taint across codec boundaries
+# ---------------------------------------------------------------------------
+
+
+class TaintedBytes(bytes):
+    """A tainted bytes object with source propagation.
+
+    Subclasses ``bytes`` directly so that C-level type checks in stdlib
+    codecs (``base64.b64encode``, ``codecs.encode``, ``zlib.compress``,
+    etc.) accept it without stripping taint. Created primarily by
+    :meth:`TaintedStr.encode` and by the codec-hook layer in
+    :mod:`hermes_katana.taint.codecs`.
+
+    Key operations (``+``, slicing, ``.decode()``) propagate sources
+    forward so taint survives full round-trips like
+    ``tainted_str → .encode() → b64encode → b64decode → .decode()``.
+    """
+
+    def __new__(
+        cls,
+        value: bytes = b"",
+        sources: "frozenset[Source]" = frozenset(),
+        readers: "frozenset[Reader]" = frozenset(),
+        dependencies: tuple = (),
+        created_at: Optional[float] = None,
+    ) -> "TaintedBytes":
+        if isinstance(value, TaintedBytes):
+            raw = bytes(value)
+        elif isinstance(value, (bytes, bytearray, memoryview)):
+            raw = bytes(value)
+        elif isinstance(value, TaintedValue):
+            raw = bytes(value.value)
+        else:
+            raw = bytes(value)
+        return bytes.__new__(cls, raw)
+
+    def __init__(
+        self,
+        value: bytes = b"",
+        sources: "frozenset[Source]" = frozenset(),
+        readers: "frozenset[Reader]" = frozenset(),
+        dependencies: tuple = (),
+        created_at: Optional[float] = None,
+    ) -> None:
+        # Same guard as TaintedStr: ``bytes(tainted_bytes)`` may re-invoke
+        # __init__ on the same object with defaults, which would wipe taint.
+        already_initialized = hasattr(self, "sources")
+        if not already_initialized or sources:
+            self.sources = sources
+        if not already_initialized or readers:
+            self.readers = readers
+        if not already_initialized or dependencies:
+            self.dependencies = dependencies
+        if not already_initialized or created_at is not None:
+            self.created_at = created_at or time.time()
+
+    # -- Backward-compat / introspection (mirrors TaintedStr) --------------
+
+    @property
+    def value(self) -> bytes:
+        """Return the raw bytes value."""
+        return bytes(self)
+
+    @property
+    def labels(self) -> "frozenset[TaintLabel]":
+        """Unique set of taint labels across all sources."""
+        return frozenset(s.label for s in self.sources)
+
+    def is_trusted(self) -> bool:
+        if not self.sources:
+            return False
+        return all(s.trust_level is TrustLevel.TRUSTED for s in self.sources)
+
+    def is_untrusted(self) -> bool:
+        return any(s.trust_level is TrustLevel.UNTRUSTED for s in self.sources)
+
+    def is_public(self) -> bool:
+        return len(self.readers) == 0
+
+    def has_label(self, label: "TaintLabel") -> bool:
+        return any(s.label is label for s in self.sources)
+
+    def unwrap(self, audit: bool = True, reason: str = "") -> bytes:
+        """Return the bare bytes, discarding taint (use with caution)."""
+        if audit and self.sources:
+            labels = ", ".join(sorted(lbl.name for lbl in self.labels))
+            _logger.warning(
+                "Taint stripped via TaintedBytes.unwrap(): labels={%s}, reason=%r",
+                labels,
+                reason or "<no reason given>",
+            )
+        return bytes(self)
+
+    def _merge_with(self, *others: Any) -> tuple:
+        """Merge metadata with other tainted values. Returns (sources, readers, deps)."""
+        all_sources = set(self.sources)
+        all_readers = set(self.readers)
+        deps: list = [self]
+        for o in others:
+            if isinstance(o, (TaintedStr, TaintedBytes, TaintedValue)):
+                all_sources.update(o.sources)
+                all_readers.update(o.readers)
+                deps.append(o)
+        return frozenset(all_sources), frozenset(all_readers), tuple(deps)
+
+    # -- Propagating operations --------------------------------------------
+
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> TaintedStr:
+        """Decode to ``TaintedStr``, preserving taint.
+
+        This closes the evasion path where attackers chain
+        ``.encode() → base64 → b64decode → .decode()`` to strip taint
+        through codec round-trips.
+        """
+        raw = bytes(self).decode(encoding, errors)
+        return TaintedStr(
+            value=raw,
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+            char_taint=CharTaint.uniform(len(raw), self.sources),
+        )
+
+    def __add__(self, other: Any) -> "TaintedBytes":
+        if isinstance(other, (bytes, bytearray, memoryview, TaintedBytes)):
+            raw_other = bytes(other)
+        else:
+            return NotImplemented
+        raw = bytes(self) + raw_other
+        sources, readers, deps = self._merge_with(other)
+        return TaintedBytes(
+            value=raw,
+            sources=sources,
+            readers=readers,
+            dependencies=deps,
+        )
+
+    def __radd__(self, other: Any) -> "TaintedBytes":
+        if isinstance(other, (bytes, bytearray, memoryview)):
+            raw = bytes(other) + bytes(self)
+            return TaintedBytes(
+                value=raw,
+                sources=self.sources,
+                readers=self.readers,
+                dependencies=(self,),
+            )
+        return NotImplemented
+
+    def __getitem__(self, key: Any) -> Any:
+        result = bytes(self)[key]
+        if isinstance(result, bytes):
+            return TaintedBytes(
+                value=result,
+                sources=self.sources,
+                readers=self.readers,
+                dependencies=(self,),
+            )
+        # Single-byte int access returns plain int (no taint representation).
+        return result
+
+    def __repr__(self) -> str:
+        labels = ", ".join(sorted(lbl.name for lbl in self.labels))
+        raw_repr = bytes.__repr__(self)
+        if len(raw_repr) > 60:
+            raw_repr = raw_repr[:57] + "..."
+        return f"TaintedBytes({raw_repr}, labels={{{labels}}})"
+
+
+# ---------------------------------------------------------------------------
 # Utility: unwrap any tainted value recursively
 # ---------------------------------------------------------------------------
 
@@ -946,9 +1136,11 @@ def unwrap(value: Any) -> Any:
     Useful at system boundaries where you need the raw Python object but
     want to be explicit about discarding taint information.
     """
-    # TaintedStr must come before str check (it IS a str)
+    # TaintedStr / TaintedBytes must come before str/bytes check (they ARE those)
     if isinstance(value, TaintedStr):
         return str.__str__(value)
+    if isinstance(value, TaintedBytes):
+        return bytes(value)
     if isinstance(value, TaintedDict):
         return {unwrap(k): unwrap(v) for k, v in value.value.items()}
     if isinstance(value, TaintedList):
@@ -966,10 +1158,13 @@ def unwrap(value: Any) -> Any:
 def collect_sources(value: Any) -> frozenset[Source]:
     """Recursively collect all taint sources from a (possibly nested) value."""
     result: set[Source] = set()
-    # TaintedStr must come before str check (it IS a str)
+    # TaintedStr / TaintedBytes must come before str/bytes check (they ARE those)
     if isinstance(value, TaintedStr):
         result.update(value.sources)
         result.update(value.char_taint.all_sources())
+        return frozenset(result)
+    if isinstance(value, TaintedBytes):
+        result.update(value.sources)
         return frozenset(result)
     if isinstance(value, TaintedValue):
         result.update(value.sources)
