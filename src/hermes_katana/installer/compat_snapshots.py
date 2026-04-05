@@ -27,7 +27,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
-from hermes_katana.installer.installer import HERMES_MARKERS
 from hermes_katana.installer.patches import CORE_PATCHES
 
 REGISTRY_FILENAME = "fixtures.json"
@@ -97,8 +96,13 @@ class SourceProvenance:
 
 
 def snapshot_paths_for_profile(profile: str) -> tuple[str, ...]:
-    """Return the file set required for a snapshot profile."""
-    selected = {"pyproject.toml", *HERMES_MARKERS}
+    """Return the file set required for a snapshot profile.
+
+    Returns pyproject.toml plus all patch target files appropriate for the
+    given profile.  Critical-only patches are included for "core"; all patches
+    (critical and optional) are included for "extended".
+    """
+    selected = {"pyproject.toml"}
     include_optional = profile == "extended"
     if profile not in SUPPORTED_PROFILES:
         raise ValueError(f"Unsupported snapshot profile: {profile}")
