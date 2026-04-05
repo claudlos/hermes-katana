@@ -343,8 +343,8 @@ class TestInheritance:
         names = [p.name for p in ps.policies]
         assert "custom_rule" in names
 
-    def test_extends_unknown_parent_still_loads(self, tmp_path):
-        from hermes_katana.policy.yaml_loader import load_policy_file
+    def test_extends_unknown_parent_raises(self, tmp_path):
+        from hermes_katana.policy.yaml_loader import load_policy_file, PolicyValidationError
 
         data = {
             "name": "custom-unknown-parent",
@@ -354,8 +354,8 @@ class TestInheritance:
             ],
         }
         fp = _write_yaml(tmp_path, "unknown_parent.yaml", data)
-        ps = load_policy_file(fp)
-        assert ps.name == "custom-unknown-parent"
+        with pytest.raises(PolicyValidationError, match="unknown parent"):
+            load_policy_file(fp)
 
 
 # ---------------------------------------------------------------------------

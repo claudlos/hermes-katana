@@ -149,9 +149,42 @@ PARANOID_POLICIES: dict[str, Any] = {
         },
         # -- Browser side-effects ---------------------------------------------
         {
-            "name": "paranoid_browser_interact_tainted",
-            "description": "Block browser click/type when arguments carry taint.",
-            "tool_pattern": "browser_*",
+            "name": "paranoid_browser_click_tainted",
+            "description": "Block browser click when arguments carry taint.",
+            "tool_pattern": "browser_click*",
+            "conditions": [
+                {"field": "*", "operator": "contains_taint", "value": True},
+            ],
+            "action": "deny",
+            "priority": 100,
+            "tags": ["side-effect", "browser"],
+        },
+        {
+            "name": "paranoid_browser_type_tainted",
+            "description": "Block browser type when arguments carry taint.",
+            "tool_pattern": "browser_type*",
+            "conditions": [
+                {"field": "*", "operator": "contains_taint", "value": True},
+            ],
+            "action": "deny",
+            "priority": 100,
+            "tags": ["side-effect", "browser"],
+        },
+        {
+            "name": "paranoid_browser_press_tainted",
+            "description": "Block browser press when arguments carry taint.",
+            "tool_pattern": "browser_press*",
+            "conditions": [
+                {"field": "*", "operator": "contains_taint", "value": True},
+            ],
+            "action": "deny",
+            "priority": 100,
+            "tags": ["side-effect", "browser"],
+        },
+        {
+            "name": "paranoid_browser_navigate_tainted",
+            "description": "Block browser navigate when arguments carry taint.",
+            "tool_pattern": "browser_navigate*",
             "conditions": [
                 {"field": "*", "operator": "contains_taint", "value": True},
             ],

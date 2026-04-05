@@ -927,7 +927,10 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
     # Unicode homoglyph bypass: normalize to NFKD and fold to ASCII
     # so that Cyrillic/Greek lookalikes (e->e, a->a, c->c, etc.) are
     # reduced to their ASCII equivalents before pattern matching.
-    cmd = unicodedata.normalize("NFKD", cmd).encode("ascii", "ignore").decode("ascii")
+    # Use str.__str__ to extract raw string before encoding to avoid
+    # TaintedStr.encode() warning — taint is not needed after ASCII folding.
+    normalized = unicodedata.normalize("NFKD", cmd)
+    cmd = str.__str__(normalized).encode("ascii", "ignore").decode("ascii")
 
     if not cmd:
         return []

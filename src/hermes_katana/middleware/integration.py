@@ -80,11 +80,32 @@ class KatanaTaintMiddleware(KatanaMiddleware):
             self._tracker = TaintTracker.get_instance()
         return self._tracker
 
+    @staticmethod
+    def _find_tainted(value: Any, _tainted_types: tuple | None = None) -> list:
+        """Recursively find all tainted values in a nested structure."""
+        from hermes_katana.taint import TaintedValue
+        from hermes_katana.taint.value import TaintedStr
+
+        if _tainted_types is None:
+            _tainted_types = (TaintedStr, TaintedValue)
+
+        found: list = []
+        if isinstance(value, _tainted_types):
+            found.append(value)
+        elif isinstance(value, dict):
+            for v in value.values():
+                found.extend(KatanaTaintMiddleware._find_tainted(v, _tainted_types))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                found.extend(KatanaTaintMiddleware._find_tainted(item, _tainted_types))
+        return found
+
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         """Check taint flows for all tool arguments.
 
-        Scans each argument; if any is a TaintedValue, checks its flow
-        against the target tool.  The most restrictive decision wins.
+        Scans each argument recursively; if any nested value is tainted,
+        checks its flow against the target tool.  The most restrictive
+        decision wins.
 
         Also populates ``ctx.taint_context`` with structured taint metadata
         for downstream policy evaluation.
@@ -97,9 +118,13 @@ class KatanaTaintMiddleware(KatanaMiddleware):
         worst_flow = None
 
         for arg_name, arg_val in ctx.args.items():
-            if isinstance(arg_val, (TaintedStr, TaintedValue)):
-                # Build taint context entry for this field
-                sources = arg_val.sources
+            # Recursively find tainted values in nested structures
+            tainted_vals = self._find_tainted(arg_val)
+            if not tainted_vals:
+                continue
+
+            for tainted_val in tainted_vals:
+                sources = tainted_val.sources
                 labels = [s.label.name for s in sources]
                 origins = [s.origin for s in sources]
 
@@ -107,12 +132,12 @@ class KatanaTaintMiddleware(KatanaMiddleware):
                     "is_tainted": True,
                     "source": origins[0] if origins else "unknown",
                     "labels": labels,
-                    "readers": [r.name for r in arg_val.readers] if arg_val.readers else [],
+                    "readers": [r.name for r in tainted_val.readers] if tainted_val.readers else [],
                     "level": max((s.label.value if hasattr(s.label, "value") else 5) for s in sources) if sources else 0,
                 }
 
                 # Check flow
-                flow_decision = tracker.check_flow(arg_val, ctx.tool_name, ctx.args)
+                flow_decision = tracker.check_flow(tainted_val, ctx.tool_name, ctx.args)
 
                 if flow_decision == FlowDecision.DENY:
                     worst_flow = FlowDecision.DENY

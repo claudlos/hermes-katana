@@ -143,6 +143,7 @@ CRITICAL_SINKS: frozenset[str] = frozenset({
     "run_command",
     "send_message",
     "send_email",
+    "memory",
     "memory_write",
     "memory_update",
     "memory_delete",
@@ -159,6 +160,9 @@ CRITICAL_SINKS: frozenset[str] = frozenset({
     "api_call",
     "browser_type",
     "browser_click",
+    "browser_press",
+    "browser_navigate",
+    "text_to_speech",
     "cronjob",
     "skill_manage",
 })
