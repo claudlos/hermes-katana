@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -25,19 +26,16 @@ from hermes_katana.installer.patches import CORE_PATCHES
 
 def _write_source_checkout(root: Path, version: str = "1.2.3") -> Path:
     source = root / "source"
-    (source / "hermes" / "tools").mkdir(parents=True, exist_ok=True)
-    (source / "hermes" / "ui").mkdir(parents=True, exist_ok=True)
-    (source / "hermes" / "gateway").mkdir(parents=True, exist_ok=True)
+    source.mkdir(parents=True, exist_ok=True)
     (source / "pyproject.toml").write_text(
-        f'[project]\nname = "hermes"\nversion = "{version}"\n',
+        f'[project]\nname = "hermes-agent"\nversion = "{version}"\n',
         encoding="utf-8",
     )
-    (source / "hermes" / "__init__.py").write_text("__version__ = 'test'\n", encoding="utf-8")
 
     for patch in CORE_PATCHES:
         target = source / patch.target_file
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(f"# {patch.name}\n", encoding="utf-8")
+        target.write_text(f"# {patch.name}\n{patch.search_text}\n", encoding="utf-8")
 
     return source
 
@@ -55,7 +53,6 @@ class TestCompatSnapshots:
         optional_targets = {patch.target_file for patch in CORE_PATCHES if not patch.critical}
 
         assert "pyproject.toml" in core_paths
-        assert "hermes/__init__.py" in core_paths
         assert optional_targets.isdisjoint(core_paths)
         assert optional_targets.issubset(extended_paths)
 
@@ -75,9 +72,9 @@ class TestCompatSnapshots:
             "hermes-v1.2.3-core-snapshot",
             "hermes-v1.2.3-extended-snapshot",
         ]
-        assert (fixtures_root / "hermes-v1.2.3-core-snapshot" / "hermes" / "tools" / "dispatch.py").exists()
-        assert not (fixtures_root / "hermes-v1.2.3-core-snapshot" / "hermes" / "ui" / "banner.py").exists()
-        assert (fixtures_root / "hermes-v1.2.3-extended-snapshot" / "hermes" / "ui" / "banner.py").exists()
+        assert (fixtures_root / "hermes-v1.2.3-core-snapshot" / "tools" / "registry.py").exists()
+        assert not (fixtures_root / "hermes-v1.2.3-core-snapshot" / "hermes_cli" / "banner.py").exists()
+        assert (fixtures_root / "hermes-v1.2.3-extended-snapshot" / "hermes_cli" / "banner.py").exists()
 
         registry = json.loads((fixtures_root / REGISTRY_FILENAME).read_text(encoding="utf-8"))
         assert registry["schema_version"] == 2
@@ -95,7 +92,7 @@ class TestCompatSnapshots:
             fixtures_root=fixtures_root,
             source_tree_sha256=tree_sha256,
         )
-        banner = source / "hermes" / "ui" / "banner.py"
+        banner = source / "hermes_cli" / "banner.py"
         banner.write_text("# refreshed\n", encoding="utf-8")
         updated_tree_sha256 = compute_tree_sha256(source)
 
@@ -106,7 +103,7 @@ class TestCompatSnapshots:
             replace_existing=True,
         )
 
-        copied = (fixtures_root / "hermes-v1.2.3-extended-snapshot" / "hermes" / "ui" / "banner.py").read_text(
+        copied = (fixtures_root / "hermes-v1.2.3-extended-snapshot" / "hermes_cli" / "banner.py").read_text(
             encoding="utf-8"
         )
         assert copied == "# refreshed\n"
@@ -208,3 +205,66 @@ class TestCompatSnapshots:
         for record in records:
             assert record.provenance["verification_mode"] == "tree_sha256"
             assert record.provenance["source_tree_sha256"] == compute_tree_sha256(repo_fixtures_root / record.directory)
+
+
+_CURRENT_SNAPSHOT_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "hermes_compat" / "hermes-current-snapshot"
+_EXPECTED_HERMES_COMMIT = "d932980c1a7d9b83b7dac7552824192d73fdd635"
+_EXPECTED_FILES = [
+    "tools/registry.py",
+    "tools/terminal_tool.py",
+    "hermes_cli/banner.py",
+    "tools/environments/docker.py",
+    "gateway/platforms/base.py",
+    "gateway/run.py",
+    "pyproject.toml",
+]
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+class TestCurrentHermesSnapshot:
+    """Verify hermes-current-snapshot is internally consistent with its MANIFEST.json."""
+
+    def test_manifest_exists(self):
+        assert (_CURRENT_SNAPSHOT_DIR / "MANIFEST.json").is_file(), (
+            f"MANIFEST.json missing from {_CURRENT_SNAPSHOT_DIR}"
+        )
+
+    def test_manifest_records_expected_commit(self):
+        manifest = json.loads((_CURRENT_SNAPSHOT_DIR / "MANIFEST.json").read_text(encoding="utf-8"))
+        assert manifest["hermes_commit"] == _EXPECTED_HERMES_COMMIT
+
+    def test_manifest_lists_all_expected_files(self):
+        manifest = json.loads((_CURRENT_SNAPSHOT_DIR / "MANIFEST.json").read_text(encoding="utf-8"))
+        recorded = set(manifest["files"])
+        for rel in _EXPECTED_FILES:
+            assert rel in recorded, f"Expected file not in MANIFEST.json: {rel}"
+
+    def test_all_manifest_files_exist_on_disk(self):
+        manifest = json.loads((_CURRENT_SNAPSHOT_DIR / "MANIFEST.json").read_text(encoding="utf-8"))
+        for rel in manifest["files"]:
+            assert (_CURRENT_SNAPSHOT_DIR / rel).is_file(), f"Missing from snapshot dir: {rel}"
+
+    def test_manifest_sha256_matches_actual_files(self):
+        manifest = json.loads((_CURRENT_SNAPSHOT_DIR / "MANIFEST.json").read_text(encoding="utf-8"))
+        mismatches = []
+        for rel, meta in manifest["files"].items():
+            actual = _file_sha256(_CURRENT_SNAPSHOT_DIR / rel)
+            if actual != meta["sha256"]:
+                mismatches.append(f"{rel}: expected {meta['sha256']}, got {actual}")
+        assert not mismatches, "SHA256 mismatches in current snapshot:\n" + "\n".join(mismatches)
+
+    def test_manifest_size_matches_actual_files(self):
+        manifest = json.loads((_CURRENT_SNAPSHOT_DIR / "MANIFEST.json").read_text(encoding="utf-8"))
+        mismatches = []
+        for rel, meta in manifest["files"].items():
+            actual_size = (_CURRENT_SNAPSHOT_DIR / rel).stat().st_size
+            if actual_size != meta["size"]:
+                mismatches.append(f"{rel}: expected size {meta['size']}, got {actual_size}")
+        assert not mismatches, "Size mismatches in current snapshot:\n" + "\n".join(mismatches)
