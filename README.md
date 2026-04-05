@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/tests-1214%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/adversarial%20eval-159%2F159-brightgreen" alt="Eval">
   <img src="https://img.shields.io/badge/version-v2.0.0-orange" alt="Version">
@@ -327,6 +327,6 @@ The `docs/research/` directory contains 10 deep-dive research documents covering
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE) for details.
 
-Copyright (c) 2025 claudlos
+Copyright (c) 2026 claudlos

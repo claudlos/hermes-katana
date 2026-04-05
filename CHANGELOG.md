@@ -22,4 +22,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - mitmproxy-based HTTPS proxy with secret scrubbing
 - `katana` CLI with doctor, scan, policy, vault, audit, and proxy commands
 - Hermes agent installer with dry-run and backup support
-- 1200+ tests with property-based testing via Hypothesis
+- 1214 tests with property-based testing via Hypothesis
