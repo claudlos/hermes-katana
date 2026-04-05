@@ -11,11 +11,8 @@ Tests cover:
 
 from __future__ import annotations
 
-from collections import defaultdict
 from types import SimpleNamespace
-from unittest.mock import patch
 
-import pytest
 
 from hermes_katana.proxy.addon import KatanaAddon
 from hermes_katana.proxy.config import ProxyConfig
@@ -24,6 +21,7 @@ from hermes_katana.proxy.config import ProxyConfig
 # ---------------------------------------------------------------------------
 # Mock helpers
 # ---------------------------------------------------------------------------
+
 
 class MockHeaders(dict):
     """Dict-like mock for mitmproxy headers."""
@@ -37,8 +35,7 @@ class MockHeaders(dict):
 
 
 class MockRequest:
-    def __init__(self, host="example.com", url="https://example.com/path",
-                 headers=None, body=b"", query=None):
+    def __init__(self, host="example.com", url="https://example.com/path", headers=None, body=b"", query=None):
         self.host = host
         self.url = url
         self.headers = MockHeaders(headers or {})
@@ -109,6 +106,7 @@ def _make_addon(**overrides) -> KatanaAddon:
 # GAP 3.1 — Scan request URL, headers, query params, cookies
 # ---------------------------------------------------------------------------
 
+
 class TestRequestURLScanning:
     """GAP 3.1: URL path segments are scanned."""
 
@@ -122,9 +120,11 @@ class TestRequestURLScanning:
     def test_url_scanning_runs(self):
         """Verify the URL is fed to the scanner."""
         addon = _make_addon()
-        flow = MockFlow(request=MockRequest(
-            url="https://example.com/safe/path",
-        ))
+        flow = MockFlow(
+            request=MockRequest(
+                url="https://example.com/safe/path",
+            )
+        )
         addon.request(flow)
         # Should pass through cleanly
         assert flow.response is None
@@ -135,17 +135,21 @@ class TestRequestHeaderScanning:
 
     def test_clean_headers_pass(self):
         addon = _make_addon()
-        flow = MockFlow(request=MockRequest(
-            headers={"Content-Type": "application/json", "Accept": "text/html"},
-        ))
+        flow = MockFlow(
+            request=MockRequest(
+                headers={"Content-Type": "application/json", "Accept": "text/html"},
+            )
+        )
         addon.request(flow)
         assert flow.response is None
 
     def test_header_scanning_iterates_all(self):
         addon = _make_addon()
-        flow = MockFlow(request=MockRequest(
-            headers={"X-Custom": "hello", "X-Other": "world"},
-        ))
+        flow = MockFlow(
+            request=MockRequest(
+                headers={"X-Custom": "hello", "X-Other": "world"},
+            )
+        )
         addon.request(flow)
         assert flow.response is None
 
@@ -155,9 +159,11 @@ class TestQueryParamScanning:
 
     def test_clean_query_passes(self):
         addon = _make_addon()
-        flow = MockFlow(request=MockRequest(
-            query={"q": "hello world", "page": "1"},
-        ))
+        flow = MockFlow(
+            request=MockRequest(
+                query={"q": "hello world", "page": "1"},
+            )
+        )
         addon.request(flow)
         assert flow.response is None
 
@@ -167,9 +173,11 @@ class TestCookieScanning:
 
     def test_clean_cookies_pass(self):
         addon = _make_addon()
-        flow = MockFlow(request=MockRequest(
-            headers={"cookie": "session=abc123; theme=dark"},
-        ))
+        flow = MockFlow(
+            request=MockRequest(
+                headers={"cookie": "session=abc123; theme=dark"},
+            )
+        )
         addon.request(flow)
         assert flow.response is None
 
@@ -183,6 +191,7 @@ class TestCookieScanning:
 # ---------------------------------------------------------------------------
 # GAP 3.2 — Scan response headers
 # ---------------------------------------------------------------------------
+
 
 class TestResponseHeaderScanning:
     """GAP 3.2: Response headers are scanned."""
@@ -209,6 +218,7 @@ class TestResponseHeaderScanning:
 # ---------------------------------------------------------------------------
 # GAP 3.3 — WebSocket message scanning
 # ---------------------------------------------------------------------------
+
 
 class TestWebSocketScanning:
     """GAP 3.3: WebSocket messages are scanned."""
@@ -256,6 +266,7 @@ class TestWebSocketScanning:
 # GAP 3.5 — Oversized body prefix scanning
 # ---------------------------------------------------------------------------
 
+
 class TestOversizedBodyScanning:
     """GAP 3.5: Oversized bodies get first N bytes scanned."""
 
@@ -287,6 +298,7 @@ class TestOversizedBodyScanning:
 # GAP 3.7 — X-Katana-Scanned header opt-in
 # ---------------------------------------------------------------------------
 
+
 class TestScannedHeaderOptIn:
     """GAP 3.7: X-Katana-Scanned is opt-in (disabled by default)."""
 
@@ -317,27 +329,32 @@ class TestScannedHeaderOptIn:
 # GAP 3.8 — Credential injection order
 # ---------------------------------------------------------------------------
 
+
 class TestCredentialInjectionOrder:
     """GAP 3.8: Injected headers are excluded from scanning."""
 
     def test_injected_headers_tracking(self):
         """When inject_credentials is off, no headers are skipped."""
         addon = _make_addon(inject_credentials=False)
-        flow = MockFlow(request=MockRequest(
-            headers={"Authorization": "Bearer sk-test123"},
-        ))
+        flow = MockFlow(
+            request=MockRequest(
+                headers={"Authorization": "Bearer sk-test123"},
+            )
+        )
         addon.request(flow)
         # With injection off, Authorization IS scanned (not excluded).
         # Whether it triggers a block depends on scanner sensitivity;
         # the key property is that it was NOT added to _injected_headers.
         # Verify the header was not exempted from scanning.
-        assert not hasattr(addon, '_last_injected_headers') or \
-            "authorization" not in getattr(addon, '_last_injected_headers', set())
+        assert not hasattr(addon, "_last_injected_headers") or "authorization" not in getattr(
+            addon, "_last_injected_headers", set()
+        )
 
 
 # ---------------------------------------------------------------------------
 # Basic existing functionality preserved
 # ---------------------------------------------------------------------------
+
 
 class TestBasicFunctionality:
     """Verify existing proxy behaviors still work."""

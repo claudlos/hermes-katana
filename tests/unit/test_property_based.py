@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
-from hypothesis import given, settings, assume
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from hermes_katana.taint.value import TaintedStr, TaintedValue, unwrap
-from hermes_katana.taint.labels import TaintLabel, Source, TrustLevel
+from hermes_katana.taint.value import TaintedStr, unwrap
+from hermes_katana.taint.labels import TaintLabel, Source
 from hermes_katana.scanner import scan_input, scan_output, ScanVerdict
 from hermes_katana.policy.engine import PolicyEngine, EvaluationResult
-from hermes_katana.policy.models import PolicySet
 
 
 def _make_source(label: TaintLabel = TaintLabel.USER) -> frozenset:
@@ -21,6 +19,7 @@ def _make_source(label: TaintLabel = TaintLabel.USER) -> frozenset:
 # ======================================================================
 # Fuzz TaintedStr with arbitrary strings
 # ======================================================================
+
 
 class TestTaintedStrFuzz:
     @given(text=st.text(min_size=0, max_size=500))
@@ -60,6 +59,7 @@ class TestTaintedStrFuzz:
 # Fuzz scanner patterns with random inputs
 # ======================================================================
 
+
 class TestScannerFuzz:
     @given(text=st.text(min_size=0, max_size=1000))
     @settings(max_examples=100, deadline=5000)
@@ -95,6 +95,7 @@ class TestScannerFuzz:
 # ======================================================================
 # Fuzz policy evaluation with random tool names and taint contexts
 # ======================================================================
+
 
 class TestPolicyFuzz:
     @given(

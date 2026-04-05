@@ -44,6 +44,7 @@ __all__ = [
 # Flow decisions
 # ---------------------------------------------------------------------------
 
+
 @unique
 class FlowDecision(Enum):
     """Outcome of a data-flow policy check."""
@@ -64,6 +65,7 @@ class FlowDecision(Enum):
 # ---------------------------------------------------------------------------
 # Flow rules
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class FlowRule:
@@ -109,6 +111,7 @@ class FlowRule:
 # Flow analysis result
 # ---------------------------------------------------------------------------
 
+
 @dataclass(slots=True)
 class FlowAnalysis:
     """Detailed result of a flow-policy evaluation.
@@ -146,57 +149,63 @@ class FlowAnalysis:
 # ---------------------------------------------------------------------------
 
 # Tools considered security-critical sinks
-CRITICAL_SINKS: frozenset[str] = frozenset({
-    "terminal",
-    "bash",
-    "shell",
-    "execute",
-    "run_command",
-    "send_message",
-    "send_email",
-    "memory",
-    "memory_write",
-    "memory_update",
-    "memory_delete",
-    "file_write",
-    "write_file",
-    "patch",
-    "mcp_patch",
-    "subprocess",
-    "os.system",
-    "exec",
-    "eval",
-    "http_request",
-    "fetch",
-    "api_call",
-    "browser_type",
-    "browser_click",
-    "browser_press",
-    "browser_navigate",
-    "text_to_speech",
-    "cronjob",
-    "skill_manage",
-})
+CRITICAL_SINKS: frozenset[str] = frozenset(
+    {
+        "terminal",
+        "bash",
+        "shell",
+        "execute",
+        "run_command",
+        "send_message",
+        "send_email",
+        "memory",
+        "memory_write",
+        "memory_update",
+        "memory_delete",
+        "file_write",
+        "write_file",
+        "patch",
+        "mcp_patch",
+        "subprocess",
+        "os.system",
+        "exec",
+        "eval",
+        "http_request",
+        "fetch",
+        "api_call",
+        "browser_type",
+        "browser_click",
+        "browser_press",
+        "browser_navigate",
+        "text_to_speech",
+        "cronjob",
+        "skill_manage",
+    }
+)
 
 # Labels considered untrusted by default
-UNTRUSTED_LABELS: frozenset[TaintLabel] = frozenset({
-    TaintLabel.WEB_CONTENT,
-    TaintLabel.MCP,
-    TaintLabel.MCP_TOOL_DESCRIPTION,  # Highest-risk MCP label
-    TaintLabel.MCP_TOOL_RESULT,
-    TaintLabel.MCP_RESOURCE,
-    TaintLabel.MCP_PROMPT,
-    TaintLabel.UNKNOWN,
-})
+UNTRUSTED_LABELS: frozenset[TaintLabel] = frozenset(
+    {
+        TaintLabel.WEB_CONTENT,
+        TaintLabel.MCP,
+        TaintLabel.MCP_TOOL_DESCRIPTION,  # Highest-risk MCP label
+        TaintLabel.MCP_TOOL_RESULT,
+        TaintLabel.MCP_RESOURCE,
+        TaintLabel.MCP_PROMPT,
+        TaintLabel.UNKNOWN,
+    }
+)
 
 # Labels that need approval for critical sinks
-CONDITIONAL_LABELS: frozenset[TaintLabel] = frozenset({
-    TaintLabel.TOOL_OUTPUT,
-    TaintLabel.FILE_CONTENT,
-    TaintLabel.MEMORY,
-    TaintLabel.AGENT_DELEGATED,  # Sub-agent output may carry injections
-    TaintLabel.CROSS_SESSION,    # Previous-session memory unverifiable
-})
+CONDITIONAL_LABELS: frozenset[TaintLabel] = frozenset(
+    {
+        TaintLabel.TOOL_OUTPUT,
+        TaintLabel.FILE_CONTENT,
+        TaintLabel.MEMORY,
+        TaintLabel.AGENT_DELEGATED,  # Sub-agent output may carry injections
+        TaintLabel.CROSS_SESSION,  # Previous-session memory unverifiable
+    }
+)
 
 
 def default_rules() -> list[FlowRule]:
@@ -247,20 +256,19 @@ def default_rules() -> list[FlowRule]:
             source_labels=frozenset({TaintLabel.AGENT}),
             target_tools=CRITICAL_SINKS,
             decision=FlowDecision.QUARANTINE,
-            reason=(
-                "Agent-generated content flowing to critical sinks is allowed "
-                "but logged for review."
-            ),
+            reason=("Agent-generated content flowing to critical sinks is allowed but logged for review."),
             priority=25,
         ),
         # Rule 5 (research doc 01): MCP tool descriptions → skill_manage always denied
         # Skill mutation from poisoned tool descriptions is a high-privilege attack.
         FlowRule(
-            source_labels=frozenset({
-                TaintLabel.MCP,
-                TaintLabel.MCP_TOOL_DESCRIPTION,
-                TaintLabel.MCP_TOOL_RESULT,
-            }),
+            source_labels=frozenset(
+                {
+                    TaintLabel.MCP,
+                    TaintLabel.MCP_TOOL_DESCRIPTION,
+                    TaintLabel.MCP_TOOL_RESULT,
+                }
+            ),
             target_tools=frozenset({"skill_manage", "skill_view", "skills_list"}),
             decision=FlowDecision.DENY,
             reason=(
@@ -396,8 +404,7 @@ class FlowAnalyzer:
                 intersecting = rule.source_labels & labels
                 label_names = ", ".join(sorted(lbl.name for lbl in intersecting))
                 reasoning_parts.append(
-                    f"[P{rule.priority}] {rule.decision.name}: "
-                    f"labels {{{label_names}}} → {tool_name}. {rule.reason}"
+                    f"[P{rule.priority}] {rule.decision.name}: labels {{{label_names}}} → {tool_name}. {rule.reason}"
                 )
 
         # Determine final decision (highest-priority matched rule wins)
@@ -416,9 +423,7 @@ class FlowAnalyzer:
         if all_sources and all(s.trust_level is TrustLevel.TRUSTED for s in all_sources):
             if decision == FlowDecision.ASK_USER:
                 decision = FlowDecision.ALLOW
-                reasoning_parts.append(
-                    "Override: all sources are TRUSTED — downgrading escalation to allow."
-                )
+                reasoning_parts.append("Override: all sources are TRUSTED — downgrading escalation to allow.")
 
         # Special case: no sources at all — treat as clean
         if not all_sources:
@@ -438,8 +443,8 @@ class FlowAnalyzer:
         with self._lock:
             self._history.append(result)
             if len(self._history) > self._MAX_HISTORY:
-                self._flush_history_to_disk(self._history[:-self._MAX_HISTORY // 2])
-                self._history = self._history[-self._MAX_HISTORY // 2:]
+                self._flush_history_to_disk(self._history[: -self._MAX_HISTORY // 2])
+                self._history = self._history[-self._MAX_HISTORY // 2 :]
         logger.debug(
             "Flow analysis: %s → %s = %s",
             sorted(lbl.name for lbl in labels),
@@ -469,6 +474,7 @@ class FlowAnalyzer:
         Entries are appended to ~/.config/hermes-katana/flow_audit.jsonl.
         """
         from pathlib import Path as _P
+
         try:
             audit_dir = _P.home() / ".config" / "hermes-katana"
             audit_dir.mkdir(parents=True, exist_ok=True)
@@ -488,8 +494,4 @@ class FlowAnalyzer:
             logger.debug("Failed to flush flow history to disk", exc_info=True)
 
     def __repr__(self) -> str:
-        return (
-            f"FlowAnalyzer(rules={len(self._rules)}, "
-            f"strict={self._strict}, "
-            f"history={len(self._history)})"
-        )
+        return f"FlowAnalyzer(rules={len(self._rules)}, strict={self._strict}, history={len(self._history)})"

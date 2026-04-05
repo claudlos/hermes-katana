@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import defaultdict
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from hermes_katana.proxy.addon import (
     KatanaAddon,
@@ -22,6 +20,7 @@ from hermes_katana.proxy.config import ProxyConfig
 # ======================================================================
 # Helpers
 # ======================================================================
+
 
 def _make_flow(
     host: str = "api.openai.com",
@@ -92,6 +91,7 @@ def _addon(
 # ======================================================================
 # RateTracker
 # ======================================================================
+
 
 class TestRateTracker:
     def test_allows_under_limit(self):
@@ -190,6 +190,7 @@ class TestRateTracker:
 # _get_client_id
 # ======================================================================
 
+
 class TestGetClientId:
     def test_extracts_ip(self):
         flow = _make_flow(client_ip="10.0.0.1")
@@ -211,6 +212,7 @@ class TestGetClientId:
 # _make_block_response
 # ======================================================================
 
+
 class TestMakeBlockResponse:
     def test_returns_response_object(self):
         resp = _make_block_response(403, "blocked")
@@ -226,6 +228,7 @@ class TestMakeBlockResponse:
 # ======================================================================
 # KatanaAddon — domain allowlist
 # ======================================================================
+
 
 class TestAddonDomainAllowlist:
     def test_no_allowlist_allows_all(self):
@@ -260,6 +263,7 @@ class TestAddonDomainAllowlist:
 # KatanaAddon — ignored hosts
 # ======================================================================
 
+
 class TestAddonIgnoredHosts:
     def test_ignored_host_passes_through(self):
         addon = _addon(ignore_hosts=["pypi.org"])
@@ -281,6 +285,7 @@ class TestAddonIgnoredHosts:
 # KatanaAddon — rate limiting
 # ======================================================================
 
+
 class TestAddonRateLimiting:
     def test_rate_limit_blocks(self):
         addon = _addon(rate_limit=2)
@@ -297,6 +302,7 @@ class TestAddonRateLimiting:
 # ======================================================================
 # KatanaAddon — body scanning
 # ======================================================================
+
 
 class TestAddonBodyScanning:
     def test_body_too_large_skipped(self):
@@ -317,6 +323,7 @@ class TestAddonBodyScanning:
 # KatanaAddon — header injection
 # ======================================================================
 
+
 class TestAddonHeaderInjection:
     def test_x_katana_scanned_header_set(self):
         addon = _addon(add_scanned_header=True)
@@ -336,6 +343,7 @@ class TestAddonHeaderInjection:
 # KatanaAddon — response hook
 # ======================================================================
 
+
 class TestAddonResponse:
     def test_response_missing_attribute(self):
         addon = _addon()
@@ -354,6 +362,7 @@ class TestAddonResponse:
 # ======================================================================
 # KatanaAddon — request hook edge cases
 # ======================================================================
+
 
 class TestAddonRequestEdgeCases:
     def test_request_missing_host(self):
@@ -384,6 +393,7 @@ class TestAddonRequestEdgeCases:
 # ======================================================================
 # KatanaAddon — audit logging
 # ======================================================================
+
 
 class TestAddonAuditLogging:
     def test_log_audit_no_audit_trail(self):

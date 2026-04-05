@@ -14,10 +14,12 @@ import pytest
 # Taint fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def user_source():
     """Trusted user source."""
     from hermes_katana.taint.labels import Source
+
     return Source.user("test_user")
 
 
@@ -25,6 +27,7 @@ def user_source():
 def web_source():
     """Untrusted web source."""
     from hermes_katana.taint.labels import Source
+
     return Source.web("https://evil.example.com")
 
 
@@ -32,6 +35,7 @@ def web_source():
 def mcp_source():
     """Untrusted MCP source."""
     from hermes_katana.taint.labels import Source
+
     return Source.mcp("untrusted_mcp_server")
 
 
@@ -39,6 +43,7 @@ def mcp_source():
 def tool_source():
     """Conditional tool source."""
     from hermes_katana.taint.labels import Source
+
     return Source.tool("some_tool")
 
 
@@ -46,6 +51,7 @@ def tool_source():
 def tracker():
     """Fresh scoped taint tracker."""
     from hermes_katana.taint.tracker import TaintTracker
+
     t = TaintTracker()
     yield t
     t.clear()
@@ -55,10 +61,12 @@ def tracker():
 # Policy fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def balanced_engine():
     """PolicyEngine with balanced preset."""
     from hermes_katana.policy.engine import PolicyEngine
+
     return PolicyEngine.with_defaults("balanced")
 
 
@@ -66,6 +74,7 @@ def balanced_engine():
 def paranoid_engine():
     """PolicyEngine with paranoid preset."""
     from hermes_katana.policy.engine import PolicyEngine
+
     return PolicyEngine.with_defaults("paranoid")
 
 
@@ -73,12 +82,14 @@ def paranoid_engine():
 def permissive_engine():
     """PolicyEngine with permissive preset."""
     from hermes_katana.policy.engine import PolicyEngine
+
     return PolicyEngine.with_defaults("permissive")
 
 
 # ---------------------------------------------------------------------------
 # Temp directory fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def tmp_dir() -> Generator[Path, None, None]:
@@ -108,6 +119,7 @@ def vault_path(tmp_dir: Path) -> Path:
 # ---------------------------------------------------------------------------
 # Taint context helpers
 # ---------------------------------------------------------------------------
+
 
 def make_taint_context(
     fields: dict[str, dict[str, Any]] | None = None,

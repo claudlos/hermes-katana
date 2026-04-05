@@ -249,18 +249,14 @@ class VaultAccessLog:
     def _compute_line_hmac(self, line_data: str) -> str:
         """Compute HMAC-SHA256 for a single log line for tamper evidence."""
         hmac_key = self._get_hmac_key()
-        return _hmac_mod.new(
-            hmac_key, line_data.encode("utf-8"), hashlib.sha256
-        ).hexdigest()
+        return _hmac_mod.new(hmac_key, line_data.encode("utf-8"), hashlib.sha256).hexdigest()
 
     def _get_hmac_key(self) -> bytes:
         """Derive an HMAC key for log integrity."""
         env_key = os.environ.get("HERMES_KATANA_LOG_KEY")
         if env_key:
             return hashlib.sha256(env_key.encode()).digest()
-        return hashlib.sha256(
-            b"hermes-katana-access-log:" + str(self._path).encode()
-        ).digest()
+        return hashlib.sha256(b"hermes-katana-access-log:" + str(self._path).encode()).digest()
 
     def verify_integrity(self) -> bool:
         """Verify HMAC integrity of all log entries.

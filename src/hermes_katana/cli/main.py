@@ -59,9 +59,7 @@ VERSION = "1.0.0"
 def _version_string() -> str:
     """Build the version banner string."""
     return (
-        f"HermesKatana v{VERSION}  |  "
-        f"Python {platform.python_version()}  |  "
-        f"{platform.system()} {platform.machine()}"
+        f"HermesKatana v{VERSION}  |  Python {platform.python_version()}  |  {platform.system()} {platform.machine()}"
     )
 
 
@@ -216,6 +214,7 @@ def main(ctx: click.Context, quiet: bool, verbose: bool) -> None:
 
     if verbose:
         import logging
+
         logging.basicConfig(level=logging.DEBUG, format="%(name)s: %(message)s")
 
 
@@ -227,11 +226,13 @@ def main(ctx: click.Context, quiet: bool, verbose: bool) -> None:
 @main.command()
 def version() -> None:
     """Show version information."""
-    console.print(Panel(
-        _version_string(),
-        title="[bold]HermesKatana[/bold]",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            _version_string(),
+            title="[bold]HermesKatana[/bold]",
+            border_style="cyan",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1422,9 +1423,8 @@ def benchmark(suite: str) -> None:
             color = verdict_colors.get(verdict, "white")
 
             # Check correctness
-            is_correct = (
-                (expected_type in ("injection", "secret", "command") and verdict in ("warn", "block"))
-                or (expected_type == "safe" and verdict == "allow")
+            is_correct = (expected_type in ("injection", "secret", "command") and verdict in ("warn", "block")) or (
+                expected_type == "safe" and verdict == "allow"
             )
             if is_correct:
                 correct += 1
@@ -1438,9 +1438,9 @@ def benchmark(suite: str) -> None:
             )
 
         console.print(table)
-        console.print(f"\n   Accuracy: {correct}/{total} ({100*correct/total:.0f}%)")
+        console.print(f"\n   Accuracy: {correct}/{total} ({100 * correct / total:.0f}%)")
         console.print(f"   Total time: {total_time:.1f}ms")
-        console.print(f"   Avg per scan: {total_time/total:.1f}ms\n")
+        console.print(f"   Avg per scan: {total_time / total:.1f}ms\n")
 
     except Exception as exc:
         err_console.print(f"\n   [red]Benchmark failed:[/red] {exc}\n")

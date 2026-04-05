@@ -8,9 +8,8 @@ import warnings
 
 import pytest
 
-from hermes_katana.taint.labels import Reader, Source, TaintLabel, TrustLevel
+from hermes_katana.taint.labels import Source, TaintLabel, TrustLevel
 from hermes_katana.taint.value import (
-    CharTaint,
     TaintedDict,
     TaintedList,
     TaintedStr,
@@ -35,6 +34,7 @@ def _has_label(sources, label=TaintLabel.WEB_CONTENT):
 # ---------------------------------------------------------------------------
 # Fix 1: __format__ override
 # ---------------------------------------------------------------------------
+
 
 class TestFormat:
     def test_format_method_returns_tainted(self):
@@ -65,6 +65,7 @@ class TestFormat:
 # Fix 2: __str__ returns TaintedStr (self)
 # ---------------------------------------------------------------------------
 
+
 class TestStr:
     def test_str_method_returns_tainted(self):
         """Direct __str__ call returns TaintedStr."""
@@ -81,6 +82,7 @@ class TestStr:
 # ---------------------------------------------------------------------------
 # Fix 3: __repr__ returns TaintedStr
 # ---------------------------------------------------------------------------
+
 
 class TestRepr:
     def test_repr_method_returns_tainted(self):
@@ -101,6 +103,7 @@ class TestRepr:
 # ---------------------------------------------------------------------------
 # Fix 4: __mod__ and __rmod__
 # ---------------------------------------------------------------------------
+
 
 class TestModFormatting:
     def test_mod_preserves_taint(self):
@@ -138,6 +141,7 @@ class TestModFormatting:
 # Fix 5: encode() warning
 # ---------------------------------------------------------------------------
 
+
 class TestEncode:
     def test_encode_warns(self):
         t = TaintedStr("hello", sources=_src())
@@ -152,6 +156,7 @@ class TestEncode:
 # ---------------------------------------------------------------------------
 # Fix 6: split() cursor-based
 # ---------------------------------------------------------------------------
+
 
 class TestSplitCursor:
     def test_split_repeated_substrings(self):
@@ -174,6 +179,7 @@ class TestSplitCursor:
 # Fix 7: strip() direct offset
 # ---------------------------------------------------------------------------
 
+
 class TestStripOffset:
     def test_strip_ambiguous(self):
         t = TaintedStr("xxyxx", sources=_src())
@@ -192,6 +198,7 @@ class TestStripOffset:
 # ---------------------------------------------------------------------------
 # Fix 8: TaintedList/TaintedDict __getitem__ wrapping
 # ---------------------------------------------------------------------------
+
 
 class TestContainerGetitem:
     def test_list_getitem_wraps(self):
@@ -219,6 +226,7 @@ class TestContainerGetitem:
 # ---------------------------------------------------------------------------
 # Fix 9: unwrap() audit trail
 # ---------------------------------------------------------------------------
+
 
 class TestUnwrapAudit:
     def test_unwrap_logs_warning(self, caplog):
@@ -251,12 +259,24 @@ class TestUnwrapAudit:
 # Fix 10: Critical sinks expanded
 # ---------------------------------------------------------------------------
 
+
 class TestCriticalSinks:
-    @pytest.mark.parametrize("sink", [
-        "subprocess", "os.system", "exec", "eval", "http_request",
-        "fetch", "api_call", "browser_type", "browser_click",
-        "cronjob", "skill_manage",
-    ])
+    @pytest.mark.parametrize(
+        "sink",
+        [
+            "subprocess",
+            "os.system",
+            "exec",
+            "eval",
+            "http_request",
+            "fetch",
+            "api_call",
+            "browser_type",
+            "browser_click",
+            "cronjob",
+            "skill_manage",
+        ],
+    )
     def test_new_sinks_present(self, sink):
         assert sink in CRITICAL_SINKS
 
@@ -265,14 +285,19 @@ class TestCriticalSinks:
 # Fix 11: Default FlowAnalyzer decision is ASK_USER
 # ---------------------------------------------------------------------------
 
+
 class TestDefaultDecision:
     def test_default_is_ask_user(self):
         analyzer = FlowAnalyzer()
-        src = frozenset({Source(
-            label=TaintLabel.AGENT,
-            trust_level=TrustLevel.UNTRUSTED,
-            origin="test",
-        )})
+        src = frozenset(
+            {
+                Source(
+                    label=TaintLabel.AGENT,
+                    trust_level=TrustLevel.UNTRUSTED,
+                    origin="test",
+                )
+            }
+        )
         val = TaintedValue(value="x", sources=src)
         result = analyzer.check(val, "some_unknown_tool_xyz")
         assert result == FlowDecision.ASK_USER
@@ -281,6 +306,7 @@ class TestDefaultDecision:
 # ---------------------------------------------------------------------------
 # Fix 12: fnmatch glob patterns in FlowRule
 # ---------------------------------------------------------------------------
+
 
 class TestFnmatchGlob:
     def test_glob_pattern_matching(self):

@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import os
 import textwrap
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from hermes_katana.vault.migrate import (
     MigrationResult,
@@ -26,6 +24,7 @@ from hermes_katana.vault.migrate import (
 # ======================================================================
 # _is_secret_key
 # ======================================================================
+
 
 class TestIsSecretKey:
     def test_api_key_pattern(self):
@@ -74,14 +73,19 @@ class TestIsSecretKey:
 # _scan_env_vars
 # ======================================================================
 
+
 class TestScanEnvVars:
     def test_finds_secret_env_vars(self):
-        with patch.dict(os.environ, {
-            "OPENAI_API_KEY": "sk-test",
-            "MY_API_TOKEN": "tok-123",
-            "PATH": "/usr/bin",
-            "DEBUG": "true",
-        }, clear=True):
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "sk-test",
+                "MY_API_TOKEN": "tok-123",
+                "PATH": "/usr/bin",
+                "DEBUG": "true",
+            },
+            clear=True,
+        ):
             found = _scan_env_vars()
             assert "OPENAI_API_KEY" in found
             assert found["OPENAI_API_KEY"] == "sk-test"
@@ -90,10 +94,14 @@ class TestScanEnvVars:
             assert "DEBUG" not in found
 
     def test_skips_empty_values(self):
-        with patch.dict(os.environ, {
-            "OPENAI_API_KEY": "",
-            "ANTHROPIC_API_KEY": "  ",
-        }, clear=True):
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "",
+                "ANTHROPIC_API_KEY": "  ",
+            },
+            clear=True,
+        ):
             found = _scan_env_vars()
             assert "OPENAI_API_KEY" not in found
             assert "ANTHROPIC_API_KEY" not in found
@@ -103,16 +111,19 @@ class TestScanEnvVars:
 # _scan_dotenv
 # ======================================================================
 
+
 class TestScanDotenv:
     def test_reads_dotenv_file(self, tmp_path):
         env_file = tmp_path / ".env"
-        env_file.write_text(textwrap.dedent("""\
+        env_file.write_text(
+            textwrap.dedent("""\
             # Comment line
             OPENAI_API_KEY=sk-test123
             MY_API_TOKEN="tok-quoted"
             NORMAL_VAR=hello
             DEBUG=true
-        """))
+        """)
+        )
         found = _scan_dotenv(env_file)
         assert found["OPENAI_API_KEY"] == "sk-test123"
         assert found["MY_API_TOKEN"] == "tok-quoted"
@@ -127,12 +138,14 @@ class TestScanDotenv:
 
     def test_skips_blank_lines_and_comments(self, tmp_path):
         env_file = tmp_path / ".env"
-        env_file.write_text(textwrap.dedent("""\
+        env_file.write_text(
+            textwrap.dedent("""\
             # This is a comment
 
             OPENAI_API_KEY=sk-test
             invalid line without equals
-        """))
+        """)
+        )
         found = _scan_dotenv(env_file)
         assert "OPENAI_API_KEY" in found
         assert len(found) == 1
@@ -154,10 +167,12 @@ class TestScanDotenv:
 # _scan_hermes_config
 # ======================================================================
 
+
 class TestScanHermesConfig:
     def test_reads_yaml_secrets(self, tmp_path):
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(textwrap.dedent("""\
+        config_file.write_text(
+            textwrap.dedent("""\
             providers:
               openai:
                 api_key: sk-from-config
@@ -165,7 +180,8 @@ class TestScanHermesConfig:
                 token: ant-from-config
             general:
               log_level: info
-        """))
+        """)
+        )
         found = _scan_hermes_config(config_file)
         # Should find api_key and token values
         assert any("sk-from-config" in v for v in found.values())
@@ -183,6 +199,7 @@ class TestScanHermesConfig:
 # ======================================================================
 # _extract_secrets_from_dict
 # ======================================================================
+
 
 class TestExtractSecretsFromDict:
     def test_flat_dict(self):
@@ -212,6 +229,7 @@ class TestExtractSecretsFromDict:
 # _secure_delete_env_var
 # ======================================================================
 
+
 class TestSecureDeleteEnvVar:
     def test_removes_existing_var(self):
         os.environ["TEST_SECRET_TO_DELETE"] = "sensitive"
@@ -228,6 +246,7 @@ class TestSecureDeleteEnvVar:
 # ======================================================================
 # _secure_delete_from_file
 # ======================================================================
+
 
 class TestSecureDeleteFromFile:
     def test_zeros_out_env_style(self, tmp_path):
@@ -264,6 +283,7 @@ class TestSecureDeleteFromFile:
 # discover_secrets
 # ======================================================================
 
+
 class TestDiscoverSecrets:
     def test_env_has_highest_priority(self, tmp_path):
         env_file = tmp_path / ".env"
@@ -291,6 +311,7 @@ class TestDiscoverSecrets:
 # migrate_secrets
 # ======================================================================
 
+
 class TestMigrateSecrets:
     def _mock_vault(self, existing_keys=None):
         vault = MagicMock()
@@ -302,7 +323,8 @@ class TestMigrateSecrets:
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-migrate"}, clear=True):
             vault = self._mock_vault()
             result = migrate_secrets(
-                vault, secure_delete=False,
+                vault,
+                secure_delete=False,
                 dotenv_path=tmp_path / "nonexistent.env",
                 config_path=tmp_path / "nonexistent.yaml",
             )
@@ -313,7 +335,8 @@ class TestMigrateSecrets:
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-exists"}, clear=True):
             vault = self._mock_vault(existing_keys=["OPENAI_API_KEY"])
             result = migrate_secrets(
-                vault, secure_delete=False,
+                vault,
+                secure_delete=False,
                 dotenv_path=tmp_path / "nonexistent.env",
                 config_path=tmp_path / "nonexistent.yaml",
             )
@@ -324,7 +347,9 @@ class TestMigrateSecrets:
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-dry"}, clear=True):
             vault = self._mock_vault()
             result = migrate_secrets(
-                vault, dry_run=True, secure_delete=False,
+                vault,
+                dry_run=True,
+                secure_delete=False,
                 dotenv_path=tmp_path / "nonexistent.env",
                 config_path=tmp_path / "nonexistent.yaml",
             )
@@ -334,8 +359,9 @@ class TestMigrateSecrets:
     def test_secure_delete_removes_env_var(self, tmp_path):
         os.environ["TEST_MIGRATE_KEY_API_KEY"] = "to-delete"
         vault = self._mock_vault()
-        result = migrate_secrets(
-            vault, secure_delete=True,
+        migrate_secrets(
+            vault,
+            secure_delete=True,
             dotenv_path=tmp_path / "nonexistent.env",
             config_path=tmp_path / "nonexistent.yaml",
         )
@@ -347,7 +373,8 @@ class TestMigrateSecrets:
             vault = self._mock_vault()
             vault.set.side_effect = Exception("vault write failed")
             result = migrate_secrets(
-                vault, secure_delete=False,
+                vault,
+                secure_delete=False,
                 dotenv_path=tmp_path / "nonexistent.env",
                 config_path=tmp_path / "nonexistent.yaml",
             )
@@ -357,6 +384,7 @@ class TestMigrateSecrets:
 # ======================================================================
 # MigrationResult
 # ======================================================================
+
 
 class TestMigrationResult:
     def test_defaults(self):

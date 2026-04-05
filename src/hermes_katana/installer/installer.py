@@ -333,10 +333,7 @@ class KatanaInstaller:
             raise FileNotFoundError(f"Target path does not exist: {target}")
 
         if not self.detect_hermes(target):
-            raise ValueError(
-                f"Not a Hermes checkout: {target}\n"
-                f"Expected marker files: {', '.join(HERMES_MARKERS)}"
-            )
+            raise ValueError(f"Not a Hermes checkout: {target}\nExpected marker files: {', '.join(HERMES_MARKERS)}")
 
         logger.info("Installing Katana on %s", target)
 
@@ -513,9 +510,7 @@ class KatanaInstaller:
             try:
                 path.resolve().relative_to(container)
             except ValueError:
-                raise ValueError(
-                    f"{label} path escapes container: {path} is not under {container}"
-                )
+                raise ValueError(f"{label} path escapes container: {path} is not under {container}")
             # Reject symlinks that could redirect operations
             if path.is_symlink():
                 raise ValueError(f"{label} path is a symlink: {path}")
@@ -735,11 +730,7 @@ class KatanaInstaller:
             target / KATANA_CONFIG_DIR,
             target / KATANA_INSTALL_MARKER,
         ]
-        return [
-            path.relative_to(target).as_posix()
-            for path in expected
-            if not path.exists()
-        ]
+        return [path.relative_to(target).as_posix() for path in expected if not path.exists()]
 
     def _generate_config(self, target: Path) -> None:
         """Generate the default Katana configuration file.
@@ -798,11 +789,13 @@ class KatanaInstaller:
             )
 
             # Build CA certificate
-            subject = issuer = x509.Name([
-                x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "HermesKatana"),
-                x509.NameAttribute(NameOID.COMMON_NAME, "HermesKatana CA"),
-            ])
+            subject = issuer = x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "HermesKatana"),
+                    x509.NameAttribute(NameOID.COMMON_NAME, "HermesKatana CA"),
+                ]
+            )
 
             cert = (
                 x509.CertificateBuilder()
@@ -811,10 +804,7 @@ class KatanaInstaller:
                 .public_key(key.public_key())
                 .serial_number(x509.random_serial_number())
                 .not_valid_before(datetime.datetime.now(datetime.timezone.utc))
-                .not_valid_after(
-                    datetime.datetime.now(datetime.timezone.utc)
-                    + datetime.timedelta(days=3650)
-                )
+                .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=3650))
                 .add_extension(
                     x509.BasicConstraints(ca=True, path_length=0),
                     critical=True,
@@ -841,12 +831,11 @@ class KatanaInstaller:
 
             # Write private key (encrypted with a passphrase derived from install path + random salt)
             import secrets as _secrets
+
             ca_salt = _secrets.token_hex(16)
             salt_path = cert_dir / "ca_salt.txt"
             salt_path.write_text(ca_salt, encoding="utf-8")
-            passphrase = hashlib.sha256(
-                f"katana-{target}-{ca_salt}".encode()
-            ).hexdigest()[:32].encode()
+            passphrase = hashlib.sha256(f"katana-{target}-{ca_salt}".encode()).hexdigest()[:32].encode()
 
             key_path.write_bytes(
                 key.private_bytes(
@@ -866,8 +855,7 @@ class KatanaInstaller:
 
         except ImportError:
             logger.warning(
-                "cryptography library not available — CA cert not generated. "
-                "Install with: pip install cryptography"
+                "cryptography library not available — CA cert not generated. Install with: pip install cryptography"
             )
         except Exception:
             logger.exception("Failed to generate CA certificate")
@@ -878,10 +866,7 @@ class KatanaInstaller:
         data = {
             "installed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "installer_version": "1.0.0",
-            "patches": {
-                r.name: {"status": r.status.value, "message": r.message}
-                for r in results
-            },
+            "patches": {r.name: {"status": r.status.value, "message": r.message} for r in results},
             "target": str(target),
         }
         if self._last_backup_manifest is not None:

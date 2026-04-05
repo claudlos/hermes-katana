@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from hermes_katana.vault.migrate import (
     MigrationResult,
@@ -25,6 +23,7 @@ from hermes_katana.vault.migrate import (
 # ---------------------------------------------------------------------------
 # _is_secret_key
 # ---------------------------------------------------------------------------
+
 
 class TestIsSecretKey:
     def test_api_key_suffix(self):
@@ -70,16 +69,12 @@ class TestIsSecretKey:
 # _scan_dotenv
 # ---------------------------------------------------------------------------
 
+
 class TestScanDotenv:
     def test_scan_dotenv_file(self, tmp_path):
         env_file = tmp_path / ".env"
         env_file.write_text(
-            "OPENAI_API_KEY=sk-test123\n"
-            "LOG_LEVEL=debug\n"
-            "ANTHROPIC_API_KEY='sk-ant-abc'\n"
-            "# comment line\n"
-            "\n"
-            "EMPTY_KEY=\n"
+            "OPENAI_API_KEY=sk-test123\nLOG_LEVEL=debug\nANTHROPIC_API_KEY='sk-ant-abc'\n# comment line\n\nEMPTY_KEY=\n"
         )
         found = _scan_dotenv(env_file)
         assert "OPENAI_API_KEY" in found
@@ -114,6 +109,7 @@ class TestScanDotenv:
 # _scan_env_vars
 # ---------------------------------------------------------------------------
 
+
 class TestScanEnvVars:
     def test_finds_secret_env_vars(self):
         with patch.dict(os.environ, {"TEST_API_KEY": "secret123", "NORMAL_VAR": "value"}, clear=True):
@@ -137,15 +133,11 @@ class TestScanEnvVars:
 # _scan_hermes_config
 # ---------------------------------------------------------------------------
 
+
 class TestScanHermesConfig:
     def test_scan_yaml_config(self, tmp_path):
         config_file = tmp_path / "config.yaml"
-        config_file.write_text(
-            "openai:\n"
-            "  api_key: sk-test-123\n"
-            "logging:\n"
-            "  level: debug\n"
-        )
+        config_file.write_text("openai:\n  api_key: sk-test-123\nlogging:\n  level: debug\n")
         found = _scan_hermes_config(config_file)
         assert len(found) >= 1
         # Should find the api_key under openai
@@ -171,6 +163,7 @@ class TestScanHermesConfig:
 # ---------------------------------------------------------------------------
 # _extract_secrets_from_dict
 # ---------------------------------------------------------------------------
+
 
 class TestExtractSecretsFromDict:
     def test_flat_dict(self):
@@ -199,6 +192,7 @@ class TestExtractSecretsFromDict:
 # ---------------------------------------------------------------------------
 # Secure delete
 # ---------------------------------------------------------------------------
+
 
 class TestSecureDeleteEnvVar:
     def test_delete_existing(self):
@@ -244,6 +238,7 @@ class TestSecureDeleteFromFile:
 # discover_secrets
 # ---------------------------------------------------------------------------
 
+
 class TestDiscoverSecrets:
     def test_priority_env_over_dotenv(self, tmp_path):
         env_file = tmp_path / ".env"
@@ -272,6 +267,7 @@ class TestDiscoverSecrets:
 # ---------------------------------------------------------------------------
 # migrate_secrets
 # ---------------------------------------------------------------------------
+
 
 class TestMigrateSecrets:
     def test_dry_run(self, tmp_path):
@@ -318,9 +314,9 @@ class TestMigrateSecrets:
         vault = MagicMock()
         vault.list_keys.return_value = []
         with patch.dict(os.environ, {"TEST_API_KEY": "from-env"}, clear=True):
-            result = migrate_secrets(vault, secure_delete=True,
-                                     dotenv_path=tmp_path / "nope.env",
-                                     config_path=tmp_path / "nope.yaml")
+            result = migrate_secrets(
+                vault, secure_delete=True, dotenv_path=tmp_path / "nope.env", config_path=tmp_path / "nope.yaml"
+            )
             if result.migrated > 0:
                 assert "TEST_API_KEY" not in os.environ
 

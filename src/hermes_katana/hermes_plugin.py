@@ -107,8 +107,7 @@ def register(context: Any) -> None:
     _katana_schema = {
         "name": "katana_status",
         "description": (
-            "Show HermesKatana security status: active policy, "
-            "middleware chain, scan stats, and taint tracker state."
+            "Show HermesKatana security status: active policy, middleware chain, scan stats, and taint tracker state."
         ),
         "parameters": {
             "type": "object",
@@ -187,6 +186,7 @@ def _open_vault():
     """Open the vault, returning None if unavailable."""
     try:
         from hermes_katana.vault import Vault
+
         return Vault(auto_create=False)
     except Exception:
         logger.debug("Vault not available for plugin", exc_info=True)
@@ -199,6 +199,7 @@ def _open_audit(config: dict[str, Any]):
         return None
     try:
         from hermes_katana.audit import AuditTrail
+
         return AuditTrail()
     except Exception:
         logger.debug("Audit trail not available for plugin", exc_info=True)
@@ -210,11 +211,7 @@ def _collect_vault_values(vault: Any) -> set[str]:
     if vault is None:
         return set()
     try:
-        return {
-            value
-            for key in vault.list_keys()
-            if (value := vault.get(key))
-        }
+        return {value for key in vault.list_keys() if (value := vault.get(key))}
     except Exception:
         return set()
 
@@ -329,6 +326,7 @@ def _on_post_tool_call(
     if _tracker is not None and isinstance(result, str) and result:
         try:
             from hermes_katana.taint.registrar import taint_tool_output
+
             taint_tool_output(result, tool_name)
         except Exception:
             logger.debug("Taint registration failed for %s output", tool_name, exc_info=True)
@@ -351,14 +349,17 @@ def _on_session_start(
     if _audit_trail is not None:
         try:
             from hermes_katana.audit import AuditEntry, AuditEventType
+
             entry = AuditEntry(
                 event_type=AuditEventType.SESSION_START,
-                details=json.dumps({
-                    "session_id": session_id,
-                    "task_id": task_id,
-                    "plugin_version": plugin_version,
-                    "timestamp": time.time(),
-                }),
+                details=json.dumps(
+                    {
+                        "session_id": session_id,
+                        "task_id": task_id,
+                        "plugin_version": plugin_version,
+                        "timestamp": time.time(),
+                    }
+                ),
             )
             _audit_trail.log(entry)
         except Exception:
@@ -384,13 +385,16 @@ def _on_session_end(
     if _audit_trail is not None:
         try:
             from hermes_katana.audit import AuditEntry, AuditEventType
+
             entry = AuditEntry(
                 event_type=AuditEventType.SESSION_END,
-                details=json.dumps({
-                    "session_id": session_id,
-                    "task_id": task_id,
-                    "timestamp": time.time(),
-                }),
+                details=json.dumps(
+                    {
+                        "session_id": session_id,
+                        "task_id": task_id,
+                        "timestamp": time.time(),
+                    }
+                ),
             )
             _audit_trail.log(entry)
         except Exception:

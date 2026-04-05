@@ -104,16 +104,11 @@ class KatanaConfig(BaseModel):
 
     policy_preset: str = Field(
         default="balanced",
-        description=(
-            "Built-in policy set. One of: paranoid, balanced, permissive. "
-            "Ignored when policy_path is set."
-        ),
+        description=("Built-in policy set. One of: paranoid, balanced, permissive. Ignored when policy_path is set."),
     )
     policy_path: Optional[Path] = Field(
         default=None,
-        description=(
-            "Path to a custom policy YAML file. Takes priority over policy_preset."
-        ),
+        description=("Path to a custom policy YAML file. Takes priority over policy_preset."),
     )
     scan_inputs: bool = Field(
         default=True,
@@ -164,10 +159,7 @@ class KatanaConfig(BaseModel):
     )
     domain_allowlist: list[str] = Field(
         default_factory=list,
-        description=(
-            "Domains the proxy should allow without interception. "
-            "Example: ['api.internal.com', 'localhost']"
-        ),
+        description=("Domains the proxy should allow without interception. Example: ['api.internal.com', 'localhost']"),
     )
     log_level: str = Field(
         default="INFO",
@@ -184,10 +176,7 @@ class KatanaConfig(BaseModel):
         """Ensure policy_preset is a known built-in set."""
         v = v.lower().strip()
         if v not in _VALID_PRESETS:
-            raise ValueError(
-                f"Invalid policy_preset '{v}'. "
-                f"Must be one of: {', '.join(sorted(_VALID_PRESETS))}"
-            )
+            raise ValueError(f"Invalid policy_preset '{v}'. Must be one of: {', '.join(sorted(_VALID_PRESETS))}")
         return v
 
     @field_validator("policy_path")
@@ -203,19 +192,15 @@ class KatanaConfig(BaseModel):
             # Reject obvious path traversal patterns
             if ".." in raw.replace("\\", "/").split("/"):
                 raise ValueError(
-                    f"Path traversal detected in policy_path: '{raw}'. "
-                    "Relative '..' components are not allowed."
+                    f"Path traversal detected in policy_path: '{raw}'. Relative '..' components are not allowed."
                 )
             v = Path(v).expanduser().resolve()
             # Ensure it's a file path, not a directory
             if v.exists() and v.is_dir():
-                raise ValueError(
-                    f"policy_path must be a file, not a directory: {v}"
-                )
+                raise ValueError(f"policy_path must be a file, not a directory: {v}")
             if not v.exists():
                 logger.warning(
-                    "Custom policy path does not exist: %s — "
-                    "will fall back to policy_preset",
+                    "Custom policy path does not exist: %s — will fall back to policy_preset",
                     v,
                 )
         return v
@@ -242,14 +227,12 @@ class KatanaConfig(BaseModel):
             # Reject path components
             if "/" in domain:
                 raise ValueError(
-                    f"domain_allowlist entry contains path component: '{domain}'. "
-                    "Use bare domain names only."
+                    f"domain_allowlist entry contains path component: '{domain}'. Use bare domain names only."
                 )
             # Reject wildcard abuse (only leading *. is acceptable)
             if "*" in domain and not domain.startswith("*."):
                 raise ValueError(
-                    f"Invalid wildcard in domain_allowlist: '{domain}'. "
-                    "Only '*.example.com' patterns are allowed."
+                    f"Invalid wildcard in domain_allowlist: '{domain}'. Only '*.example.com' patterns are allowed."
                 )
             validated.append(domain)
         return validated
@@ -260,10 +243,7 @@ class KatanaConfig(BaseModel):
         """Ensure log_level is a valid Python logging level."""
         v = v.upper().strip()
         if v not in _VALID_LOG_LEVELS:
-            raise ValueError(
-                f"Invalid log_level '{v}'. "
-                f"Must be one of: {', '.join(sorted(_VALID_LOG_LEVELS))}"
-            )
+            raise ValueError(f"Invalid log_level '{v}'. Must be one of: {', '.join(sorted(_VALID_LOG_LEVELS))}")
         return v
 
     @field_validator("policy_path", mode="before")
@@ -273,9 +253,7 @@ class KatanaConfig(BaseModel):
         if v is not None:
             raw = str(v)
             if len(raw) > 4096:
-                raise ValueError(
-                    f"Path value too long ({len(raw)} chars, max 4096)"
-                )
+                raise ValueError(f"Path value too long ({len(raw)} chars, max 4096)")
         return v
 
     @field_validator("policy_preset", "log_level", mode="before")
@@ -284,15 +262,10 @@ class KatanaConfig(BaseModel):
         """Reject values with invalid or dangerous characters."""
         if isinstance(v, str):
             if len(v) > 256:
-                raise ValueError(
-                    f"Config value too long ({len(v)} chars, max 256)"
-                )
+                raise ValueError(f"Config value too long ({len(v)} chars, max 256)")
             for ch in v:
-                if ord(ch) < 32 and ch not in ('\n', '\t', '\r'):
-                    raise ValueError(
-                        f"Config value contains invalid control character: "
-                        f"U+{ord(ch):04X}"
-                    )
+                if ord(ch) < 32 and ch not in ("\n", "\t", "\r"):
+                    raise ValueError(f"Config value contains invalid control character: U+{ord(ch):04X}")
         return v
 
     # -- Persistence ----------------------------------------------------------
@@ -377,7 +350,7 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
         if not key.startswith(prefix):
             continue
 
-        field_name = key[len(prefix):].lower()
+        field_name = key[len(prefix) :].lower()
         if field_name not in field_names:
             continue
 
@@ -394,9 +367,7 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
             try:
                 data[field_name] = int(value)
             except ValueError:
-                logger.warning(
-                    "Invalid integer for %s: %s — skipping", key, value
-                )
+                logger.warning("Invalid integer for %s: %s — skipping", key, value)
                 continue
         elif annotation == list[str]:
             data[field_name] = [s.strip() for s in value.split(",") if s.strip()]
@@ -458,9 +429,7 @@ def load_config(path: Optional[Path] = None) -> KatanaConfig:
     try:
         config = KatanaConfig.model_validate(data)
     except Exception as exc:
-        logger.error(
-            "Configuration validation failed: %s — falling back to defaults", exc
-        )
+        logger.error("Configuration validation failed: %s — falling back to defaults", exc)
         config = KatanaConfig()
 
     return config

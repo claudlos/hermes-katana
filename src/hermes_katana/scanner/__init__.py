@@ -170,11 +170,7 @@ class ScanResult:
         if not parts:
             return f"[{self.verdict.value.upper()}] No findings (score: {self.risk_score:.2f})"
 
-        return (
-            f"[{self.verdict.value.upper()}] "
-            f"Found: {', '.join(parts)} "
-            f"(score: {self.risk_score:.2f})"
-        )
+        return f"[{self.verdict.value.upper()}] Found: {', '.join(parts)} (score: {self.risk_score:.2f})"
 
 
 def _compute_verdict(risk_score: float) -> ScanVerdict:
@@ -235,9 +231,15 @@ def scan_input(
         result.normalized_text = normalized
         if unicode_findings:
             max_sev = max(
-                (0.9 if f.severity.value == "critical" else
-                 0.7 if f.severity.value == "high" else
-                 0.4 if f.severity.value == "medium" else 0.2)
+                (
+                    0.9
+                    if f.severity.value == "critical"
+                    else 0.7
+                    if f.severity.value == "high"
+                    else 0.4
+                    if f.severity.value == "medium"
+                    else 0.2
+                )
                 for f in unicode_findings
             )
             risk_scores.append(max_sev)
@@ -258,9 +260,7 @@ def scan_input(
         if result.secret_findings:
             # Secrets are always high risk
             sev_map = {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.3}
-            max_sev = max(
-                sev_map.get(f.severity.value, 0.3) for f in result.secret_findings
-            )
+            max_sev = max(sev_map.get(f.severity.value, 0.3) for f in result.secret_findings)
             risk_scores.append(max_sev)
 
     # Content detection (optional for input)
@@ -318,9 +318,15 @@ def scan_output(
         result.normalized_text = normalized
         if unicode_findings:
             max_sev = max(
-                (0.9 if f.severity.value == "critical" else
-                 0.7 if f.severity.value == "high" else
-                 0.4 if f.severity.value == "medium" else 0.2)
+                (
+                    0.9
+                    if f.severity.value == "critical"
+                    else 0.7
+                    if f.severity.value == "high"
+                    else 0.4
+                    if f.severity.value == "medium"
+                    else 0.2
+                )
                 for f in unicode_findings
             )
             risk_scores.append(max_sev)
@@ -339,9 +345,7 @@ def scan_output(
         result.secret_findings = scan_for_secrets(scan_text, vault_values)
         if result.secret_findings:
             sev_map = {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.3}
-            max_sev = max(
-                sev_map.get(f.severity.value, 0.3) for f in result.secret_findings
-            )
+            max_sev = max(sev_map.get(f.severity.value, 0.3) for f in result.secret_findings)
             risk_scores.append(max_sev)
 
     # Injection (in output = indirect injection detection)
@@ -408,9 +412,7 @@ def scan_command(
         result.secret_findings = scan_for_secrets(cmd, vault_values)
         if result.secret_findings:
             sev_map = {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.3}
-            max_sev = max(
-                sev_map.get(f.severity.value, 0.3) for f in result.secret_findings
-            )
+            max_sev = max(sev_map.get(f.severity.value, 0.3) for f in result.secret_findings)
             risk_scores.append(max_sev)
 
     if risk_scores:
@@ -506,24 +508,19 @@ def scan_with_context(
     # Apply allowlist suppression
     if allowlist is not None:
         result.injection_findings = [
-            f for f in result.injection_findings
-            if not allowlist.is_suppressed(f, tool_name=tool_name)
+            f for f in result.injection_findings if not allowlist.is_suppressed(f, tool_name=tool_name)
         ]
         result.secret_findings = [
-            f for f in result.secret_findings
-            if not allowlist.is_suppressed(f, tool_name=tool_name)
+            f for f in result.secret_findings if not allowlist.is_suppressed(f, tool_name=tool_name)
         ]
         result.command_findings = [
-            f for f in result.command_findings
-            if not allowlist.is_suppressed(f, tool_name=tool_name)
+            f for f in result.command_findings if not allowlist.is_suppressed(f, tool_name=tool_name)
         ]
         result.content_findings = [
-            f for f in result.content_findings
-            if not allowlist.is_suppressed(f, tool_name=tool_name)
+            f for f in result.content_findings if not allowlist.is_suppressed(f, tool_name=tool_name)
         ]
         result.unicode_findings = [
-            f for f in result.unicode_findings
-            if not allowlist.is_suppressed(f, tool_name=tool_name)
+            f for f in result.unicode_findings if not allowlist.is_suppressed(f, tool_name=tool_name)
         ]
 
         # Recalculate verdict after suppression

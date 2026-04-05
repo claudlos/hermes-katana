@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import defaultdict
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 from hermes_katana.proxy.addon import RateTracker, KatanaAddon, _get_client_id, _make_block_response
 from hermes_katana.proxy.config import ProxyConfig
@@ -17,15 +15,16 @@ from hermes_katana.proxy.config import ProxyConfig
 # Mock mitmproxy objects
 # ---------------------------------------------------------------------------
 
+
 class MockHeaders(dict):
     """Minimal mitmproxy-like headers."""
+
     def items(self):
         return super().items()
 
 
 class MockRequest:
-    def __init__(self, host="api.openai.com", url="https://api.openai.com/v1/chat",
-                 headers=None, body=b"", query=None):
+    def __init__(self, host="api.openai.com", url="https://api.openai.com/v1/chat", headers=None, body=b"", query=None):
         self.host = host
         self.url = url
         self.headers = MockHeaders(headers or {})
@@ -55,9 +54,17 @@ class MockClientConn:
 
 
 class MockFlow:
-    def __init__(self, host="example.com", body=b"hello", resp_body=b"world",
-                 headers=None, resp_headers=None, client_ip="192.168.1.1",
-                 query=None, url=None):
+    def __init__(
+        self,
+        host="example.com",
+        body=b"hello",
+        resp_body=b"world",
+        headers=None,
+        resp_headers=None,
+        client_ip="192.168.1.1",
+        query=None,
+        url=None,
+    ):
         self.request = MockRequest(
             host=host,
             url=url or f"https://{host}/path",
@@ -72,6 +79,7 @@ class MockFlow:
 # ---------------------------------------------------------------------------
 # RateTracker tests
 # ---------------------------------------------------------------------------
+
 
 class TestRateTracker:
     def test_allows_within_limit(self):
@@ -174,6 +182,7 @@ class TestRateTracker:
 # KatanaAddon tests
 # ---------------------------------------------------------------------------
 
+
 class TestKatanaAddon:
     def _make_addon(self, **config_overrides):
         cfg = ProxyConfig(**config_overrides)
@@ -205,10 +214,11 @@ class TestKatanaAddon:
     def test_request_allowed_domain(self):
         addon = self._make_addon(allowed_domains=["example.com"])
         flow = MockFlow(host="example.com", body=b"")
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "pass", "risk_score": 0, "is_blocked": False,
-            "finding_count": 0, "summary": ""
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""},
+        ):
             addon.request(flow)
         assert addon._stats.get("requests_blocked_domain", 0) == 0
 
@@ -216,10 +226,11 @@ class TestKatanaAddon:
         addon = self._make_addon(rate_limit_requests=1, rate_limit_window=10.0)
         flow1 = MockFlow(host="example.com", body=b"")
         flow2 = MockFlow(host="example.com", body=b"")
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "pass", "risk_score": 0, "is_blocked": False,
-            "finding_count": 0, "summary": ""
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""},
+        ):
             addon.request(flow1)
             addon.request(flow2)
         assert addon._stats.get("requests_rate_limited", 0) >= 1
@@ -231,40 +242,56 @@ class TestKatanaAddon:
         cfg = ProxyConfig(inject_credentials=True)
         addon = KatanaAddon(config=cfg, vault=vault, audit=None)
         flow = MockFlow(host="api.openai.com", body=b"")
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "pass", "risk_score": 0, "is_blocked": False,
-            "finding_count": 0, "summary": ""
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""},
+        ):
             addon.request(flow)
         assert addon._stats.get("credentials_injected", 0) == 1
 
     def test_request_body_blocked(self):
         addon = self._make_addon()
         flow = MockFlow(host="example.com", body=b"malicious content")
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "block", "risk_score": 100, "is_blocked": True,
-            "finding_count": 1, "summary": "injection detected"
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={
+                "verdict": "block",
+                "risk_score": 100,
+                "is_blocked": True,
+                "finding_count": 1,
+                "summary": "injection detected",
+            },
+        ):
             addon.request(flow)
         assert addon._stats.get("requests_blocked_scan", 0) >= 1
 
     def test_request_body_warned(self):
         addon = self._make_addon()
         flow = MockFlow(host="example.com", body=b"suspicious")
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "warn", "risk_score": 30, "is_blocked": False,
-            "finding_count": 1, "summary": "suspicious pattern"
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={
+                "verdict": "warn",
+                "risk_score": 30,
+                "is_blocked": False,
+                "finding_count": 1,
+                "summary": "suspicious pattern",
+            },
+        ):
             addon.request(flow)
         assert addon._stats.get("requests_warned", 0) >= 1
 
     def test_response_basic(self):
         addon = self._make_addon()
         flow = MockFlow(host="example.com", resp_body=b"safe response")
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "pass", "risk_score": 0, "is_blocked": False,
-            "finding_count": 0, "summary": ""
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""},
+        ):
             addon.response(flow)
         assert addon._stats.get("responses_total", 0) == 1
 
@@ -282,30 +309,39 @@ class TestKatanaAddon:
     def test_response_body_blocked(self):
         addon = self._make_addon()
         flow = MockFlow(host="example.com", resp_body=b"bad response")
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "block", "risk_score": 100, "is_blocked": True,
-            "finding_count": 1, "summary": "attack detected"
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={
+                "verdict": "block",
+                "risk_score": 100,
+                "is_blocked": True,
+                "finding_count": 1,
+                "summary": "attack detected",
+            },
+        ):
             addon.response(flow)
         assert addon._stats.get("responses_blocked_scan", 0) >= 1
 
     def test_scanned_header_injected(self):
         addon = self._make_addon(add_scanned_header=True)
         flow = MockFlow(host="example.com", resp_body=b"ok")
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "pass", "risk_score": 0, "is_blocked": False,
-            "finding_count": 0, "summary": ""
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""},
+        ):
             addon.response(flow)
         assert flow.response.headers.get("X-Katana-Scanned") in ("true", "passthrough")
 
     def test_scanned_header_not_added_by_default(self):
         addon = self._make_addon(add_scanned_header=False)
         flow = MockFlow(host="example.com", resp_body=b"ok")
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "pass", "risk_score": 0, "is_blocked": False,
-            "finding_count": 0, "summary": ""
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""},
+        ):
             addon.response(flow)
         assert "X-Katana-Scanned" not in flow.response.headers
 
@@ -313,15 +349,15 @@ class TestKatanaAddon:
         addon = self._make_addon(max_body_scan_size=10)
         flow = MockFlow(host="example.com", body=b"A" * 100)
         scanned_texts = []
-        original_scan = addon._scan_text
+
         def capture_scan(text, direction="request"):
             scanned_texts.append(text)
-            return {"verdict": "pass", "risk_score": 0, "is_blocked": False,
-                    "finding_count": 0, "summary": ""}
-        with patch.object(addon, '_scan_text', side_effect=capture_scan):
+            return {"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""}
+
+        with patch.object(addon, "_scan_text", side_effect=capture_scan):
             addon.request(flow)
         # The body text scanned should be truncated to max_body_scan_size
-        body_texts = [t for t in scanned_texts if len(t) <= 10]
+        [t for t in scanned_texts if len(t) <= 10]
         assert addon._stats.get("requests_oversized", 0) == 1
 
     def test_get_stats(self):
@@ -337,10 +373,11 @@ class TestKatanaAddon:
         flow = MagicMock()
         flow.request.host = "example.com"
         flow.websocket.messages = [msg]
-        with patch.object(addon, '_scan_text', return_value={
-            "verdict": "pass", "risk_score": 0, "is_blocked": False,
-            "finding_count": 0, "summary": ""
-        }):
+        with patch.object(
+            addon,
+            "_scan_text",
+            return_value={"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""},
+        ):
             addon.websocket_message(flow)
         assert addon._stats.get("ws_messages_total", 0) == 1
 
@@ -359,6 +396,7 @@ class TestKatanaAddon:
 # ---------------------------------------------------------------------------
 # Helper function tests
 # ---------------------------------------------------------------------------
+
 
 class TestHelpers:
     def test_get_client_id(self):

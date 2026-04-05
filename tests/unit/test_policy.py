@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from hermes_katana.policy.engine import PolicyEngine, EvaluationResult
+from hermes_katana.policy.engine import PolicyEngine
 from hermes_katana.policy.models import PolicyResult
 
 
@@ -170,21 +170,25 @@ class TestFlowAnalyzerDefaults:
 
     def test_default_decision_is_ask_user(self):
         from hermes_katana.taint.flow import FlowAnalyzer, FlowDecision
+
         analyzer = FlowAnalyzer(rules=[])
         assert analyzer._default == FlowDecision.ASK_USER
 
     def test_default_decision_with_default_rules(self):
         from hermes_katana.taint.flow import FlowAnalyzer, FlowDecision
+
         analyzer = FlowAnalyzer()
         assert analyzer._default == FlowDecision.ASK_USER
 
     def test_strict_mode_is_ask_user(self):
         from hermes_katana.taint.flow import FlowAnalyzer, FlowDecision
+
         analyzer = FlowAnalyzer(strict_mode=True)
         assert analyzer._default == FlowDecision.ASK_USER
 
     def test_explicit_allow_override_works(self):
         from hermes_katana.taint.flow import FlowAnalyzer, FlowDecision
+
         analyzer = FlowAnalyzer(default_decision=FlowDecision.ALLOW)
         assert analyzer._default == FlowDecision.ALLOW
 

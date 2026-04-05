@@ -113,9 +113,7 @@ BIDI_CHARS: dict[int, str] = {
     0x061C: "ARABIC LETTER MARK (ALM)",
 }
 
-BIDI_PATTERN = re.compile(
-    "[" + "".join(chr(cp) for cp in BIDI_CHARS) + "]"
-)
+BIDI_PATTERN = re.compile("[" + "".join(chr(cp) for cp in BIDI_CHARS) + "]")
 
 # ---------------------------------------------------------------------------
 # Zero-width characters
@@ -135,9 +133,7 @@ ZERO_WIDTH_CHARS: dict[int, str] = {
     0x00AD: "SOFT HYPHEN",
 }
 
-ZERO_WIDTH_PATTERN = re.compile(
-    "[" + "".join(chr(cp) for cp in ZERO_WIDTH_CHARS) + "]"
-)
+ZERO_WIDTH_PATTERN = re.compile("[" + "".join(chr(cp) for cp in ZERO_WIDTH_CHARS) + "]")
 
 # ---------------------------------------------------------------------------
 # Unicode Tags block (U+E0000–U+E007F)
@@ -149,22 +145,25 @@ ZERO_WIDTH_PATTERN = re.compile(
 UNICODE_TAGS_START = 0xE0000
 UNICODE_TAGS_END = 0xE007F
 
+
 def _has_unicode_tags(text: str) -> list[int]:
     """Return positions of Unicode Tags block characters in text."""
     return [i for i, c in enumerate(text) if UNICODE_TAGS_START <= ord(c) <= UNICODE_TAGS_END]
 
+
 def _decode_unicode_tags(text: str) -> str:
     """Decode Unicode Tags block characters to their ASCII equivalents."""
     return "".join(
-        chr(ord(c) - UNICODE_TAGS_START) if UNICODE_TAGS_START <= ord(c) <= UNICODE_TAGS_END else c
-        for c in text
+        chr(ord(c) - UNICODE_TAGS_START) if UNICODE_TAGS_START <= ord(c) <= UNICODE_TAGS_END else c for c in text
     )
+
 
 # ---------------------------------------------------------------------------
 # ZWJ binary-encoding detection
 # Sequences of 8+ ZWSP/ZWNJ can encode arbitrary binary data (1 byte = 8 chars)
 # ---------------------------------------------------------------------------
 _ZW_BINARY_CHARS = {"\u200b", "\u200c"}  # ZWSP=0, ZWNJ=1
+
 
 def _max_zw_binary_run(text: str) -> int:
     """Return the length of the longest consecutive ZW binary-encoding run."""
@@ -178,6 +177,7 @@ def _max_zw_binary_run(text: str) -> int:
             cur = 0
     return max_run
 
+
 # ---------------------------------------------------------------------------
 # Comprehensive homoglyph / confusable character mapping
 # Maps visually similar characters from non-Latin scripts to their Latin
@@ -189,27 +189,27 @@ CONFUSABLE_MAP: dict[str, str] = {
     "\u0412": "B",  # В -> B
     "\u0421": "C",  # С -> C
     "\u0415": "E",  # Е -> E
-    "\u041D": "H",  # Н -> H
-    "\u041A": "K",  # К -> K
-    "\u041C": "M",  # М -> M
-    "\u041E": "O",  # О -> O
+    "\u041d": "H",  # Н -> H
+    "\u041a": "K",  # К -> K
+    "\u041c": "M",  # М -> M
+    "\u041e": "O",  # О -> O
     "\u0420": "P",  # Р -> P
     "\u0422": "T",  # Т -> T
     "\u0425": "X",  # Х -> X
     "\u0430": "a",  # а -> a
     "\u0435": "e",  # е -> e
-    "\u043E": "o",  # о -> o
+    "\u043e": "o",  # о -> o
     "\u0440": "p",  # р -> p
     "\u0441": "c",  # с -> c
     "\u0443": "y",  # у -> y
     "\u0445": "x",  # х -> x
-    "\u04BB": "h",  # һ -> h
+    "\u04bb": "h",  # һ -> h
     "\u0456": "i",  # і -> i
     "\u0458": "j",  # ј -> j
     "\u0455": "s",  # ѕ -> s
-    "\u04CF": "l",  # ӏ -> l
-    "\u051B": "q",  # ԛ -> q
-    "\u051D": "w",  # ԝ -> w
+    "\u04cf": "l",  # ӏ -> l
+    "\u051b": "q",  # ԛ -> q
+    "\u051d": "w",  # ԝ -> w
     # Greek -> Latin
     "\u0391": "A",  # Α -> A
     "\u0392": "B",  # Β -> B
@@ -217,55 +217,55 @@ CONFUSABLE_MAP: dict[str, str] = {
     "\u0396": "Z",  # Ζ -> Z
     "\u0397": "H",  # Η -> H
     "\u0399": "I",  # Ι -> I
-    "\u039A": "K",  # Κ -> K
-    "\u039C": "M",  # Μ -> M
-    "\u039D": "N",  # Ν -> N
-    "\u039F": "O",  # Ο -> O
-    "\u03A1": "P",  # Ρ -> P
-    "\u03A4": "T",  # Τ -> T
-    "\u03A5": "Y",  # Υ -> Y
-    "\u03A7": "X",  # Χ -> X
-    "\u03BF": "o",  # ο -> o
-    "\u03B1": "a",  # α -> a  (less similar but used in attacks)
+    "\u039a": "K",  # Κ -> K
+    "\u039c": "M",  # Μ -> M
+    "\u039d": "N",  # Ν -> N
+    "\u039f": "O",  # Ο -> O
+    "\u03a1": "P",  # Ρ -> P
+    "\u03a4": "T",  # Τ -> T
+    "\u03a5": "Y",  # Υ -> Y
+    "\u03a7": "X",  # Χ -> X
+    "\u03bf": "o",  # ο -> o
+    "\u03b1": "a",  # α -> a  (less similar but used in attacks)
     # Fullwidth Latin (used to bypass ASCII filters)
-    "\uFF21": "A",
-    "\uFF22": "B",
-    "\uFF23": "C",
-    "\uFF24": "D",
-    "\uFF25": "E",
-    "\uFF26": "F",
-    "\uFF27": "G",
-    "\uFF28": "H",
-    "\uFF29": "I",
-    "\uFF2A": "J",
-    "\uFF2B": "K",
-    "\uFF2C": "L",
-    "\uFF2D": "M",
-    "\uFF2E": "N",
-    "\uFF2F": "O",
-    "\uFF30": "P",
-    "\uFF31": "Q",
-    "\uFF32": "R",
-    "\uFF33": "S",
-    "\uFF34": "T",
-    "\uFF35": "U",
-    "\uFF36": "V",
-    "\uFF37": "W",
-    "\uFF38": "X",
-    "\uFF39": "Y",
-    "\uFF3A": "Z",
+    "\uff21": "A",
+    "\uff22": "B",
+    "\uff23": "C",
+    "\uff24": "D",
+    "\uff25": "E",
+    "\uff26": "F",
+    "\uff27": "G",
+    "\uff28": "H",
+    "\uff29": "I",
+    "\uff2a": "J",
+    "\uff2b": "K",
+    "\uff2c": "L",
+    "\uff2d": "M",
+    "\uff2e": "N",
+    "\uff2f": "O",
+    "\uff30": "P",
+    "\uff31": "Q",
+    "\uff32": "R",
+    "\uff33": "S",
+    "\uff34": "T",
+    "\uff35": "U",
+    "\uff36": "V",
+    "\uff37": "W",
+    "\uff38": "X",
+    "\uff39": "Y",
+    "\uff3a": "Z",
     # Mathematical/special lookalikes
     "\u2219": ".",  # ∙ -> .
     "\u2024": ".",  # ․ -> .
     "\u2215": "/",  # ∕ -> /
     "\u2044": "/",  # ⁄ -> /
     "\u2236": ":",  # ∶ -> :
-    "\uFE68": "\\",  # ﹨ -> \
-    "\uFF0F": "/",  # ／ -> /
-    "\uFF3C": "\\",  # ＼ -> \
+    "\ufe68": "\\",  # ﹨ -> \
+    "\uff0f": "/",  # ／ -> /
+    "\uff3c": "\\",  # ＼ -> \
     # Common number confusables
-    "\u04E0": "3",  # Ӡ (looks like 3 in some fonts)
-    "\u01B7": "3",  # Ʒ -> 3
+    "\u04e0": "3",  # Ӡ (looks like 3 in some fonts)
+    "\u01b7": "3",  # Ʒ -> 3
     "\u0417": "3",  # З -> 3
 }
 
@@ -286,25 +286,27 @@ SCRIPT_GROUPS: dict[str, set[str]] = {
 
 # Characters that are common across scripts and should be ignored
 # in mixed-script analysis (digits, punctuation, symbols)
-SCRIPT_NEUTRAL_CATEGORIES = frozenset({
-    "Nd",  # Decimal number
-    "Pc",  # Connector punctuation
-    "Pd",  # Dash punctuation
-    "Pe",  # Close punctuation
-    "Pf",  # Final punctuation
-    "Pi",  # Initial punctuation
-    "Po",  # Other punctuation
-    "Ps",  # Open punctuation
-    "Sc",  # Currency symbol
-    "Sk",  # Modifier symbol
-    "Sm",  # Math symbol
-    "So",  # Other symbol
-    "Zs",  # Space separator
-    "Zl",  # Line separator
-    "Zp",  # Paragraph separator
-    "Cc",  # Control
-    "Cf",  # Format
-})
+SCRIPT_NEUTRAL_CATEGORIES = frozenset(
+    {
+        "Nd",  # Decimal number
+        "Pc",  # Connector punctuation
+        "Pd",  # Dash punctuation
+        "Pe",  # Close punctuation
+        "Pf",  # Final punctuation
+        "Pi",  # Initial punctuation
+        "Po",  # Other punctuation
+        "Ps",  # Open punctuation
+        "Sc",  # Currency symbol
+        "Sk",  # Modifier symbol
+        "Sm",  # Math symbol
+        "So",  # Other symbol
+        "Zs",  # Space separator
+        "Zl",  # Line separator
+        "Zp",  # Paragraph separator
+        "Cc",  # Control
+        "Cf",  # Format
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Control characters that should not appear in normal text
@@ -351,19 +353,21 @@ def _detect_bidi(text: str) -> list[UnicodeFinding]:
     for match in BIDI_PATTERN.finditer(text):
         cp = ord(match.group())
         char_name = BIDI_CHARS.get(cp, f"U+{cp:04X}")
-        findings.append(UnicodeFinding(
-            category=UnicodeCategory.BIDI_OVERRIDE,
-            severity=UnicodeSeverity.CRITICAL,
-            description=(
-                f"Bidirectional override character detected: {char_name}. "
-                "This can reorder displayed text to hide malicious content "
-                "(Trojan Source attack, CVE-2021-42574)."
-            ),
-            position=(match.start(), match.end()),
-            matched_text=repr(match.group()),
-            char_names=[char_name],
-            recommendation="Strip bidirectional override characters from input",
-        ))
+        findings.append(
+            UnicodeFinding(
+                category=UnicodeCategory.BIDI_OVERRIDE,
+                severity=UnicodeSeverity.CRITICAL,
+                description=(
+                    f"Bidirectional override character detected: {char_name}. "
+                    "This can reorder displayed text to hide malicious content "
+                    "(Trojan Source attack, CVE-2021-42574)."
+                ),
+                position=(match.start(), match.end()),
+                matched_text=repr(match.group()),
+                char_names=[char_name],
+                recommendation="Strip bidirectional override characters from input",
+            )
+        )
     return findings
 
 
@@ -393,25 +397,23 @@ def _detect_zero_width(text: str) -> list[UnicodeFinding]:
 
     for start, end, names in runs:
         count = len(names)
-        severity = (
-            UnicodeSeverity.HIGH if count > 3
-            else UnicodeSeverity.MEDIUM if count > 1
-            else UnicodeSeverity.LOW
+        severity = UnicodeSeverity.HIGH if count > 3 else UnicodeSeverity.MEDIUM if count > 1 else UnicodeSeverity.LOW
+        findings.append(
+            UnicodeFinding(
+                category=UnicodeCategory.ZERO_WIDTH,
+                severity=severity,
+                description=(
+                    f"{'Cluster of ' + str(count) + ' z' if count > 1 else 'Z'}"
+                    f"ero-width character{'s' if count > 1 else ''} detected. "
+                    "These invisible characters can smuggle hidden content, "
+                    "bypass keyword filters, or watermark text."
+                ),
+                position=(start, end),
+                matched_text=repr(text[start:end]),
+                char_names=names,
+                recommendation="Strip zero-width characters from input",
+            )
         )
-        findings.append(UnicodeFinding(
-            category=UnicodeCategory.ZERO_WIDTH,
-            severity=severity,
-            description=(
-                f"{'Cluster of ' + str(count) + ' z' if count > 1 else 'Z'}"
-                f"ero-width character{'s' if count > 1 else ''} detected. "
-                "These invisible characters can smuggle hidden content, "
-                "bypass keyword filters, or watermark text."
-            ),
-            position=(start, end),
-            matched_text=repr(text[start:end]),
-            char_names=names,
-            recommendation="Strip zero-width characters from input",
-        ))
     return findings
 
 
@@ -432,23 +434,22 @@ def _detect_homoglyphs(text: str) -> list[UnicodeFinding]:
                 char_name = unicodedata.name(ch, f"U+{ord(ch):04X}")
             except ValueError:
                 char_name = f"U+{ord(ch):04X}"
-            findings.append(UnicodeFinding(
-                category=UnicodeCategory.HOMOGLYPH,
-                severity=UnicodeSeverity.HIGH,
-                description=(
-                    f"Confusable character '{ch}' ({char_name}) "
-                    f"looks like Latin '{latin_equiv}'. "
-                    "This can be used for visual spoofing attacks on URLs, "
-                    "identifiers, or commands."
-                ),
-                position=(i, i + 1),
-                matched_text=ch,
-                char_names=[char_name],
-                recommendation=(
-                    f"Replace with Latin equivalent '{latin_equiv}' "
-                    "or reject input"
-                ),
-            ))
+            findings.append(
+                UnicodeFinding(
+                    category=UnicodeCategory.HOMOGLYPH,
+                    severity=UnicodeSeverity.HIGH,
+                    description=(
+                        f"Confusable character '{ch}' ({char_name}) "
+                        f"looks like Latin '{latin_equiv}'. "
+                        "This can be used for visual spoofing attacks on URLs, "
+                        "identifiers, or commands."
+                    ),
+                    position=(i, i + 1),
+                    matched_text=ch,
+                    char_names=[char_name],
+                    recommendation=(f"Replace with Latin equivalent '{latin_equiv}' or reject input"),
+                )
+            )
     return findings
 
 
@@ -476,20 +477,22 @@ def _detect_invisible_chars(text: str) -> list[UnicodeFinding]:
                     char_name = unicodedata.name(ch, f"U+{cp:04X}")
                 except ValueError:
                     char_name = f"U+{cp:04X}"
-                findings.append(UnicodeFinding(
-                    category=UnicodeCategory.CONTROL_CHAR,
-                    severity=UnicodeSeverity.MEDIUM,
-                    description=(
-                        f"Suspicious control character U+{cp:04X} "
-                        f"({range_name}) at position {i}. "
-                        "Control characters in text input may indicate "
-                        "terminal injection or filter evasion."
-                    ),
-                    position=(i, i + 1),
-                    matched_text=repr(ch),
-                    char_names=[char_name],
-                    recommendation="Strip control characters from input",
-                ))
+                findings.append(
+                    UnicodeFinding(
+                        category=UnicodeCategory.CONTROL_CHAR,
+                        severity=UnicodeSeverity.MEDIUM,
+                        description=(
+                            f"Suspicious control character U+{cp:04X} "
+                            f"({range_name}) at position {i}. "
+                            "Control characters in text input may indicate "
+                            "terminal injection or filter evasion."
+                        ),
+                        position=(i, i + 1),
+                        matched_text=repr(ch),
+                        char_names=[char_name],
+                        recommendation="Strip control characters from input",
+                    )
+                )
                 break
     return findings
 
@@ -530,22 +533,24 @@ def _detect_mixed_script(text: str) -> list[UnicodeFinding]:
         script_names = set(scripts_found.keys())
         for s1, s2 in suspicious_combos:
             if s1 in script_names and s2 in script_names:
-                findings.append(UnicodeFinding(
-                    category=UnicodeCategory.MIXED_SCRIPT,
-                    severity=UnicodeSeverity.HIGH,
-                    description=(
-                        f"Mixed-script word detected: '{word}' contains both "
-                        f"{s1} and {s2} characters. This is a strong indicator "
-                        "of a homoglyph/visual spoofing attack."
-                    ),
-                    position=(match.start(), match.end()),
-                    matched_text=word,
-                    char_names=[
-                        f"{s1} chars at indices {scripts_found[s1]}",
-                        f"{s2} chars at indices {scripts_found[s2]}",
-                    ],
-                    recommendation="Reject mixed-script words or normalize to single script",
-                ))
+                findings.append(
+                    UnicodeFinding(
+                        category=UnicodeCategory.MIXED_SCRIPT,
+                        severity=UnicodeSeverity.HIGH,
+                        description=(
+                            f"Mixed-script word detected: '{word}' contains both "
+                            f"{s1} and {s2} characters. This is a strong indicator "
+                            "of a homoglyph/visual spoofing attack."
+                        ),
+                        position=(match.start(), match.end()),
+                        matched_text=word,
+                        char_names=[
+                            f"{s1} chars at indices {scripts_found[s1]}",
+                            f"{s2} chars at indices {scripts_found[s2]}",
+                        ],
+                        recommendation="Reject mixed-script words or normalize to single script",
+                    )
+                )
     return findings
 
 
@@ -567,23 +572,25 @@ def _detect_unicode_tags(text: str) -> list[UnicodeFinding]:
     decoded = _decode_unicode_tags("".join(text[p] for p in positions[:64]))
     decoded_preview = repr(decoded[:40]) if decoded.strip() else "(non-printable)"
 
-    return [UnicodeFinding(
-        category=UnicodeCategory.INVISIBLE_CHAR,
-        severity=UnicodeSeverity.CRITICAL,
-        description=(
-            f"Unicode Tags block characters detected at {len(positions)} position(s). "
-            f"These deprecated characters (U+E0000–U+E007F) are invisible in text "
-            f"renderers but readable by LLMs, allowing hidden instruction embedding. "
-            f"Decoded content preview: {decoded_preview}"
-        ),
-        position=(positions[0], positions[-1] + 1),
-        matched_text=repr("".join(text[p] for p in positions[:10])),
-        char_names=[f"UNICODE TAG (U+{ord(text[p]):05X})" for p in positions[:5]],
-        recommendation=(
-            "Reject or strip all Unicode Tags block characters (U+E0000–U+E007F). "
-            "These have no legitimate use in modern text."
-        ),
-    )]
+    return [
+        UnicodeFinding(
+            category=UnicodeCategory.INVISIBLE_CHAR,
+            severity=UnicodeSeverity.CRITICAL,
+            description=(
+                f"Unicode Tags block characters detected at {len(positions)} position(s). "
+                f"These deprecated characters (U+E0000–U+E007F) are invisible in text "
+                f"renderers but readable by LLMs, allowing hidden instruction embedding. "
+                f"Decoded content preview: {decoded_preview}"
+            ),
+            position=(positions[0], positions[-1] + 1),
+            matched_text=repr("".join(text[p] for p in positions[:10])),
+            char_names=[f"UNICODE TAG (U+{ord(text[p]):05X})" for p in positions[:5]],
+            recommendation=(
+                "Reject or strip all Unicode Tags block characters (U+E0000–U+E007F). "
+                "These have no legitimate use in modern text."
+            ),
+        )
+    ]
 
 
 def _detect_zw_binary_encoding(text: str) -> list[UnicodeFinding]:
@@ -598,19 +605,21 @@ def _detect_zw_binary_encoding(text: str) -> list[UnicodeFinding]:
         return []
 
     full_bytes = max_run // 8
-    return [UnicodeFinding(
-        category=UnicodeCategory.ZERO_WIDTH,
-        severity=UnicodeSeverity.HIGH,
-        description=(
-            f"Potential ZWJ binary-encoding detected: {max_run} consecutive "
-            f"ZWSP/ZWNJ characters (≈ {full_bytes} encoded byte(s)). "
-            f"This pattern can hide arbitrary binary payloads in plain text."
-        ),
-        position=(0, len(text)),
-        matched_text=f"<{max_run} ZW binary chars>",
-        char_names=["ZERO WIDTH SPACE (ZWSP)", "ZERO WIDTH NON-JOINER (ZWNJ)"],
-        recommendation="Strip all zero-width characters; flag content for manual review.",
-    )]
+    return [
+        UnicodeFinding(
+            category=UnicodeCategory.ZERO_WIDTH,
+            severity=UnicodeSeverity.HIGH,
+            description=(
+                f"Potential ZWJ binary-encoding detected: {max_run} consecutive "
+                f"ZWSP/ZWNJ characters (≈ {full_bytes} encoded byte(s)). "
+                f"This pattern can hide arbitrary binary payloads in plain text."
+            ),
+            position=(0, len(text)),
+            matched_text=f"<{max_run} ZW binary chars>",
+            char_names=["ZERO WIDTH SPACE (ZWSP)", "ZERO WIDTH NON-JOINER (ZWNJ)"],
+            recommendation="Strip all zero-width characters; flag content for manual review.",
+        )
+    ]
 
 
 def normalize_text(text: str) -> str:
@@ -703,7 +712,7 @@ def normalize_and_scan(text: str) -> tuple[str, list[UnicodeFinding]]:
     findings: list[UnicodeFinding] = []
 
     # Run all detectors
-    findings.extend(_detect_unicode_tags(text))    # CRITICAL — check first
+    findings.extend(_detect_unicode_tags(text))  # CRITICAL — check first
     findings.extend(_detect_zw_binary_encoding(text))
     findings.extend(_detect_bidi(text))
     findings.extend(_detect_zero_width(text))

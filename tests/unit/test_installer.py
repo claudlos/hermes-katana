@@ -47,9 +47,7 @@ class TestInstallerLifecycle:
         assert "tool_dispatch_hook" in planned
         assert "dispatcher_bootstrap" in planned
         assert not (checkout / ".katana").exists()
-        assert "[KATANA-PATCH]" not in (
-            checkout / "hermes" / "tools" / "dispatch.py"
-        ).read_text(encoding="utf-8")
+        assert "[KATANA-PATCH]" not in (checkout / "hermes" / "tools" / "dispatch.py").read_text(encoding="utf-8")
 
     def test_install_backup_writes_manifest(self, monkeypatch, tmp_dir):
         checkout = fixture_checkout(HERMES_V010_EXTENDED_SNAPSHOT, tmp_dir)

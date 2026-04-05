@@ -100,29 +100,57 @@ class ContentFinding:
 # Characters that look like ASCII but aren't (for URL spoofing)
 _URL_CONFUSABLES: dict[str, str] = {
     # Cyrillic
-    "\u0430": "a", "\u0435": "e", "\u043E": "o", "\u0440": "p",
-    "\u0441": "c", "\u0443": "y", "\u0445": "x", "\u0456": "i",
-    "\u0458": "j", "\u0455": "s", "\u04BB": "h", "\u04CF": "l",
-    "\u051B": "q", "\u051D": "w",
-    "\u0410": "A", "\u0412": "B", "\u0421": "C", "\u0415": "E",
-    "\u041D": "H", "\u041A": "K", "\u041C": "M", "\u041E": "O",
-    "\u0420": "P", "\u0422": "T", "\u0425": "X",
+    "\u0430": "a",
+    "\u0435": "e",
+    "\u043e": "o",
+    "\u0440": "p",
+    "\u0441": "c",
+    "\u0443": "y",
+    "\u0445": "x",
+    "\u0456": "i",
+    "\u0458": "j",
+    "\u0455": "s",
+    "\u04bb": "h",
+    "\u04cf": "l",
+    "\u051b": "q",
+    "\u051d": "w",
+    "\u0410": "A",
+    "\u0412": "B",
+    "\u0421": "C",
+    "\u0415": "E",
+    "\u041d": "H",
+    "\u041a": "K",
+    "\u041c": "M",
+    "\u041e": "O",
+    "\u0420": "P",
+    "\u0422": "T",
+    "\u0425": "X",
     # Greek
-    "\u03BF": "o", "\u03B1": "a",
-    "\u0391": "A", "\u0392": "B", "\u0395": "E", "\u0397": "H",
-    "\u0399": "I", "\u039A": "K", "\u039C": "M", "\u039D": "N",
-    "\u039F": "O", "\u03A1": "P", "\u03A4": "T", "\u03A5": "Y",
-    "\u03A7": "X",
+    "\u03bf": "o",
+    "\u03b1": "a",
+    "\u0391": "A",
+    "\u0392": "B",
+    "\u0395": "E",
+    "\u0397": "H",
+    "\u0399": "I",
+    "\u039a": "K",
+    "\u039c": "M",
+    "\u039d": "N",
+    "\u039f": "O",
+    "\u03a1": "P",
+    "\u03a4": "T",
+    "\u03a5": "Y",
+    "\u03a7": "X",
     # Lookalike punctuation
     "\u2024": ".",  # ONE DOT LEADER
     "\u2219": ".",  # BULLET OPERATOR
-    "\uFF0E": ".",  # FULLWIDTH FULL STOP
+    "\uff0e": ".",  # FULLWIDTH FULL STOP
     "\u2215": "/",  # DIVISION SLASH
     "\u2044": "/",  # FRACTION SLASH
-    "\uFF0F": "/",  # FULLWIDTH SOLIDUS
+    "\uff0f": "/",  # FULLWIDTH SOLIDUS
     "\u2236": ":",  # RATIO
-    "\uFF1A": ":",  # FULLWIDTH COLON
-    "\uFF0D": "-",  # FULLWIDTH HYPHEN
+    "\uff1a": ":",  # FULLWIDTH COLON
+    "\uff0d": "-",  # FULLWIDTH HYPHEN
     "\u2010": "-",  # HYPHEN
     "\u2011": "-",  # NON-BREAKING HYPHEN
     "\u2212": "-",  # MINUS SIGN
@@ -161,21 +189,23 @@ def _check_homograph_urls(text: str) -> list[ContentFinding]:
                 real_chars[i] = replacement
             real_url = "".join(real_chars)
 
-            findings.append(ContentFinding(
-                pattern_name="homograph_url",
-                category=ContentCategory.HOMOGRAPH_URL,
-                severity=ContentSeverity.CRITICAL,
-                matched_text=url,
-                position=(match.start(), match.end()),
-                description=(
-                    f"URL contains {len(confusables_found)} confusable character(s) "
-                    f"that make it look like '{real_url}'. "
-                    f"Confusable chars at positions: "
-                    f"{', '.join(f'{pos}: {repr(ch)}→{repl}' for pos, ch, repl in confusables_found)}"
-                ),
-                recommendation="Replace confusable characters with ASCII equivalents or reject URL",
-                confidence=0.95,
-            ))
+            findings.append(
+                ContentFinding(
+                    pattern_name="homograph_url",
+                    category=ContentCategory.HOMOGRAPH_URL,
+                    severity=ContentSeverity.CRITICAL,
+                    matched_text=url,
+                    position=(match.start(), match.end()),
+                    description=(
+                        f"URL contains {len(confusables_found)} confusable character(s) "
+                        f"that make it look like '{real_url}'. "
+                        f"Confusable chars at positions: "
+                        f"{', '.join(f'{pos}: {repr(ch)}→{repl}' for pos, ch, repl in confusables_found)}"
+                    ),
+                    recommendation="Replace confusable characters with ASCII equivalents or reject URL",
+                    confidence=0.95,
+                )
+            )
 
     return findings
 
@@ -195,22 +225,19 @@ _ANSI_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
     (
         "ansi_escape_osc",
         re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"),
-        "ANSI OSC escape sequence - can change terminal title, "
-        "set clipboard content, or open URLs.",
+        "ANSI OSC escape sequence - can change terminal title, set clipboard content, or open URLs.",
         ContentSeverity.CRITICAL,
     ),
     (
         "ansi_escape_dcs",
         re.compile(r"\x1bP[^\x1b]*\x1b\\"),
-        "ANSI DCS escape sequence - Device Control String, can send "
-        "commands to the terminal emulator.",
+        "ANSI DCS escape sequence - Device Control String, can send commands to the terminal emulator.",
         ContentSeverity.CRITICAL,
     ),
     (
         "raw_escape_byte",
         re.compile(r"\x1b[^[\]P]"),
-        "Raw escape byte followed by unexpected character - "
-        "potential terminal injection.",
+        "Raw escape byte followed by unexpected character - potential terminal injection.",
         ContentSeverity.MEDIUM,
     ),
     (
@@ -223,8 +250,7 @@ _ANSI_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
     (
         "terminal_hyperlink",
         re.compile(r"\x1b\]8;;[^\x07\x1b]*(?:\x07|\x1b\\)"),
-        "Terminal hyperlink escape - can make text clickable to "
-        "arbitrary URLs. May be used for phishing.",
+        "Terminal hyperlink escape - can make text clickable to arbitrary URLs. May be used for phishing.",
         ContentSeverity.HIGH,
     ),
 ]
@@ -243,15 +269,17 @@ def _check_terminal_escapes(text: str) -> list[ContentFinding]:
 
     for name, pattern, description, severity in _ANSI_PATTERNS:
         for match in pattern.finditer(text):
-            findings.append(ContentFinding(
-                pattern_name=name,
-                category=ContentCategory.TERMINAL_ESCAPE,
-                severity=severity,
-                matched_text=repr(match.group()),
-                position=(match.start(), match.end()),
-                description=description,
-                recommendation="Strip all ANSI escape sequences from output",
-            ))
+            findings.append(
+                ContentFinding(
+                    pattern_name=name,
+                    category=ContentCategory.TERMINAL_ESCAPE,
+                    severity=severity,
+                    matched_text=repr(match.group()),
+                    position=(match.start(), match.end()),
+                    description=description,
+                    recommendation="Strip all ANSI escape sequences from output",
+                )
+            )
 
     return findings
 
@@ -267,8 +295,7 @@ _CODE_INJECTION_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"(?:^|\n)\s*(?:\$|#|>>>?)\s*(?:sudo\s+(?!apt|apt-get|pip|dnf|yum|brew|snap|pacman|npm|yarn)\S|rm\s+-[a-zA-Z]*r|chmod\s+(?:777|666|a\+rwx)|curl\s+.*\|\s*(?:ba)?sh|wget\s+.*\|\s*sh|eval|exec)",
             re.MULTILINE,
         ),
-        "Shell command with dangerous operations in LLM response. "
-        "If auto-executed, this could compromise the system.",
+        "Shell command with dangerous operations in LLM response. If auto-executed, this could compromise the system.",
         ContentSeverity.HIGH,
     ),
     (
@@ -286,8 +313,7 @@ _CODE_INJECTION_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"\b(?:os\.system|os\.popen|commands\.getoutput)\s*\(|subprocess\.(?:call|run|Popen)\s*\(\s*(?:f['\"]|input|request|os\.environ|__import__|user|data|cmd|command)",
             re.IGNORECASE,
         ),
-        "System command execution in code - may be dangerous if the "
-        "command includes user-controlled input.",
+        "System command execution in code - may be dangerous if the command includes user-controlled input.",
         ContentSeverity.MEDIUM,
     ),
     (
@@ -317,15 +343,17 @@ def _check_code_injection(text: str) -> list[ContentFinding]:
 
     for name, pattern, description, severity in _CODE_INJECTION_PATTERNS:
         for match in pattern.finditer(text):
-            findings.append(ContentFinding(
-                pattern_name=name,
-                category=ContentCategory.CODE_INJECTION,
-                severity=severity,
-                matched_text=match.group(),
-                position=(match.start(), match.end()),
-                description=description,
-                recommendation="Review code before execution. Do not auto-execute LLM output.",
-            ))
+            findings.append(
+                ContentFinding(
+                    pattern_name=name,
+                    category=ContentCategory.CODE_INJECTION,
+                    severity=severity,
+                    matched_text=match.group(),
+                    position=(match.start(), match.end()),
+                    description=description,
+                    recommendation="Review code before execution. Do not auto-execute LLM output.",
+                )
+            )
 
     return findings
 
@@ -352,8 +380,7 @@ _MARKDOWN_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"!\[(?:[^\]]*)\]\(\s*https?://(?:(?!(?:github|gitlab|imgur|i\.stack|cdn\.|cloudfront|cloudinary|fastly|akamai|jsdelivr|unpkg|staticfile|example\.com|raw\.githubusercontent))[^\s/)])+[^\s)]+\.(gif|png|jpg|jpeg|webp|svg)\?[^\s)]+\)",
             re.IGNORECASE,
         ),
-        "Markdown image with query parameters from unknown domain - "
-        "potential tracking pixel or data exfiltration.",
+        "Markdown image with query parameters from unknown domain - potential tracking pixel or data exfiltration.",
         ContentSeverity.HIGH,
     ),
     (
@@ -362,8 +389,7 @@ _MARKDOWN_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"\[(?:click\s+here|download|verify|confirm|update|secure)[^\]]*\]\(\s*https?://(?!(?:docs\.python\.org|github\.com|gitlab\.com|pypi\.org|npmjs\.com|stackoverflow\.com|readthedocs\.io|maven\.apache\.org|crates\.io|packagist\.org|rubygems\.org|hub\.docker\.com|developer\.mozilla\.org|learn\.microsoft\.com|cloud\.google\.com|aws\.amazon\.com|console\.cloud|bitbucket\.org|sourceforge\.net|medium\.com|dev\.to|notion\.so|figma\.com|slack\.com|discord\.com|trello\.com|jira\.atlassian))[^\s)]+\)",
             re.IGNORECASE,
         ),
-        "Markdown link with social engineering text (click here, login, etc.) - "
-        "potential phishing attempt.",
+        "Markdown link with social engineering text (click here, login, etc.) - potential phishing attempt.",
         ContentSeverity.MEDIUM,
     ),
     (
@@ -382,8 +408,7 @@ _MARKDOWN_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"(?:<script|<iframe|<object|<embed|<form\s+[^>]*action\s*=|<meta\s+[^>]*http-equiv)",
             re.IGNORECASE,
         ),
-        "HTML tags in markdown that can execute scripts, embed content, "
-        "or manipulate the page when rendered.",
+        "HTML tags in markdown that can execute scripts, embed content, or manipulate the page when rendered.",
         ContentSeverity.CRITICAL,
     ),
     (
@@ -392,8 +417,7 @@ _MARKDOWN_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"!\[[^\]]*\]\(\s*data:(?:text/html|application/javascript|text/javascript)[^)]+\)",
             re.IGNORECASE,
         ),
-        "Markdown image with data: URI containing executable content. "
-        "Can execute JavaScript when rendered.",
+        "Markdown image with data: URI containing executable content. Can execute JavaScript when rendered.",
         ContentSeverity.CRITICAL,
     ),
     (
@@ -402,8 +426,7 @@ _MARKDOWN_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"(?:^|\n)\s*\[[^\]]+\]:\s*(?:javascript:|data:text/html|vbscript:)",
             re.IGNORECASE | re.MULTILINE,
         ),
-        "Markdown reference definition with dangerous protocol. "
-        "Can inject JavaScript via reference-style links.",
+        "Markdown reference definition with dangerous protocol. Can inject JavaScript via reference-style links.",
         ContentSeverity.CRITICAL,
     ),
 ]
@@ -429,15 +452,17 @@ def _check_markdown_injection(text: str) -> list[ContentFinding]:
                 if display_url.rstrip("/") == actual_url.rstrip("/"):
                     continue  # URLs match, not suspicious
 
-            findings.append(ContentFinding(
-                pattern_name=name,
-                category=ContentCategory.MARKDOWN_INJECTION,
-                severity=severity,
-                matched_text=match.group()[:100] + ("..." if len(match.group()) > 100 else ""),
-                position=(match.start(), match.end()),
-                description=description,
-                recommendation="Strip or sanitize markdown before rendering",
-            ))
+            findings.append(
+                ContentFinding(
+                    pattern_name=name,
+                    category=ContentCategory.MARKDOWN_INJECTION,
+                    severity=severity,
+                    matched_text=match.group()[:100] + ("..." if len(match.group()) > 100 else ""),
+                    position=(match.start(), match.end()),
+                    description=description,
+                    recommendation="Strip or sanitize markdown before rendering",
+                )
+            )
 
     return findings
 
@@ -544,15 +569,17 @@ def _check_html_injection(text: str) -> list[ContentFinding]:
 
     for name, pattern, description, severity in _HTML_PATTERNS:
         for match in pattern.finditer(text):
-            findings.append(ContentFinding(
-                pattern_name=name,
-                category=ContentCategory.HTML_INJECTION,
-                severity=severity,
-                matched_text=match.group()[:100] + ("..." if len(match.group()) > 100 else ""),
-                position=(match.start(), match.end()),
-                description=description,
-                recommendation="Strip or escape HTML before rendering",
-            ))
+            findings.append(
+                ContentFinding(
+                    pattern_name=name,
+                    category=ContentCategory.HTML_INJECTION,
+                    severity=severity,
+                    matched_text=match.group()[:100] + ("..." if len(match.group()) > 100 else ""),
+                    position=(match.start(), match.end()),
+                    description=description,
+                    recommendation="Strip or escape HTML before rendering",
+                )
+            )
 
     return findings
 
@@ -588,8 +615,7 @@ _EXFIL_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"(?:fetch|axios|requests?\.(?:get|post)|http\.(?:get|post)|curl|wget)\s*\([^)]*(?:\+|concat|encodeURI|btoa|JSON\.stringify)",
             re.IGNORECASE,
         ),
-        "HTTP request with dynamic data construction - "
-        "may exfiltrate sensitive information.",
+        "HTTP request with dynamic data construction - may exfiltrate sensitive information.",
         ContentSeverity.HIGH,
     ),
 ]
@@ -601,15 +627,17 @@ def _check_data_exfiltration(text: str) -> list[ContentFinding]:
 
     for name, pattern, description, severity in _EXFIL_PATTERNS:
         for match in pattern.finditer(text):
-            findings.append(ContentFinding(
-                pattern_name=name,
-                category=ContentCategory.DATA_EXFILTRATION,
-                severity=severity,
-                matched_text=match.group()[:100] + ("..." if len(match.group()) > 100 else ""),
-                position=(match.start(), match.end()),
-                description=description,
-                recommendation="Block external data transmission",
-            ))
+            findings.append(
+                ContentFinding(
+                    pattern_name=name,
+                    category=ContentCategory.DATA_EXFILTRATION,
+                    severity=severity,
+                    matched_text=match.group()[:100] + ("..." if len(match.group()) > 100 else ""),
+                    position=(match.start(), match.end()),
+                    description=description,
+                    recommendation="Block external data transmission",
+                )
+            )
 
     return findings
 
@@ -626,8 +654,7 @@ _PHISHING_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"[^.]*(?:password|credential|login|sign\s+in|verify|confirm|update\s+(?:your|account))",
             re.IGNORECASE,
         ),
-        "Urgency language combined with credential request - "
-        "classic phishing technique.",
+        "Urgency language combined with credential request - classic phishing technique.",
         ContentSeverity.HIGH,
     ),
     (
@@ -636,8 +663,7 @@ _PHISHING_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
             r"(?:enter|provide|type|input|submit)\s+(?:your\s+)?(?:password|api\s+key|secret\s+key|access\s+token|credentials?|ssh\s+key|private\s+key)\s+(?:here|below|in\s+the\s+(?:box|field|form))",
             re.IGNORECASE,
         ),
-        "Request to enter credentials in LLM conversation - "
-        "credentials should never be shared in chat.",
+        "Request to enter credentials in LLM conversation - credentials should never be shared in chat.",
         ContentSeverity.HIGH,
     ),
 ]
@@ -649,15 +675,17 @@ def _check_phishing(text: str) -> list[ContentFinding]:
 
     for name, pattern, description, severity in _PHISHING_PATTERNS:
         for match in pattern.finditer(text):
-            findings.append(ContentFinding(
-                pattern_name=name,
-                category=ContentCategory.PHISHING,
-                severity=severity,
-                matched_text=match.group()[:100] + ("..." if len(match.group()) > 100 else ""),
-                position=(match.start(), match.end()),
-                description=description,
-                recommendation="Do not follow credential requests in LLM responses",
-            ))
+            findings.append(
+                ContentFinding(
+                    pattern_name=name,
+                    category=ContentCategory.PHISHING,
+                    severity=severity,
+                    matched_text=match.group()[:100] + ("..." if len(match.group()) > 100 else ""),
+                    position=(match.start(), match.end()),
+                    description=description,
+                    recommendation="Do not follow credential requests in LLM responses",
+                )
+            )
 
     return findings
 
@@ -665,6 +693,7 @@ def _check_phishing(text: str) -> list[ContentFinding]:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def scan_content(text: str) -> list[ContentFinding]:
     """Scan content for various attack patterns.

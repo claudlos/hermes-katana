@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -35,9 +34,7 @@ VALID_POLICY_YAML = {
             "name": "block_tainted",
             "tool_pattern": "terminal",
             "action": "deny",
-            "conditions": [
-                {"field": "*", "operator": "contains_taint", "value": True}
-            ],
+            "conditions": [{"field": "*", "operator": "contains_taint", "value": True}],
             "priority": 100,
             "enabled": True,
         }
@@ -60,6 +57,7 @@ def _write_yaml(path: Path, data: dict) -> Path:
 # ---------------------------------------------------------------------------
 # validate_policy_yaml
 # ---------------------------------------------------------------------------
+
 
 class TestValidatePolicyYaml:
     def test_valid_policy(self):
@@ -91,109 +89,149 @@ class TestValidatePolicyYaml:
         assert any("mapping" in e for e in errors)
 
     def test_missing_tool_pattern(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{"name": "rule1"}],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [{"name": "rule1"}],
+            }
+        )
         assert any("tool_pattern" in e for e in errors)
 
     def test_missing_policy_name(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{"tool_pattern": "shell"}],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [{"tool_pattern": "shell"}],
+            }
+        )
         assert any("'name'" in e for e in errors)
 
     def test_invalid_action(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{"name": "r", "tool_pattern": "t", "action": "invalid_action"}],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [{"name": "r", "tool_pattern": "t", "action": "invalid_action"}],
+            }
+        )
         assert any("invalid action" in e for e in errors)
 
     def test_valid_actions(self):
         for action in ("allow", "deny", "escalate", "log_only"):
-            errors = validate_policy_yaml({
-                "name": "test",
-                "policies": [{"name": "r", "tool_pattern": "t", "action": action}],
-            })
+            errors = validate_policy_yaml(
+                {
+                    "name": "test",
+                    "policies": [{"name": "r", "tool_pattern": "t", "action": action}],
+                }
+            )
             assert not any("invalid action" in e for e in errors)
 
     def test_invalid_operator(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{
-                "name": "r", "tool_pattern": "t",
-                "conditions": [{"field": "x", "operator": "bad_op", "value": True}],
-            }],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [
+                    {
+                        "name": "r",
+                        "tool_pattern": "t",
+                        "conditions": [{"field": "x", "operator": "bad_op", "value": True}],
+                    }
+                ],
+            }
+        )
         assert any("invalid operator" in e for e in errors)
 
     def test_condition_missing_field(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{
-                "name": "r", "tool_pattern": "t",
-                "conditions": [{"operator": "contains_taint"}],
-            }],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [
+                    {
+                        "name": "r",
+                        "tool_pattern": "t",
+                        "conditions": [{"operator": "contains_taint"}],
+                    }
+                ],
+            }
+        )
         assert any("'field'" in e for e in errors)
 
     def test_condition_missing_operator(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{
-                "name": "r", "tool_pattern": "t",
-                "conditions": [{"field": "*"}],
-            }],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [
+                    {
+                        "name": "r",
+                        "tool_pattern": "t",
+                        "conditions": [{"field": "*"}],
+                    }
+                ],
+            }
+        )
         assert any("'operator'" in e for e in errors)
 
     def test_condition_not_dict(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{
-                "name": "r", "tool_pattern": "t",
-                "conditions": ["not-a-dict"],
-            }],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [
+                    {
+                        "name": "r",
+                        "tool_pattern": "t",
+                        "conditions": ["not-a-dict"],
+                    }
+                ],
+            }
+        )
         assert any("mapping" in e for e in errors)
 
     def test_conditions_not_list(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{
-                "name": "r", "tool_pattern": "t",
-                "conditions": "not-a-list",
-            }],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [
+                    {
+                        "name": "r",
+                        "tool_pattern": "t",
+                        "conditions": "not-a-list",
+                    }
+                ],
+            }
+        )
         assert any("list" in e for e in errors)
 
     def test_negative_priority(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{"name": "r", "tool_pattern": "t", "priority": -1}],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [{"name": "r", "tool_pattern": "t", "priority": -1}],
+            }
+        )
         assert any("priority" in e for e in errors)
 
     def test_float_priority(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{"name": "r", "tool_pattern": "t", "priority": 1.5}],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [{"name": "r", "tool_pattern": "t", "priority": 1.5}],
+            }
+        )
         assert any("priority" in e for e in errors)
 
     def test_valid_priority(self):
-        errors = validate_policy_yaml({
-            "name": "test",
-            "policies": [{"name": "r", "tool_pattern": "t", "priority": 50}],
-        })
+        errors = validate_policy_yaml(
+            {
+                "name": "test",
+                "policies": [{"name": "r", "tool_pattern": "t", "priority": 50}],
+            }
+        )
         assert errors == []
 
 
 # ---------------------------------------------------------------------------
 # load_policy_file
 # ---------------------------------------------------------------------------
+
 
 class TestLoadPolicyFile:
     def test_load_valid_file(self, tmp_path):
@@ -251,6 +289,7 @@ class TestLoadPolicyFile:
 # load_policy_directory
 # ---------------------------------------------------------------------------
 
+
 class TestLoadPolicyDirectory:
     def test_load_directory(self, tmp_path):
         _write_yaml(tmp_path / "a.yaml", VALID_POLICY_YAML)
@@ -287,6 +326,7 @@ class TestLoadPolicyDirectory:
 # _resolve_inheritance
 # ---------------------------------------------------------------------------
 
+
 class TestResolveInheritance:
     def test_unknown_parent_raises(self):
         data = {"name": "child", "policies": []}
@@ -294,12 +334,15 @@ class TestResolveInheritance:
             _resolve_inheritance(data, "nonexistent")
 
     def test_known_parent_merges(self):
-        with patch("hermes_katana.policy.yaml_loader.BUILTIN_POLICY_SETS", {
-            "parent": {
-                "name": "parent",
-                "policies": [{"name": "p1", "tool_pattern": "t1", "action": "deny"}],
-            }
-        }):
+        with patch(
+            "hermes_katana.policy.yaml_loader.BUILTIN_POLICY_SETS",
+            {
+                "parent": {
+                    "name": "parent",
+                    "policies": [{"name": "p1", "tool_pattern": "t1", "action": "deny"}],
+                }
+            },
+        ):
             data = {
                 "name": "child",
                 "policies": [{"name": "p2", "tool_pattern": "t2", "action": "allow"}],
@@ -310,12 +353,15 @@ class TestResolveInheritance:
             assert "p2" in policy_names
 
     def test_child_overrides_parent_policy(self):
-        with patch("hermes_katana.policy.yaml_loader.BUILTIN_POLICY_SETS", {
-            "parent": {
-                "name": "parent",
-                "policies": [{"name": "shared", "tool_pattern": "t", "action": "deny"}],
-            }
-        }):
+        with patch(
+            "hermes_katana.policy.yaml_loader.BUILTIN_POLICY_SETS",
+            {
+                "parent": {
+                    "name": "parent",
+                    "policies": [{"name": "shared", "tool_pattern": "t", "action": "deny"}],
+                }
+            },
+        ):
             data = {
                 "name": "child",
                 "policies": [{"name": "shared", "tool_pattern": "t", "action": "allow"}],
@@ -329,6 +375,7 @@ class TestResolveInheritance:
 # ---------------------------------------------------------------------------
 # export_policy_set
 # ---------------------------------------------------------------------------
+
 
 class TestExportPolicySet:
     def test_export_and_reload(self, tmp_path):
@@ -359,6 +406,7 @@ class TestExportPolicySet:
 # PolicyValidationError
 # ---------------------------------------------------------------------------
 
+
 class TestPolicyValidationError:
     def test_basic_message(self):
         err = PolicyValidationError("bad file")
@@ -375,6 +423,7 @@ class TestPolicyValidationError:
 # ---------------------------------------------------------------------------
 # PolicyFileWatcher
 # ---------------------------------------------------------------------------
+
 
 class TestPolicyFileWatcher:
     def test_start_stop(self, tmp_path):

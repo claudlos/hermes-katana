@@ -23,6 +23,7 @@ from hermes_katana.vault.store import (
 # AES-256-GCM encryption primitives
 # ======================================================================
 
+
 class TestEncryptionPrimitives:
     def test_encrypt_decrypt_roundtrip(self):
         key = secrets.token_bytes(32)
@@ -75,15 +76,18 @@ class TestEncryptionPrimitives:
 # Vault — high-level operations
 # ======================================================================
 
+
 class TestVault:
     @pytest.fixture
     def vault(self, vault_path):
         """Create a vault with a known test key via env var and mock keyring."""
         key = secrets.token_bytes(32)
         key_b64 = base64.b64encode(key).decode()
-        with patch.dict(os.environ, {"HERMES_KATANA_VAULT_KEY": key_b64}), \
-             patch("hermes_katana.vault.store._get_master_key", return_value=key), \
-             patch("hermes_katana.vault.store._set_master_key"):
+        with (
+            patch.dict(os.environ, {"HERMES_KATANA_VAULT_KEY": key_b64}),
+            patch("hermes_katana.vault.store._get_master_key", return_value=key),
+            patch("hermes_katana.vault.store._set_master_key"),
+        ):
             v = Vault(path=vault_path, auto_create=True)
             yield v
 
@@ -123,14 +127,17 @@ class TestVault:
 # Circuit breaker (lock/unlock)
 # ======================================================================
 
+
 class TestVaultCircuitBreaker:
     @pytest.fixture
     def vault(self, vault_path):
         key = secrets.token_bytes(32)
         key_b64 = base64.b64encode(key).decode()
-        with patch.dict(os.environ, {"HERMES_KATANA_VAULT_KEY": key_b64}), \
-             patch("hermes_katana.vault.store._get_master_key", return_value=key), \
-             patch("hermes_katana.vault.store._set_master_key"):
+        with (
+            patch.dict(os.environ, {"HERMES_KATANA_VAULT_KEY": key_b64}),
+            patch("hermes_katana.vault.store._get_master_key", return_value=key),
+            patch("hermes_katana.vault.store._set_master_key"),
+        ):
             v = Vault(path=vault_path, auto_create=True)
             yield v
 

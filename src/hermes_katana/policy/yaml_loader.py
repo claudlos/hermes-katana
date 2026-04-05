@@ -123,10 +123,7 @@ def validate_policy_yaml(data: dict[str, Any]) -> list[str]:
         # Action validation
         action = policy.get("action")
         if action is not None and action not in _VALID_ACTIONS:
-            errors.append(
-                f"{prefix}: invalid action '{action}'. "
-                f"Must be one of: {', '.join(sorted(_VALID_ACTIONS))}"
-            )
+            errors.append(f"{prefix}: invalid action '{action}'. Must be one of: {', '.join(sorted(_VALID_ACTIONS))}")
 
         # Conditions validation
         conditions = policy.get("conditions", [])
@@ -145,8 +142,7 @@ def validate_policy_yaml(data: dict[str, Any]) -> list[str]:
                 op = cond.get("operator")
                 if op is not None and op not in _VALID_OPERATORS:
                     errors.append(
-                        f"{cprefix}: invalid operator '{op}'. "
-                        f"Must be one of: {', '.join(sorted(_VALID_OPERATORS))}"
+                        f"{cprefix}: invalid operator '{op}'. Must be one of: {', '.join(sorted(_VALID_OPERATORS))}"
                     )
 
         # Priority validation
@@ -203,9 +199,7 @@ def load_policy_file(path: Union[str, Path]) -> PolicySet:
     try:
         return PolicySet.model_validate(raw)
     except ValidationError as exc:
-        raise PolicyValidationError(
-            f"Pydantic validation failed for {filepath.name}: {exc}"
-        ) from exc
+        raise PolicyValidationError(f"Pydantic validation failed for {filepath.name}: {exc}") from exc
 
 
 def load_policy_directory(
@@ -407,9 +401,7 @@ class PolicyFileWatcher:
                         )
                         # Count total YAML files to detect partial failures
                         glob_fn = self._directory.rglob if self._recursive else self._directory.glob
-                        total_files = len(
-                            list(glob_fn("*.yaml")) + list(glob_fn("*.yml"))
-                        )
+                        total_files = len(list(glob_fn("*.yaml")) + list(glob_fn("*.yml")))
                         if not policy_sets:
                             logger.error(
                                 "Policy reload produced 0 valid policy sets — "

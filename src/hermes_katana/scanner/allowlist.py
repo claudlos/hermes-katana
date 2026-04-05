@@ -334,7 +334,8 @@ class AllowlistManager:
         # --- Documentation mode suppression ---
         if self._is_documentation_context(matched_text, ctx):
             logger.debug(
-                "Finding suppressed by documentation mode: %s", matched_text[:80],
+                "Finding suppressed by documentation mode: %s",
+                matched_text[:80],
             )
             return True
 
@@ -349,7 +350,9 @@ class AllowlistManager:
                 sup.hit_count += 1
                 logger.debug(
                     "Finding suppressed by %s (%s): %s",
-                    sup.id, sup.reason, matched_text[:80],
+                    sup.id,
+                    sup.reason,
+                    matched_text[:80],
                 )
                 return True
 

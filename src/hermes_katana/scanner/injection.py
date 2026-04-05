@@ -99,13 +99,15 @@ def _hp(
     flags: int = re.IGNORECASE,
 ) -> None:
     """Register a heuristic pattern."""
-    _HEURISTIC_PATTERNS.append((
-        name,
-        re.compile(pattern, flags),
-        category,
-        confidence,
-        description,
-    ))
+    _HEURISTIC_PATTERNS.append(
+        (
+            name,
+            re.compile(pattern, flags),
+            category,
+            confidence,
+            description,
+        )
+    )
 
 
 # --- INSTRUCTION_OVERRIDE patterns ---
@@ -664,51 +666,57 @@ def _structural_analysis(text: str) -> list[InjectionFinding]:
     # Check instruction density (high density = suspicious)
     instruction_matches = list(_INSTRUCTION_INDICATORS.finditer(text))
     if len(instruction_matches) >= 3:
-        findings.append(InjectionFinding(
-            strategy="structural",
-            confidence=min(0.5 + len(instruction_matches) * 0.1, 0.85),
-            matched_text="; ".join(m.group() for m in instruction_matches[:5]),
-            position=(instruction_matches[0].start(), instruction_matches[-1].end()),
-            category=InjectionCategory.INSTRUCTION_OVERRIDE,
-            pattern_name="high_instruction_density",
-            description=(
-                f"High density of instruction-like language detected "
-                f"({len(instruction_matches)} indicators). This may indicate "
-                "injected instructions in data context."
-            ),
-        ))
+        findings.append(
+            InjectionFinding(
+                strategy="structural",
+                confidence=min(0.5 + len(instruction_matches) * 0.1, 0.85),
+                matched_text="; ".join(m.group() for m in instruction_matches[:5]),
+                position=(instruction_matches[0].start(), instruction_matches[-1].end()),
+                category=InjectionCategory.INSTRUCTION_OVERRIDE,
+                pattern_name="high_instruction_density",
+                description=(
+                    f"High density of instruction-like language detected "
+                    f"({len(instruction_matches)} indicators). This may indicate "
+                    "injected instructions in data context."
+                ),
+            )
+        )
 
     # Check for imperative verb clusters
     imperative_matches = list(_IMPERATIVE_VERBS.finditer(text))
     if len(imperative_matches) >= 3:
-        findings.append(InjectionFinding(
-            strategy="structural",
-            confidence=min(0.4 + len(imperative_matches) * 0.1, 0.80),
-            matched_text="; ".join(m.group().strip() for m in imperative_matches[:5]),
-            position=(imperative_matches[0].start(), imperative_matches[-1].end()),
-            category=InjectionCategory.INSTRUCTION_OVERRIDE,
-            pattern_name="imperative_verb_cluster",
-            description=(
-                f"Cluster of {len(imperative_matches)} imperative commands "
-                "detected in text. Data fields rarely contain command sequences."
-            ),
-        ))
+        findings.append(
+            InjectionFinding(
+                strategy="structural",
+                confidence=min(0.4 + len(imperative_matches) * 0.1, 0.80),
+                matched_text="; ".join(m.group().strip() for m in imperative_matches[:5]),
+                position=(imperative_matches[0].start(), imperative_matches[-1].end()),
+                category=InjectionCategory.INSTRUCTION_OVERRIDE,
+                pattern_name="imperative_verb_cluster",
+                description=(
+                    f"Cluster of {len(imperative_matches)} imperative commands "
+                    "detected in text. Data fields rarely contain command sequences."
+                ),
+            )
+        )
 
     # Check for topic shifts
     for match in _TOPIC_SHIFT.finditer(text):
-        findings.append(InjectionFinding(
-            strategy="structural",
-            confidence=0.65,
-            matched_text=match.group().strip(),
-            position=(match.start(), match.end()),
-            category=InjectionCategory.INSTRUCTION_OVERRIDE,
-            pattern_name="topic_shift",
-            description=(
-                "Sudden topic shift detected - text transitions from content "
-                "to meta-instructions. Common injection technique to slip "
-                "instructions into data context."
-            ),
-        ))
+        findings.append(
+            InjectionFinding(
+                strategy="structural",
+                confidence=0.65,
+                matched_text=match.group().strip(),
+                position=(match.start(), match.end()),
+                category=InjectionCategory.INSTRUCTION_OVERRIDE,
+                pattern_name="topic_shift",
+                description=(
+                    "Sudden topic shift detected - text transitions from content "
+                    "to meta-instructions. Common injection technique to slip "
+                    "instructions into data context."
+                ),
+            )
+        )
 
     return findings
 
@@ -755,18 +763,17 @@ def _check_base64_payloads(text: str) -> list[InjectionFinding]:
             continue
 
         if _INJECTION_KEYWORDS.search(decoded):
-            findings.append(InjectionFinding(
-                strategy="encoding",
-                confidence=0.85,
-                matched_text=blob[:50] + ("..." if len(blob) > 50 else ""),
-                position=(match.start(), match.end()),
-                category=InjectionCategory.ENCODING_ATTACK,
-                pattern_name="base64_injection",
-                description=(
-                    f"Base64 content decodes to text containing injection "
-                    f"keywords: '{decoded[:80]}...'"
-                ),
-            ))
+            findings.append(
+                InjectionFinding(
+                    strategy="encoding",
+                    confidence=0.85,
+                    matched_text=blob[:50] + ("..." if len(blob) > 50 else ""),
+                    position=(match.start(), match.end()),
+                    category=InjectionCategory.ENCODING_ATTACK,
+                    pattern_name="base64_injection",
+                    description=(f"Base64 content decodes to text containing injection keywords: '{decoded[:80]}...'"),
+                )
+            )
     return findings
 
 
@@ -789,18 +796,19 @@ def _check_hex_payloads(text: str) -> list[InjectionFinding]:
             continue
 
         if _INJECTION_KEYWORDS.search(decoded):
-            findings.append(InjectionFinding(
-                strategy="encoding",
-                confidence=0.80,
-                matched_text=match.group()[:50] + ("..." if len(match.group()) > 50 else ""),
-                position=(match.start(), match.end()),
-                category=InjectionCategory.ENCODING_ATTACK,
-                pattern_name="hex_injection",
-                description=(
-                    f"Hex-encoded content decodes to text containing injection "
-                    f"keywords: '{decoded[:80]}'"
-                ),
-            ))
+            findings.append(
+                InjectionFinding(
+                    strategy="encoding",
+                    confidence=0.80,
+                    matched_text=match.group()[:50] + ("..." if len(match.group()) > 50 else ""),
+                    position=(match.start(), match.end()),
+                    category=InjectionCategory.ENCODING_ATTACK,
+                    pattern_name="hex_injection",
+                    description=(
+                        f"Hex-encoded content decodes to text containing injection keywords: '{decoded[:80]}'"
+                    ),
+                )
+            )
     return findings
 
 
@@ -818,18 +826,19 @@ def _check_url_encoded_payloads(text: str) -> list[InjectionFinding]:
             continue  # Nothing was actually encoded
 
         if _INJECTION_KEYWORDS.search(decoded):
-            findings.append(InjectionFinding(
-                strategy="encoding",
-                confidence=0.80,
-                matched_text=match.group()[:50] + ("..." if len(match.group()) > 50 else ""),
-                position=(match.start(), match.end()),
-                category=InjectionCategory.ENCODING_ATTACK,
-                pattern_name="url_encoded_injection",
-                description=(
-                    f"URL-encoded content decodes to text containing injection "
-                    f"keywords: '{decoded[:80]}'"
-                ),
-            ))
+            findings.append(
+                InjectionFinding(
+                    strategy="encoding",
+                    confidence=0.80,
+                    matched_text=match.group()[:50] + ("..." if len(match.group()) > 50 else ""),
+                    position=(match.start(), match.end()),
+                    category=InjectionCategory.ENCODING_ATTACK,
+                    pattern_name="url_encoded_injection",
+                    description=(
+                        f"URL-encoded content decodes to text containing injection keywords: '{decoded[:80]}'"
+                    ),
+                )
+            )
     return findings
 
 
@@ -854,19 +863,21 @@ def _check_unicode_normalization(text: str) -> list[InjectionFinding]:
                 if a != b:
                     start = max(0, i - 10)
                     end = min(len(text), i + 50)
-                    findings.append(InjectionFinding(
-                        strategy="encoding",
-                        confidence=0.85,
-                        matched_text=text[start:end],
-                        position=(start, end),
-                        category=InjectionCategory.ENCODING_ATTACK,
-                        pattern_name="unicode_normalization_attack",
-                        description=(
-                            "Unicode text normalizes (NFKC) to reveal injection "
-                            f"keywords. Original uses special Unicode forms that "
-                            f"bypass keyword filters. Normalized: '{nfkc[start:end]}'"
-                        ),
-                    ))
+                    findings.append(
+                        InjectionFinding(
+                            strategy="encoding",
+                            confidence=0.85,
+                            matched_text=text[start:end],
+                            position=(start, end),
+                            category=InjectionCategory.ENCODING_ATTACK,
+                            pattern_name="unicode_normalization_attack",
+                            description=(
+                                "Unicode text normalizes (NFKC) to reveal injection "
+                                f"keywords. Original uses special Unicode forms that "
+                                f"bypass keyword filters. Normalized: '{nfkc[start:end]}'"
+                            ),
+                        )
+                    )
                     break
     return findings
 
@@ -910,8 +921,9 @@ def detect_injection(text: str) -> list[InjectionFinding]:
     # 1. Convert fullwidth chars (U+FF01-U+FF5E) to ASCII equivalents
     # 2. Strip zero-width characters
     import unicodedata
-    _ZERO_WIDTH = re.compile(r'[\u200b\u200c\u200d\ufeff\u00ad\u2060-\u2064\u180e]')
-    normalized_text = _ZERO_WIDTH.sub('', text)
+
+    _ZERO_WIDTH = re.compile(r"[\u200b\u200c\u200d\ufeff\u00ad\u2060-\u2064\u180e]")
+    normalized_text = _ZERO_WIDTH.sub("", text)
     normalized_text = unicodedata.normalize("NFKC", normalized_text)
 
     # Use normalized text for pattern matching but keep original for position reporting
@@ -921,17 +933,19 @@ def detect_injection(text: str) -> list[InjectionFinding]:
 
     # Strategy 1: Heuristic pattern matching
     for scan_text in scan_texts:
-      for name, pattern, category, confidence, description in _HEURISTIC_PATTERNS:
-        for match in pattern.finditer(scan_text):
-            findings.append(InjectionFinding(
-                strategy="heuristic",
-                confidence=confidence,
-                matched_text=match.group(),
-                position=(match.start(), match.end()),
-                category=category,
-                pattern_name=name,
-                description=description,
-            ))
+        for name, pattern, category, confidence, description in _HEURISTIC_PATTERNS:
+            for match in pattern.finditer(scan_text):
+                findings.append(
+                    InjectionFinding(
+                        strategy="heuristic",
+                        confidence=confidence,
+                        matched_text=match.group(),
+                        position=(match.start(), match.end()),
+                        category=category,
+                        pattern_name=name,
+                        description=description,
+                    )
+                )
 
     # Strategy 2: Structural analysis
     findings.extend(_structural_analysis(text))

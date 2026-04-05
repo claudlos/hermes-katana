@@ -60,19 +60,77 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 BENIGN_COMMANDS: set[str] = {
-    "ls", "cat", "echo", "pwd", "cd", "pip", "pip3", "npm", "npx", "yarn",
-    "git", "head", "tail", "wc", "sort", "uniq", "grep", "find", "which",
-    "whoami", "date", "env", "printenv", "uname", "df", "du", "free",
-    "ps", "top", "htop", "file", "stat", "id", "hostname", "uptime",
-    "python3", "python", "node", "cargo", "rustc", "make", "cmake",
-    "tree", "less", "more", "diff", "basename", "dirname", "realpath",
-    "mkdir", "touch", "cp", "mv",  # mild side-effects but common dev ops
+    "ls",
+    "cat",
+    "echo",
+    "pwd",
+    "cd",
+    "pip",
+    "pip3",
+    "npm",
+    "npx",
+    "yarn",
+    "git",
+    "head",
+    "tail",
+    "wc",
+    "sort",
+    "uniq",
+    "grep",
+    "find",
+    "which",
+    "whoami",
+    "date",
+    "env",
+    "printenv",
+    "uname",
+    "df",
+    "du",
+    "free",
+    "ps",
+    "top",
+    "htop",
+    "file",
+    "stat",
+    "id",
+    "hostname",
+    "uptime",
+    "python3",
+    "python",
+    "node",
+    "cargo",
+    "rustc",
+    "make",
+    "cmake",
+    "tree",
+    "less",
+    "more",
+    "diff",
+    "basename",
+    "dirname",
+    "realpath",
+    "mkdir",
+    "touch",
+    "cp",
+    "mv",  # mild side-effects but common dev ops
 }
 
 # Git subcommands that are read-only / safe
 BENIGN_GIT_SUBCOMMANDS: set[str] = {
-    "status", "log", "diff", "show", "branch", "tag", "remote", "stash",
-    "describe", "shortlog", "reflog", "config", "ls-files", "ls-tree",
+    "status",
+    "log",
+    "diff",
+    "show",
+    "branch",
+    "tag",
+    "remote",
+    "stash",
+    "describe",
+    "shortlog",
+    "reflog",
+    "config",
+    "ls-files",
+    "ls-tree",
 }
 
 
@@ -135,6 +193,7 @@ def command_safety_check(
     # Check if command is flagged as dangerous by the scanner
     try:
         from hermes_katana.scanner.commands import detect_dangerous_command
+
         findings = detect_dangerous_command(command)
         is_dangerous = len(findings) > 0
     except ImportError:
@@ -205,9 +264,7 @@ def _field_is_tainted(taint_context: dict[str, Any], field_name: str) -> bool:
         return False
 
     if field_name == "*":
-        return any(
-            f.get("is_tainted", False) for f in tainted_fields.values()
-        )
+        return any(f.get("is_tainted", False) for f in tainted_fields.values())
 
     info = tainted_fields.get(field_name, {})
     return bool(info.get("is_tainted", False))
@@ -267,6 +324,7 @@ def _field_level(taint_context: dict[str, Any], field_name: str) -> int:
 # Regex cache with compile-time validation
 # ---------------------------------------------------------------------------
 
+
 @functools.lru_cache(maxsize=256)
 def _safe_compile(pattern: str) -> re.Pattern | None:
     """Compile a regex with length limit and error handling.
@@ -321,20 +379,14 @@ def evaluate_condition(
         if pat is None:
             return False
         if fld == "*":
-            return any(
-                pat.search(str(v)) is not None
-                for v in tool_args.values()
-            )
+            return any(pat.search(str(v)) is not None for v in tool_args.values())
         arg_val = tool_args.get(fld, "")
         return pat.search(str(arg_val)) is not None
 
     elif op == ConditionOperator.ARGUMENT_MATCHES:
         # Exact or glob match on the raw argument value
         if fld == "*":
-            return any(
-                fnmatch.fnmatch(str(v), str(val))
-                for v in tool_args.values()
-            )
+            return any(fnmatch.fnmatch(str(v), str(val)) for v in tool_args.values())
         arg_val = tool_args.get(fld, "")
         return fnmatch.fnmatch(str(arg_val), str(val))
 
@@ -432,9 +484,7 @@ class PolicyEngine:
         raw = BUILTIN_POLICY_SETS.get(preset)
         if raw is None:
             available = ", ".join(sorted(BUILTIN_POLICY_SETS))
-            raise ValueError(
-                f"Unknown preset '{preset}'. Available: {available}"
-            )
+            raise ValueError(f"Unknown preset '{preset}'. Available: {available}")
 
         ps = PolicySet.model_validate(raw)
         # Use preset-appropriate default action instead of blanket ALLOW
@@ -512,6 +562,7 @@ class PolicyEngine:
         """Build a deterministic cache key for an evaluation."""
         import hashlib
         import json
+
         blob = json.dumps(
             {"t": tool_name, "a": args, "c": taint_context},
             sort_keys=True,
@@ -565,10 +616,7 @@ class PolicyEngine:
                 result = EvaluationResult(
                     action=PolicyResult.DENY,
                     matched_policy=None,
-                    reason=(
-                        "command_safety_check denied terminal call: "
-                        "dangerous command with tainted args"
-                    ),
+                    reason=("command_safety_check denied terminal call: dangerous command with tainted args"),
                     details={
                         "tool_name": tool_name,
                         "policy_set": self._policy_set_name,
@@ -592,10 +640,7 @@ class PolicyEngine:
                 continue
 
             # Evaluate all conditions (implicit AND)
-            all_met = all(
-                evaluate_condition(cond, args, taint_context)
-                for cond in policy.conditions
-            )
+            all_met = all(evaluate_condition(cond, args, taint_context) for cond in policy.conditions)
 
             if all_met:
                 reason = (
@@ -647,10 +692,7 @@ class PolicyEngine:
         Returns:
             List of ``EvaluationResult`` in the same order as *calls*.
         """
-        return [
-            self.evaluate(name, args, ctx)
-            for name, args, ctx in calls
-        ]
+        return [self.evaluate(name, args, ctx) for name, args, ctx in calls]
 
     # -- Policy management --------------------------------------------------
 
@@ -736,19 +778,14 @@ class PolicyEngine:
         (GAP 4.5 — hot-reload validation).
         """
         if not policies:
-            logger.error(
-                "replace_all() called with empty policy list — "
-                "rejecting to avoid security gap"
-            )
+            logger.error("replace_all() called with empty policy list — rejecting to avoid security gap")
             return
 
         # Validate each policy has required fields
         validated: list[Policy] = []
         for p in policies:
             if not p.name or not p.tool_pattern:
-                logger.warning(
-                    "Skipping malformed policy (missing name or tool_pattern): %r", p
-                )
+                logger.warning("Skipping malformed policy (missing name or tool_pattern): %r", p)
                 continue
             validated.append(p)
 
@@ -789,6 +826,7 @@ class PolicyEngine:
 
     def _start_watcher(self, directory: Union[str, Path], interval: float) -> None:
         """Start a background file watcher for hot-reload."""
+
         def _on_change(policy_sets: list[PolicySet]) -> None:
             all_policies: list[Policy] = []
             for ps in policy_sets:

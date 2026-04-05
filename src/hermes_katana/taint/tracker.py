@@ -45,6 +45,7 @@ __all__ = [
 # Tracker statistics
 # ---------------------------------------------------------------------------
 
+
 @dataclass(slots=True)
 class TrackerStats:
     """Diagnostic counters for the taint tracker."""
@@ -79,6 +80,7 @@ class TrackerStats:
 # ---------------------------------------------------------------------------
 # TaintTracker singleton
 # ---------------------------------------------------------------------------
+
 
 class TaintTracker:
     """Central taint registry and flow-control engine.
@@ -235,19 +237,27 @@ class TaintTracker:
 
         if isinstance(value, str):
             tv: TaintedValue[Any] = TaintedStr(
-                value=value, sources=sources, readers=rdr,
+                value=value,
+                sources=sources,
+                readers=rdr,
             )
         elif isinstance(value, list):
             tv = TaintedList(
-                value=value, sources=sources, readers=rdr,
+                value=value,
+                sources=sources,
+                readers=rdr,
             )
         elif isinstance(value, dict):
             tv = TaintedDict(
-                value=value, sources=sources, readers=rdr,
+                value=value,
+                sources=sources,
+                readers=rdr,
             )
         else:
             tv = TaintedValue(
-                value=value, sources=sources, readers=rdr,
+                value=value,
+                sources=sources,
+                readers=rdr,
             )
 
         with self._mutex:
@@ -445,7 +455,9 @@ class TaintTracker:
             del self._registry[k]
         logger.debug(
             "Evicted %d entries from taint registry (size was %d, now %d)",
-            evict_count, len(keys), len(self._registry),
+            evict_count,
+            len(keys),
+            len(self._registry),
         )
 
     # -- Session management ---------------------------------------------------

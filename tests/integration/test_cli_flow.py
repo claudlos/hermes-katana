@@ -40,6 +40,7 @@ def _invoke(runner: CliRunner, monkeypatch, args: list[str]) -> tuple[object, st
     result = runner.invoke(cli_main.main, args)
     return result, stdout.getvalue(), stderr.getvalue()
 
+
 class TestCLIGoldenPath:
     def test_cli_operator_flow(self, monkeypatch, tmp_dir):
         runner = CliRunner()
@@ -176,9 +177,9 @@ class TestCLIGoldenPath:
         assert result.exit_code == 0
         assert "Installation complete." in stdout
         assert (checkout / ".katana" / "katana.yaml").exists()
-        assert "[KATANA-PATCH] tool_dispatch_hook" in (
-            checkout / "hermes" / "tools" / "dispatch.py"
-        ).read_text(encoding="utf-8")
+        assert "[KATANA-PATCH] tool_dispatch_hook" in (checkout / "hermes" / "tools" / "dispatch.py").read_text(
+            encoding="utf-8"
+        )
 
         result, stdout, _ = _invoke(runner, monkeypatch, ["status", "--target", str(checkout)])
         assert result.exit_code == 0

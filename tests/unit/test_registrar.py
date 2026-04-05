@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hermes_katana.taint.labels import Source, TaintLabel, TrustLevel
+from hermes_katana.taint.labels import TaintLabel, TrustLevel
 from hermes_katana.taint.registrar import (
     taint_delegated,
     taint_file_content,
@@ -161,7 +161,7 @@ class TestRegistrationTracking:
     """Verify that registrar functions actually register with the tracker."""
 
     def test_user_input_registered(self, fresh_tracker):
-        result = taint_user_input("test")
+        taint_user_input("test")
         stats = fresh_tracker.stats
         assert stats.values_registered >= 1
 

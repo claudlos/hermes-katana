@@ -60,9 +60,11 @@ class _VaultFileLock:
         self._fp = open(self._lock_path, "w")
         if platform.system() == "Windows":
             import msvcrt
+
             msvcrt.locking(self._fp.fileno(), msvcrt.LK_NBLCK, 1)
         else:
             import fcntl
+
             fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX)
 
     def release(self) -> None:
@@ -70,9 +72,11 @@ class _VaultFileLock:
             try:
                 if platform.system() == "Windows":
                     import msvcrt
+
                     msvcrt.locking(self._fp.fileno(), msvcrt.LK_UNLCK, 1)
                 else:
                     import fcntl
+
                     fcntl.flock(self._fp.fileno(), fcntl.LOCK_UN)
             except (OSError, BlockingIOError):
                 pass
@@ -89,6 +93,7 @@ class _VaultFileLock:
     def __exit__(self, *args: Any) -> None:
         self.release()
 
+
 # Vault file format version
 _VAULT_VERSION = 2
 
@@ -104,21 +109,25 @@ _TAG_SIZE = 16  # 128 bits
 
 class VaultError(Exception):
     """Base exception for vault operations."""
+
     pass
 
 
 class VaultLockedError(VaultError):
     """Raised when the vault is locked (circuit breaker active)."""
+
     pass
 
 
 class VaultIntegrityError(VaultError):
     """Raised when vault integrity check fails."""
+
     pass
 
 
 class VaultKeyError(VaultError):
     """Raised when a requested key is not found."""
+
     pass
 
 
@@ -138,6 +147,7 @@ class SecureBytes:
     def __init__(self, data: bytes) -> None:
         import ctypes
         import ctypes.util
+
         self._buf = bytearray(data)
         self._length = len(data)
         self._closed = False
@@ -181,6 +191,7 @@ class SecureBytes:
         if self._mlocked:
             try:
                 import ctypes.util
+
                 libc_name = ctypes.util.find_library("c")
                 if libc_name:
                     libc = ctypes.CDLL(libc_name, use_errno=True)
@@ -205,6 +216,7 @@ class SecureBytes:
 # AES-256-GCM encryption primitives
 # ---------------------------------------------------------------------------
 
+
 def _encrypt_value(plaintext: str, key: bytes) -> str:
     """Encrypt a plaintext string with AES-256-GCM.
 
@@ -220,9 +232,7 @@ def _encrypt_value(plaintext: str, key: bytes) -> str:
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     except ImportError:
-        raise VaultError(
-            "cryptography package required: pip install cryptography"
-        )
+        raise VaultError("cryptography package required: pip install cryptography")
 
     nonce = secrets.token_bytes(_NONCE_SIZE)
     aesgcm = AESGCM(key)
@@ -248,9 +258,7 @@ def _decrypt_value(encrypted: str, key: bytes) -> str:
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     except ImportError:
-        raise VaultError(
-            "cryptography package required: pip install cryptography"
-        )
+        raise VaultError("cryptography package required: pip install cryptography")
 
     try:
         blob = base64.b64decode(encrypted)
@@ -268,9 +276,7 @@ def _decrypt_value(encrypted: str, key: bytes) -> str:
         plaintext = aesgcm.decrypt(nonce, ct, None)
         return plaintext.decode("utf-8")
     except Exception:
-        raise VaultError(
-            "Decryption failed: wrong key or tampered data"
-        )
+        raise VaultError("Decryption failed: wrong key or tampered data")
 
 
 def _compute_hmac(data: dict[str, str], key: bytes) -> str:
@@ -296,30 +302,29 @@ def _compute_hmac(data: dict[str, str], key: bytes) -> str:
 # Keyring operations
 # ---------------------------------------------------------------------------
 
+
 def _get_master_key() -> Optional[bytes]:
     """Retrieve the master key from the OS keyring.
 
     Returns:
         The 32-byte master key, or None if not found.
     """
+
     def _validate_key(key_bytes: bytes) -> bytes:
         if len(key_bytes) != _KEY_SIZE:
-            raise VaultError(
-                f"Master key must be {_KEY_SIZE} bytes, got {len(key_bytes)}"
-            )
+            raise VaultError(f"Master key must be {_KEY_SIZE} bytes, got {len(key_bytes)}")
         return key_bytes
 
     try:
         import keyring
+
         raw = keyring.get_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
         if raw is None:
             # Keyring exists but has no stored key — fall through to env var
             raise KeyError("no key in keyring")
         return _validate_key(base64.b64decode(raw))
     except ImportError:
-        logger.warning(
-            "keyring package not installed, falling back to environment variable"
-        )
+        logger.warning("keyring package not installed, falling back to environment variable")
     except VaultError:
         raise
     except Exception as exc:
@@ -341,6 +346,7 @@ def _set_master_key(key: bytes) -> None:
     encoded = base64.b64encode(key).decode("ascii")
     try:
         import keyring
+
         keyring.set_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT, encoded)
     except ImportError:
         logger.warning(
@@ -362,6 +368,7 @@ def _delete_master_key() -> None:
     """Remove the master key from the OS keyring."""
     try:
         import keyring
+
         keyring.delete_password(_KEYRING_SERVICE, _KEYRING_ACCOUNT)
     except ImportError:
         pass
@@ -372,6 +379,7 @@ def _delete_master_key() -> None:
 # ---------------------------------------------------------------------------
 # Vault class
 # ---------------------------------------------------------------------------
+
 
 def default_vault_path() -> Path:
     """Return the default vault file path without creating it."""
@@ -445,18 +453,14 @@ class Vault:
                 self._master_key = SecureBytes(raw)
         if self._master_key is None:
             raise VaultError(
-                "No master key found. Initialize vault or set "
-                "HERMES_KATANA_VAULT_KEY environment variable."
+                "No master key found. Initialize vault or set HERMES_KATANA_VAULT_KEY environment variable."
             )
         return self._master_key.raw
 
     def _check_lock(self) -> None:
         """Check if the vault is locked (circuit breaker)."""
         if self._lock_path.exists():
-            raise VaultLockedError(
-                f"Vault is locked (circuit breaker active). "
-                f"Remove {self._lock_path} to unlock."
-            )
+            raise VaultLockedError(f"Vault is locked (circuit breaker active). Remove {self._lock_path} to unlock.")
 
     def _read_vault(self) -> dict[str, Any]:
         """Read and parse the vault file.
@@ -552,8 +556,7 @@ class Vault:
                 expected_hmac = _compute_hmac(entries, master_key)
                 if not hmac.compare_digest(stored_hmac, expected_hmac):
                     raise VaultIntegrityError(
-                        "Vault integrity check failed: HMAC mismatch. "
-                        "The vault file may have been tampered with."
+                        "Vault integrity check failed: HMAC mismatch. The vault file may have been tampered with."
                     )
 
             if key not in entries:
@@ -690,19 +693,14 @@ class Vault:
             journal_path = self._path.with_suffix(".rotation_journal")
             try:
                 import time as _time
+
                 journal_data = {
                     "status": "in_progress",
-                    "old_key_enc": _encrypt_value(
-                        base64.b64encode(old_key).decode("ascii"), new_key
-                    ),
-                    "new_key_enc": _encrypt_value(
-                        base64.b64encode(new_key).decode("ascii"), old_key
-                    ),
+                    "old_key_enc": _encrypt_value(base64.b64encode(old_key).decode("ascii"), new_key),
+                    "new_key_enc": _encrypt_value(base64.b64encode(new_key).decode("ascii"), old_key),
                     "timestamp": _time.time(),
                 }
-                journal_path.write_text(
-                    json.dumps(journal_data), encoding="utf-8"
-                )
+                journal_path.write_text(json.dumps(journal_data), encoding="utf-8")
                 # Restrict permissions
                 journal_path.chmod(0o600)
             except Exception as exc:
@@ -717,9 +715,7 @@ class Vault:
                 try:
                     decrypted[k] = _decrypt_value(encrypted, old_key)
                 except VaultError as exc:
-                    raise VaultError(
-                        f"Key rotation failed: could not decrypt '{k}': {exc}"
-                    )
+                    raise VaultError(f"Key rotation failed: could not decrypt '{k}': {exc}")
 
             # Re-encrypt all values with new key
             new_entries: dict[str, str] = {}
@@ -890,7 +886,7 @@ class Vault:
 
     def _zero_key(self) -> None:
         """Securely zero the master key in memory (GAP 2.1)."""
-        if hasattr(self, '_master_key') and self._master_key:
+        if hasattr(self, "_master_key") and self._master_key:
             try:
                 buf = (ctypes.c_char * len(self._master_key)).from_buffer_copy(self._master_key)
                 ctypes.memset(buf, 0, len(self._master_key))

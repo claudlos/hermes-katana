@@ -9,19 +9,14 @@ Tests cover:
 
 from __future__ import annotations
 
-import ctypes
-import json
 import os
-import time
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import patch
 
 
 # ---------------------------------------------------------------------------
 # GAP 2.1 — Secure key zeroing
 # ---------------------------------------------------------------------------
+
 
 class TestSecureKeyZeroing:
     """GAP 2.1: _zero_key clears master key bytes; __del__ calls it."""
@@ -83,6 +78,7 @@ class TestSecureKeyZeroing:
 # GAP 2.3 — Pop env var after reading
 # ---------------------------------------------------------------------------
 
+
 class TestEnvVarPopping:
     """GAP 2.3: HERMES_KATANA_VAULT_KEY is popped (not just read) from env."""
 
@@ -92,18 +88,16 @@ class TestEnvVarPopping:
         import hermes_katana.vault.store as store_mod
 
         test_key = os.urandom(32)
-        encoded = base64.b64encode(test_key).decode("ascii")
+        base64.b64encode(test_key).decode("ascii")
 
         # Verify that the source code uses os.environ.pop (not .get)
         import inspect
+
         source = inspect.getsource(store_mod._get_master_key)
-        assert "os.environ.pop" in source, (
-            "_get_master_key should use os.environ.pop to consume the env var"
-        )
+        assert "os.environ.pop" in source, "_get_master_key should use os.environ.pop to consume the env var"
 
     def test_env_var_not_present_returns_none(self):
         """When env var is absent, _get_master_key returns None (keyring also fails)."""
-        from hermes_katana.vault.store import _get_master_key
 
         os.environ.pop("HERMES_KATANA_VAULT_KEY", None)
         with patch("hermes_katana.vault.store._get_master_key") as mock_gmk:
@@ -116,6 +110,7 @@ class TestEnvVarPopping:
 # GAP 2.5 — File locking (verify _write_vault uses lock)
 # ---------------------------------------------------------------------------
 
+
 class TestFileLocking:
     """GAP 2.5: Vault writes use file-level locking."""
 
@@ -123,6 +118,7 @@ class TestFileLocking:
         """Verify the Vault _write_vault method references a file lock."""
         import inspect
         from hermes_katana.vault.store import Vault
+
         source = inspect.getsource(Vault._write_vault)
         assert "_file_lock" in source, "_write_vault should use file-level locking"
 
@@ -130,6 +126,7 @@ class TestFileLocking:
         """Verify the Vault _read_vault method references a file lock."""
         import inspect
         from hermes_katana.vault.store import Vault
+
         source = inspect.getsource(Vault._read_vault)
         assert "_file_lock" in source, "_read_vault should use file-level locking"
 
@@ -137,6 +134,7 @@ class TestFileLocking:
 # ---------------------------------------------------------------------------
 # GAP 2.8 — Expiry sync with vault
 # ---------------------------------------------------------------------------
+
 
 class TestExpirySync:
     """GAP 2.8: sync_with_vault removes orphaned expiry entries."""

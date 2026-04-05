@@ -56,6 +56,7 @@ _DEFAULT_MAX_ROTATIONS = 10
 # Cross-platform file locking
 # ---------------------------------------------------------------------------
 
+
 class _FileLock:
     """Cross-platform advisory file lock.
 
@@ -73,15 +74,18 @@ class _FileLock:
         try:
             if platform.system() == "Windows":
                 import msvcrt
+
                 msvcrt.locking(self._fp.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX)
         except (OSError, BlockingIOError):
             # If non-blocking lock fails, try blocking
             try:
                 if platform.system() != "Windows":
                     import fcntl
+
                     fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX)
             except Exception:
                 pass
@@ -92,9 +96,11 @@ class _FileLock:
             try:
                 if platform.system() == "Windows":
                     import msvcrt
+
                     msvcrt.locking(self._fp.fileno(), msvcrt.LK_UNLCK, 1)
                 else:
                     import fcntl
+
                     fcntl.flock(self._fp.fileno(), fcntl.LOCK_UN)
             except (OSError, BlockingIOError):
                 pass
@@ -115,6 +121,7 @@ class _FileLock:
 # ---------------------------------------------------------------------------
 # Audit event types
 # ---------------------------------------------------------------------------
+
 
 class AuditEventType(str, Enum):
     """Types of events recorded in the audit trail.
@@ -160,6 +167,7 @@ class AuditEventType(str, Enum):
 # ---------------------------------------------------------------------------
 # Audit entry model
 # ---------------------------------------------------------------------------
+
 
 class AuditEntry(BaseModel):
     """A single structured audit log entry.
@@ -229,9 +237,7 @@ class AuditEntry(BaseModel):
         )
         # Ensure deterministic serialization
         serialized = json.dumps(content, sort_keys=True, default=str)
-        return hashlib.sha256(
-            (self.prev_hash + serialized).encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256((self.prev_hash + serialized).encode("utf-8")).hexdigest()
 
     def finalize(self, prev_hash: str) -> "AuditEntry":
         """Set the prev_hash and compute the entry_hash.
@@ -250,6 +256,7 @@ class AuditEntry(BaseModel):
 # ---------------------------------------------------------------------------
 # Audit trail
 # ---------------------------------------------------------------------------
+
 
 def default_audit_path() -> Path:
     """Return the default audit log file path without creating it."""
@@ -473,7 +480,7 @@ class AuditTrail:
             reverse=True,
         )
 
-        for old_file in rotated_files[self._max_rotations:]:
+        for old_file in rotated_files[self._max_rotations :]:
             try:
                 old_file.unlink()
                 logger.debug("Deleted old audit log: %s", old_file)
@@ -513,8 +520,7 @@ class AuditTrail:
                     stored_prev = data.get("prev_hash", "")
                     if stored_prev != prev_hash:
                         logger.error(
-                            "Chain verification failed at line %d: "
-                            "prev_hash mismatch (expected %s..., got %s...)",
+                            "Chain verification failed at line %d: prev_hash mismatch (expected %s..., got %s...)",
                             line_num,
                             prev_hash[:12],
                             stored_prev[:12],
@@ -523,15 +529,12 @@ class AuditTrail:
 
                     # Recompute the entry hash
                     stored_hash = data.get("entry_hash", "")
-                    entry = AuditEntry(**{
-                        k: v for k, v in data.items() if k != "entry_hash"
-                    })
+                    entry = AuditEntry(**{k: v for k, v in data.items() if k != "entry_hash"})
                     expected_hash = entry.compute_hash()
 
                     if stored_hash != expected_hash:
                         logger.error(
-                            "Chain verification failed at line %d: "
-                            "entry_hash mismatch (expected %s..., got %s...)",
+                            "Chain verification failed at line %d: entry_hash mismatch (expected %s..., got %s...)",
                             line_num,
                             expected_hash[:12],
                             stored_hash[:12],
