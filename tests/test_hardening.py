@@ -4,10 +4,33 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 from unittest import mock
 
 import pytest
+
+
+def _can_symlink() -> bool:
+    """Return True if the current user can create symlinks on this platform.
+
+    On Windows, os.symlink() requires either admin rights or Developer Mode
+    enabled. Returns False if a test symlink cannot be created.
+    """
+    if sys.platform != "win32":
+        return True
+    import tempfile
+    from pathlib import Path as _P
+
+    with tempfile.TemporaryDirectory() as td:
+        target = _P(td) / "target.txt"
+        target.write_text("x")
+        link = _P(td) / "link.txt"
+        try:
+            link.symlink_to(target)
+            return True
+        except (OSError, NotImplementedError):
+            return False
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +275,10 @@ class TestInstallerPermissions:
         issues = validate_patch_target(target, patch)
         assert any("does not exist" in i for i in issues)
 
+    @pytest.mark.skipif(
+        not _can_symlink(),
+        reason="Windows: symlinks require admin or Developer Mode (SeCreateSymbolicLinkPrivilege)",
+    )
     def test_validate_symlink_detected(self, tmp_path):
         from hermes_katana.installer.patches import (
             validate_patch_target,

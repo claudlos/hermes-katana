@@ -9,11 +9,7 @@ import pytest
 from hermes_katana.installer.patches import CURRENT_CORE_PATCHES
 
 _CURRENT_SNAPSHOT = (
-    Path(__file__).resolve().parents[2]
-    / "tests"
-    / "fixtures"
-    / "hermes_compat"
-    / "hermes-current-snapshot"
+    Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "hermes_compat" / "hermes-current-snapshot"
 )
 
 _EXPECTED_PATCH_NAMES = [
@@ -38,9 +34,7 @@ class TestCurrentCorePatches:
     def test_all_patches_have_sentinels(self):
         for patch in CURRENT_CORE_PATCHES:
             assert patch.sentinel, f"{patch.name}: sentinel is empty"
-            assert "KATANA-PATCH" in patch.sentinel, (
-                f"{patch.name}: sentinel does not contain KATANA-PATCH marker"
-            )
+            assert "KATANA-PATCH" in patch.sentinel, f"{patch.name}: sentinel does not contain KATANA-PATCH marker"
 
     def test_each_sentinel_is_unique(self):
         sentinels = [p.sentinel for p in CURRENT_CORE_PATCHES]
@@ -50,8 +44,7 @@ class TestCurrentCorePatches:
     def test_target_file_exists_in_current_snapshot(self, patch):
         target = _CURRENT_SNAPSHOT / patch.target_file
         assert target.exists(), (
-            f"Patch '{patch.name}' target '{patch.target_file}' "
-            f"does not exist in hermes-current-snapshot"
+            f"Patch '{patch.name}' target '{patch.target_file}' does not exist in hermes-current-snapshot"
         )
 
     @pytest.mark.parametrize("patch", CURRENT_CORE_PATCHES, ids=[p.name for p in CURRENT_CORE_PATCHES])
@@ -59,8 +52,7 @@ class TestCurrentCorePatches:
         target = _CURRENT_SNAPSHOT / patch.target_file
         content = target.read_text(encoding="utf-8")
         assert patch.search_text in content, (
-            f"Patch '{patch.name}' search_text not found in "
-            f"hermes-current-snapshot/{patch.target_file}"
+            f"Patch '{patch.name}' search_text not found in hermes-current-snapshot/{patch.target_file}"
         )
 
     @pytest.mark.parametrize("patch", CURRENT_CORE_PATCHES, ids=[p.name for p in CURRENT_CORE_PATCHES])
@@ -74,16 +66,14 @@ class TestCurrentCorePatches:
 
     def test_critical_patches_count(self):
         critical = [p for p in CURRENT_CORE_PATCHES if p.critical]
-        assert len(critical) == 4, (
-            f"Expected 4 critical patches, got {len(critical)}: "
-            + ", ".join(p.name for p in critical)
+        assert len(critical) == 4, f"Expected 4 critical patches, got {len(critical)}: " + ", ".join(
+            p.name for p in critical
         )
 
     def test_optional_patches_count(self):
         optional = [p for p in CURRENT_CORE_PATCHES if not p.critical]
-        assert len(optional) == 3, (
-            f"Expected 3 optional patches, got {len(optional)}: "
-            + ", ".join(p.name for p in optional)
+        assert len(optional) == 3, f"Expected 3 optional patches, got {len(optional)}: " + ", ".join(
+            p.name for p in optional
         )
 
     def test_tool_dispatch_hook_bridges_async_escalate(self):
@@ -97,9 +87,7 @@ class TestCurrentCorePatches:
             "— returns coroutine (truthy), escalation always passes (security bypass)"
         )
         # Must bridge via _run_async (dispatch is sync, can't await directly)
-        assert "_run_async" in hook.replace_text, (
-            "tool_dispatch_hook must bridge async _katana_escalate via _run_async"
-        )
+        assert "_run_async" in hook.replace_text, "tool_dispatch_hook must bridge async _katana_escalate via _run_async"
 
     def test_tool_dispatch_hook_deny_error_is_fstring(self):
         """Regression: the DENY error message must be an f-string so {name} is
@@ -109,12 +97,13 @@ class TestCurrentCorePatches:
         # Check via regex: the opening quote must be preceded by 'f' (f-string),
         # not a bare double-quote (plain string that writes literal {name}).
         import re
+
         assert not re.search(r'(?<![fF])"Katana blocked tool', hook.replace_text), (
             'DENY error message must use f-string (f"...") so {name} is substituted, '
             "otherwise the tool name is written literally into the target file"
         )
         assert 'f"Katana blocked tool' in hook.replace_text, (
-            'DENY error message must be an f-string: f"Katana blocked tool \'{name}\'..."'
+            "DENY error message must be an f-string: f\"Katana blocked tool '{name}'...\""
         )
 
     def test_tool_dispatch_hook_records_denials(self):

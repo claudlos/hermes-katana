@@ -98,9 +98,7 @@ class SourceProvenance:
         return payload
 
 
-def snapshot_paths_for_profile(
-    profile: str, layout: str = "current"
-) -> tuple[str, ...]:
+def snapshot_paths_for_profile(profile: str, layout: str = "current") -> tuple[str, ...]:
     """Return the file set required for a snapshot profile.
 
     Returns pyproject.toml plus all patch target files appropriate for the
@@ -120,10 +118,7 @@ def snapshot_paths_for_profile(
     elif layout == "current":
         patches = CURRENT_CORE_PATCHES
     else:
-        raise ValueError(
-            f"Unsupported snapshot layout: {layout!r}. "
-            "Expected 'current' or 'legacy-v0.1.0'."
-        )
+        raise ValueError(f"Unsupported snapshot layout: {layout!r}. Expected 'current' or 'legacy-v0.1.0'.")
 
     selected = {"pyproject.toml"}
     include_optional = profile == "extended"
