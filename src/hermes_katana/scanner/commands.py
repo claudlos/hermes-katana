@@ -22,6 +22,7 @@ Performance: <1ms for typical command strings. All patterns precompiled.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from enum import Enum
 
@@ -381,6 +382,14 @@ _cp(
     "Rsync of sensitive directories to remote host.",
 )
 
+_cp(
+    "rsync_remote_any",
+    r"\brsync\s+.*\S+@\S+:",
+    CommandCategory.SSH_EXFILTRATION,
+    CommandSeverity.HIGH,
+    "Rsync to remote host via SSH - potential data exfiltration.",
+)
+
 # ============================
 # NETWORK TUNNELING
 # ============================
@@ -475,6 +484,22 @@ _cp(
 )
 
 _cp(
+    "etc_sudoers",
+    r"/etc/sudoers",
+    CommandCategory.PRIVILEGE_ESCALATION,
+    CommandSeverity.CRITICAL,
+    "Access or modification of sudoers file - privilege escalation risk.",
+)
+
+_cp(
+    "nopasswd_directive",
+    r"NOPASSWD",
+    CommandCategory.PRIVILEGE_ESCALATION,
+    CommandSeverity.CRITICAL,
+    "NOPASSWD directive detected - passwordless sudo escalation.",
+)
+
+_cp(
     "setuid_setgid",
     r"\bchmod\s+(?:[u+]*s|[24][0-7]{3})\s+",
     CommandCategory.PRIVILEGE_ESCALATION,
@@ -512,7 +537,7 @@ _cp(
 
 _cp(
     "xmrig_miner",
-    r"\b(?:xmrig|xmr-stak|ccminer|cpuminer|bfgminer|cgminer|nbminer|t-rex|phoenixminer|ethminer|gminer)\b",
+    r"\b(?:xmrig|xmr-stak|ccminer|cpuminer|bfgminer|cgminer|nbminer|t-rex|phoenixminer|ethminer|gminer)\b|minergate",
     CommandCategory.CRYPTO_MINING,
     CommandSeverity.CRITICAL,
     "Cryptocurrency mining software detected.",
@@ -520,7 +545,7 @@ _cp(
 
 _cp(
     "minergate_pool",
-    r"(?:stratum\+tcp://|pool\.(?:minergate|hashvault|supportxmr|nanopool|f2pool|2miners|ethermine|hiveon))",
+    r"(?:stratum\+tcp://|pool\.(?:minergate|hashvault|supportxmr|nanopool|f2pool|2miners|ethermine|hiveon)|cryptonight)",
     CommandCategory.CRYPTO_MINING,
     CommandSeverity.CRITICAL,
     "Mining pool connection string detected.",
@@ -690,6 +715,78 @@ _cp(
     "Reading process information from /proc - reconnaissance.",
 )
 
+# ============================
+# BASE64 TO SHELL
+# ============================
+
+_cp(
+    "base64_to_shell",
+    r"base64\s+(-d|--decode).*\|\s*(bash|sh|exec|python|perl|ruby)",
+    CommandCategory.PIPE_TO_SHELL,
+    CommandSeverity.CRITICAL,
+    "Base64 decode piped to shell interpreter - hidden command execution.",
+)
+
+_cp(
+    "xxd_hex_to_shell",
+    r"xxd.*-r.*\|\s*(?:ba)?sh\b",
+    CommandCategory.PIPE_TO_SHELL,
+    CommandSeverity.CRITICAL,
+    "Hex decode via xxd piped to shell - hidden command execution.",
+)
+
+# ============================
+# CURL/WGET POST FILE EXFIL
+# ============================
+
+_cp(
+    "curl_post_file_exfil",
+    r"curl.*-X\s*POST.*-d\s*@",
+    CommandCategory.DATA_STAGING,
+    CommandSeverity.CRITICAL,
+    "Curl POST with file data - potential data exfiltration via HTTP POST.",
+)
+
+_cp(
+    "curl_sensitive_file_exfil",
+    r"curl.*-d\s*@/etc/(passwd|shadow|hosts)",
+    CommandCategory.DATA_STAGING,
+    CommandSeverity.CRITICAL,
+    "Curl POST of sensitive system file - data exfiltration of credentials.",
+)
+
+# ============================
+# DNS EXFILTRATION
+# ============================
+
+_cp(
+    "dns_exfil_cmd_substitution",
+    r"(dig|nslookup|host).*\$\(",
+    CommandCategory.DATA_STAGING,
+    CommandSeverity.HIGH,
+    "DNS query with command substitution - potential DNS data exfiltration.",
+)
+
+# ============================
+# ENV DUMP + EXFIL
+# ============================
+
+_cp(
+    "env_dump_curl",
+    r"(env|printenv|set)\s*\|.*curl",
+    CommandCategory.INFORMATION_GATHERING,
+    CommandSeverity.HIGH,
+    "Environment variable dump piped to curl - credential exfiltration.",
+)
+
+_cp(
+    "env_dump_multi_pipe_exfil",
+    r"(env|printenv).*\|.*\|.*(curl|wget|nc)",
+    CommandCategory.INFORMATION_GATHERING,
+    CommandSeverity.HIGH,
+    "Environment dump through multiple pipes to network tool - exfiltration.",
+)
+
 
 # ---------------------------------------------------------------------------
 # Main detection function
@@ -722,6 +819,14 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
         >>> findings[0].category
         <CommandCategory.FILESYSTEM_DESTRUCTION: 'filesystem_destruction'>
     """
+    if not cmd:
+        return []
+
+    # Unicode homoglyph bypass: normalize to NFKD and fold to ASCII
+    # so that Cyrillic/Greek lookalikes (е→e, а→a, с→c, etc.) are
+    # reduced to their ASCII equivalents before pattern matching.
+    cmd = unicodedata.normalize("NFKD", cmd).encode("ascii", "ignore").decode("ascii")
+
     if not cmd:
         return []
 

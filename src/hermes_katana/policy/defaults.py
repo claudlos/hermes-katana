@@ -570,6 +570,17 @@ BALANCED_POLICIES: dict[str, Any] = {
         },
         # ── Catch-all ─────────────────────────────────────────────────────
         {
+            "name": "balanced_notes_tainted",
+            "description": "Deny notes tool when arguments carry web taint (data poisoning risk).",
+            "tool_pattern": "notes",
+            "conditions": [
+                {"field": "*", "operator": "contains_taint", "value": True},
+            ],
+            "action": "deny",
+            "priority": 100,
+            "tags": ["side-effect", "persistence", "notes"],
+        },
+        {
             "name": "balanced_catchall_high_taint",
             "description": "Escalate any uncovered tool with high taint.",
             "tool_pattern": "*",
