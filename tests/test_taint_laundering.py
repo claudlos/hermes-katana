@@ -4,12 +4,12 @@ Covers all 12 fixes from .task-w1-taint.md.
 """
 
 import logging
-import warnings
 
 import pytest
 
 from hermes_katana.taint.labels import Source, TaintLabel, TrustLevel
 from hermes_katana.taint.value import (
+    TaintedBytes,
     TaintedDict,
     TaintedList,
     TaintedStr,
@@ -138,19 +138,36 @@ class TestModFormatting:
 
 
 # ---------------------------------------------------------------------------
-# Fix 5: encode() warning
+# Fix 5: encode() preserves taint via TaintedBytes
 # ---------------------------------------------------------------------------
+#
+# Historically TaintedStr.encode() returned plain bytes and emitted a
+# warning, which opened a codec-laundering evasion path (tainted → .encode
+# → base64 → .decode strips taint). That behaviour was replaced with
+# TaintedBytes propagation — see tests/test_codec_evasion.py for the full
+# attack surface.
 
 
 class TestEncode:
-    def test_encode_warns(self):
+    def test_encode_returns_tainted_bytes(self):
         t = TaintedStr("hello", sources=_src())
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            result = t.encode("utf-8")
-            assert len(w) == 1
-            assert "taint metadata is lost" in str(w[0].message)
-        assert result == b"hello"
+        result = t.encode("utf-8")
+        assert isinstance(result, TaintedBytes)
+        assert bytes(result) == b"hello"
+        assert _has_label(result.sources)
+
+    def test_encode_decode_roundtrip_preserves_taint(self):
+        t = TaintedStr("hello", sources=_src())
+        round_tripped = t.encode("utf-8").decode("utf-8")
+        assert isinstance(round_tripped, TaintedStr)
+        assert _has_label(round_tripped.sources)
+
+    def test_encode_with_non_default_encoding(self):
+        t = TaintedStr("caf\u00e9", sources=_src())
+        result = t.encode("latin-1")
+        assert isinstance(result, TaintedBytes)
+        assert bytes(result) == b"caf\xe9"
+        assert _has_label(result.sources)
 
 
 # ---------------------------------------------------------------------------
