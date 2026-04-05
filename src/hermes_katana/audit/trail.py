@@ -18,6 +18,14 @@ Security model:
 
 from __future__ import annotations
 
+__all__ = [
+    "AuditEventType",
+    "AuditEntry",
+    "default_audit_path",
+    "AuditTrail",
+]
+
+
 import hashlib
 import json
 import logging

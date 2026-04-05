@@ -34,6 +34,17 @@ from hermes_katana.taint.labels import Reader, Source, TaintLabel, TrustLevel
 
 _logger = logging.getLogger(__name__)
 
+__all__ = [
+    "TaintedValue",
+    "CharTaint",
+    "TaintedStr",
+    "TaintedList",
+    "TaintedDict",
+    "unwrap",
+    "collect_sources",
+    "taint_aware_json_dumps",
+]
+
 T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
@@ -315,22 +326,27 @@ class TaintedStr(str):
         return frozenset(s.label for s in self.sources)
 
     def is_trusted(self) -> bool:
+        """``True`` if *every* source is marked ``TRUSTED``."""
         if not self.sources:
             return False
         return all(s.trust_level is TrustLevel.TRUSTED for s in self.sources)
 
     def is_untrusted(self) -> bool:
+        """``True`` if *any* source is marked ``UNTRUSTED``."""
         return any(s.trust_level is TrustLevel.UNTRUSTED for s in self.sources)
 
     def is_public(self) -> bool:
+        """``True`` if no reader restrictions are set."""
         return len(self.readers) == 0
 
     def has_label(self, label: TaintLabel) -> bool:
+        """Check whether any source carries the given *label*."""
         return any(s.label is label for s in self.sources)
 
     # -- Derivation ---------------------------------------------------------
 
     def derive(self, new_value: Any, *extra_deps: Any) -> TaintedValue[Any]:
+        """Create a new tainted value that inherits this string's metadata."""
         all_sources = set(self.sources)
         all_readers = set(self.readers)
         deps: list = [self]
@@ -347,6 +363,7 @@ class TaintedStr(str):
         )
 
     def merge_metadata(self, *others: Any) -> TaintedStr:
+        """Return a copy of ``self`` whose metadata is the union of all inputs."""
         all_sources = set(self.sources)
         all_readers = set(self.readers)
         deps: list = list(self.dependencies)
@@ -365,6 +382,7 @@ class TaintedStr(str):
         )
 
     def unwrap(self, audit: bool = True, reason: str = "") -> str:
+        """Return the bare string, discarding taint (use with caution)."""
         if audit and self.sources:
             labels = ", ".join(sorted(lbl.name for lbl in self.labels))
             _logger.warning(
@@ -513,6 +531,7 @@ class TaintedStr(str):
         )
 
     def __radd__(self, other: str) -> TaintedStr:
+        """Handle ``plain_str + tainted`` with taint propagation."""
         if isinstance(other, str) and not isinstance(other, TaintedStr):
             self_raw = str.__str__(self)
             plain_ct = CharTaint.uniform(len(other), frozenset())
@@ -572,6 +591,7 @@ class TaintedStr(str):
     # -- Common str methods that propagate taint ----------------------------
 
     def upper(self) -> TaintedStr:
+        """Return uppercased copy with taint propagation."""
         return TaintedStr(
             value=str.upper(self),
             sources=self.sources,
@@ -581,6 +601,7 @@ class TaintedStr(str):
         )
 
     def lower(self) -> TaintedStr:
+        """Return lowercased copy with taint propagation."""
         return TaintedStr(
             value=str.lower(self),
             sources=self.sources,
@@ -590,6 +611,7 @@ class TaintedStr(str):
         )
 
     def strip(self, chars: Optional[str] = None) -> TaintedStr:
+        """Return stripped copy with taint propagation."""
         self_raw = str.__str__(self)
         raw = self_raw.strip(chars)
         # Calculate offset directly from lstrip difference (avoids ambiguous index)
@@ -605,6 +627,7 @@ class TaintedStr(str):
         )
 
     def split(self, sep: Optional[str] = None, maxsplit: int = -1) -> list[TaintedStr]:
+        """Split with per-fragment taint propagation."""
         self_raw = str.__str__(self)
         parts = self_raw.split(sep, maxsplit)
         result: list[TaintedStr] = []
@@ -630,6 +653,7 @@ class TaintedStr(str):
         return result
 
     def replace(self, old: str, new: str, count: int = -1) -> TaintedStr:
+        """Replace with taint propagation."""
         self_raw = str.__str__(self)
         raw = self_raw.replace(old, new, count)
         return TaintedStr(
@@ -641,6 +665,7 @@ class TaintedStr(str):
         )
 
     def join(self, iterable: Sequence[Union[str, TaintedStr]]) -> TaintedStr:
+        """Join with taint propagation across all elements."""
         self_raw = str.__str__(self)
         parts: list[str] = []
         all_sources: set[Source] = set(self.sources)
@@ -669,6 +694,7 @@ class TaintedStr(str):
         )
 
     def format(self, *args: Any, **kwargs: Any) -> TaintedStr:
+        """Format with taint propagation through all arguments."""
         self_raw = str.__str__(self)
         unwrapped_args: list[Any] = []
         all_sources: set[Source] = set(self.sources)
@@ -711,11 +737,13 @@ class TaintedStr(str):
         )
 
     def startswith(self, prefix: Union[str, TaintedStr], start: int = 0, end: Optional[int] = None) -> bool:
+        """Check prefix, transparently unwrapping TaintedStr."""
         p = str.__str__(prefix) if isinstance(prefix, TaintedStr) else prefix
         self_raw = str.__str__(self)
         return self_raw.startswith(p, start, end if end is not None else len(self_raw))
 
     def endswith(self, suffix: Union[str, TaintedStr], start: int = 0, end: Optional[int] = None) -> bool:
+        """Check suffix, transparently unwrapping TaintedStr."""
         s = str.__str__(suffix) if isinstance(suffix, TaintedStr) else suffix
         self_raw = str.__str__(self)
         return self_raw.endswith(s, start, end if end is not None else len(self_raw))

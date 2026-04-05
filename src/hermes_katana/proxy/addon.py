@@ -12,6 +12,11 @@ Integrates the scanner module with the MITM proxy to provide:
 
 from __future__ import annotations
 
+__all__ = [
+    "KatanaAddon",
+    "RateTracker",
+]
+
 import hashlib
 import logging
 import threading
@@ -636,9 +641,11 @@ def _make_block_response(status_code: int, reason: str) -> Any:
                 }
 
             def get_content(self) -> bytes:
+                """Return the response content."""
                 return self.content
 
             def set_content(self, data: bytes) -> None:
+                """Set the response content."""
                 self.content = data
 
         return _MockResponse(status_code, reason)

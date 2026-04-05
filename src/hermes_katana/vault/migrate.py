@@ -26,6 +26,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "MigrationResult",
+    "discover_secrets",
+    "migrate_secrets",
+]
+
 # ---------------------------------------------------------------------------
 # Known secret key patterns (env var names that are likely secrets)
 # ---------------------------------------------------------------------------

@@ -22,6 +22,14 @@ Usage::
 
 from __future__ import annotations
 
+__all__ = [
+    "BackupManifest",
+    "HERMES_MARKERS",
+    "KatanaInstaller",
+    "VerifyResult",
+]
+
+
 import hashlib
 import json
 import logging
@@ -182,6 +190,7 @@ class BackupManifest:
     missing_paths: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize backup manifest to a dictionary."""
         return {
             "operation": self.operation,
             "target": self.target,
@@ -193,6 +202,7 @@ class BackupManifest:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BackupManifest":
+        """Deserialize backup manifest from a dictionary."""
         return cls(
             operation=str(data["operation"]),
             target=str(data["target"]),
@@ -867,7 +877,7 @@ class KatanaInstaller:
         marker = target / KATANA_INSTALL_MARKER
         data = {
             "installed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "installer_version": "0.1.0",
+            "installer_version": "1.0.0",
             "patches": {
                 r.name: {"status": r.status.value, "message": r.message}
                 for r in results

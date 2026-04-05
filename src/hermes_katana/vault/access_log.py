@@ -32,6 +32,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "AccessEntry",
+    "VaultAccessLog",
+]
+
 # Default max log size before rotation (5 MB)
 _DEFAULT_MAX_SIZE = 5 * 1024 * 1024
 
@@ -110,6 +115,7 @@ class VaultAccessLog:
 
     @property
     def path(self) -> Path:
+        """Path to the JSONL access log file."""
         return self._path
 
     def log_access(

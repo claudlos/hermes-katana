@@ -14,9 +14,9 @@ approval.
 
 from __future__ import annotations
 
+import fnmatch
 import json as _json
 import logging
-import fnmatch
 import threading
 import time
 from dataclasses import dataclass, field
@@ -27,6 +27,17 @@ from hermes_katana.taint.labels import TaintLabel, TrustLevel
 from hermes_katana.taint.value import TaintedValue, collect_sources
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "FlowDecision",
+    "FlowRule",
+    "FlowAnalysis",
+    "CRITICAL_SINKS",
+    "UNTRUSTED_LABELS",
+    "CONDITIONAL_LABELS",
+    "default_rules",
+    "FlowAnalyzer",
+]
 
 
 # ---------------------------------------------------------------------------

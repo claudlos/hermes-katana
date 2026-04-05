@@ -29,6 +29,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+__all__ = [
+    "EnsembleClassifier",
+    "combined_score",
+    "is_actionable",
+    "ACTIONABLE_THRESHOLD",
+    "DEFAULT_TRAINING_DATA",
+]
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

@@ -45,6 +45,15 @@ from .yaml_loader import PolicyFileWatcher, load_policy_directory, load_policy_f
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "BENIGN_COMMANDS",
+    "BENIGN_GIT_SUBCOMMANDS",
+    "command_safety_check",
+    "EvaluationResult",
+    "evaluate_condition",
+    "PolicyEngine",
+]
+
 
 # ---------------------------------------------------------------------------
 # Benign command whitelist — commands safe even with mild taint

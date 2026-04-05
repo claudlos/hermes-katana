@@ -13,6 +13,14 @@ from dataclasses import dataclass, field
 from enum import Enum, auto, unique
 from typing import FrozenSet
 
+__all__ = [
+    "TrustLevel",
+    "TaintLabel",
+    "default_trust_for",
+    "Source",
+    "Reader",
+]
+
 
 # ---------------------------------------------------------------------------
 # Trust level

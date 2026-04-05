@@ -32,6 +32,10 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "SecretExpiry",
+]
+
 
 def _default_expiry_path() -> Path:
     """Default path for the expiry metadata file."""
@@ -54,6 +58,7 @@ class SecretExpiry:
 
     @property
     def path(self) -> Path:
+        """Path to the expiry metadata file."""
         return self._path
 
     def set_expiry(self, key_name: str, ttl_seconds: float) -> None:

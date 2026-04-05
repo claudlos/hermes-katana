@@ -26,6 +26,15 @@ Usage::
 
 from __future__ import annotations
 
+__all__ = [
+    "KatanaTaintMiddleware",
+    "KatanaScanMiddleware",
+    "KatanaPolicyMiddleware",
+    "KatanaAuditMiddleware",
+    "create_default_chain",
+]
+
+
 import hashlib
 import json
 import logging

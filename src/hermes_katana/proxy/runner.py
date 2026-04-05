@@ -10,6 +10,12 @@ Provides start/stop/restart/status operations for the MITM proxy with:
 
 from __future__ import annotations
 
+__all__ = [
+    "KatanaProxy",
+    "default_pid_path",
+]
+
+
 import hashlib
 import json
 import logging
@@ -103,6 +109,7 @@ class _PidInfo:
         self.started_at = started_at
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize PID info to a dictionary."""
         return {
             "pid": self.pid,
             "host": self.host,
@@ -113,6 +120,7 @@ class _PidInfo:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "_PidInfo":
+        """Deserialize PID info from a dictionary."""
         return cls(
             pid=data["pid"],
             host=data.get("host", "127.0.0.1"),
@@ -122,10 +130,12 @@ class _PidInfo:
         )
 
     def to_json(self) -> str:
+        """Serialize PID info to JSON."""
         return json.dumps(self.to_dict())
 
     @classmethod
     def from_json(cls, raw: str) -> "_PidInfo":
+        """Deserialize PID info from JSON."""
         return cls.from_dict(json.loads(raw))
 
 
@@ -228,7 +238,10 @@ class _HealthCheckServer(threading.Thread):
         proxy_ref = self.proxy_ref
 
         class Handler(http.server.BaseHTTPRequestHandler):
+            """HTTP request handler for health check endpoint."""
+
             def do_GET(self) -> None:  # noqa: N802
+                """Handle GET requests for health checks."""
                 if self.path == "/health":
                     status = proxy_ref.status()
                     code = 200 if status.get("running") else 503
@@ -242,6 +255,7 @@ class _HealthCheckServer(threading.Thread):
                     self.end_headers()
 
             def log_message(self, format: str, *args: Any) -> None:
+                """Suppress default HTTP access logging."""
                 pass  # Suppress default HTTP logging
 
         try:

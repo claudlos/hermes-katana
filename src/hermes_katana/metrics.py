@@ -29,6 +29,11 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Optional
 
+__all__ = [
+    "MetricsSummary",
+    "MetricsCollector",
+]
+
 
 @dataclass
 class MetricsSummary:

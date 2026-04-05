@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+__all__ = [
+    "CompatSnapshotRecord",
+    "SourceProvenance",
+    "snapshot_paths_for_profile",
+    "infer_hermes_version",
+    "snapshot_id",
+    "load_snapshot_registry",
+    "build_snapshot_record",
+    "compute_file_sha256",
+    "compute_tree_sha256",
+    "verify_source_provenance",
+    "refresh_snapshot_matrix",
+    "main",
+]
+
+
 import argparse
 import hashlib
 import json
@@ -40,6 +56,7 @@ class CompatSnapshotRecord:
     provenance: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
+        """Serialize to a dictionary."""
         payload: dict[str, object] = {
             "id": self.id,
             "directory": self.directory,
@@ -67,6 +84,7 @@ class SourceProvenance:
     source_archive_sha256: Optional[str] = None
 
     def to_dict(self) -> dict[str, str]:
+        """Serialize to a dictionary."""
         payload = {
             "verification_mode": self.verification_mode,
             "source_tree_sha256": self.source_tree_sha256,

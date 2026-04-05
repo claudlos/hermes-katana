@@ -1,16 +1,46 @@
+# Python bytecode
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Distribution / packaging
 *.egg-info/
+*.egg
 dist/
 build/
 .eggs/
-*.egg
-.pytest_cache/
-.pytest_tmp/
-.ruff_cache/
-.tmp/
+
+# Virtual environments
 .venv/
 venv/
+
+# Testing
+.pytest_cache/
+.pytest_tmp/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+
+# Tools
+.ruff_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Runtime config
+.hermes-katana/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Task/plan files
+.task-*.md
+.plan-*.md
+
+# Misc
+.tmp/
 *.lock
-~/.hermes-katana/

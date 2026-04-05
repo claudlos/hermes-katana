@@ -22,6 +22,13 @@ import urllib.parse
 from dataclasses import dataclass
 from enum import Enum
 
+__all__ = [
+    "InjectionCategory",
+    "InjectionFinding",
+    "detect_injection",
+    "injection_score",
+]
+
 
 class InjectionCategory(str, Enum):
     """Categories of prompt injection attacks.

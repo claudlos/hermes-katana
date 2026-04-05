@@ -11,6 +11,15 @@ and HuggingFace.
 
 from __future__ import annotations
 
+__all__ = [
+    "Provider",
+    "PROVIDER_REGISTRY",
+    "get_provider_for_domain",
+    "inject_credentials",
+    "list_providers",
+]
+
+
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional

@@ -29,6 +29,21 @@ The core patches
 
 from __future__ import annotations
 
+__all__ = [
+    "PatchStatus",
+    "PatchResult",
+    "Patch",
+    "validate_patch_target",
+    "create_backup",
+    "apply_patches",
+    "preview_apply_patches",
+    "revert_patches",
+    "preview_revert_patches",
+    "get_patch_status",
+    "CORE_PATCHES",
+]
+
+
 import logging
 import os
 import shutil

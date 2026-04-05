@@ -1,0 +1,55 @@
+# Custom HermesKatana Policy — example configuration
+# Load with: PolicyEngine.from_file("custom_policy.yaml")
+#
+# This file defines tool-call security rules evaluated by the policy engine.
+# Policies are checked in priority order (highest first). First match wins.
+
+name: my-custom-policy
+version: "1.0"
+description: "Example policy extending balanced defaults with stricter terminal rules"
+author: security-team
+
+# Inherit from a built-in preset (paranoid / balanced / permissive)
+extends: balanced
+
+policies:
+  # Block any terminal command with tainted input at high taint levels
+  - name: block-tainted-terminal
+    description: "Deny terminal calls when taint level is high"
+    tool_pattern: "terminal"         # regex matched against tool name
+    action: deny
+    priority: 100                    # higher = checked first (0-10000)
+    conditions:
+      - field: taint_level           # from the taint_context dict
+        operator: taint_level_gte    # >= comparison
+        value: 0.5
+
+  # Escalate file writes from web-tainted sources
+  - name: escalate-web-file-write
+    description: "Ask user before writing files with web-sourced data"
+    tool_pattern: "(write_file|file_write|patch)"
+    action: escalate
+    priority: 90
+    conditions:
+      - field: labels
+        operator: contains_taint
+        value: web_content
+
+  # Allow read-only tools unconditionally
+  - name: allow-reads
+    description: "Read operations are always safe"
+    tool_pattern: "(read_file|search_files|list_dir)"
+    action: allow
+    priority: 80
+
+  # Log-only for low-risk tainted calls (monitoring without blocking)
+  - name: log-low-taint
+    description: "Just log when taint is present but low"
+    tool_pattern: ".*"              # match all tools
+    action: log_only
+    priority: 10                    # low priority = fallback
+    conditions:
+      - field: labels
+        operator: contains_taint
+        value: tool_output
+    tags: [monitoring, low-risk]
