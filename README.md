@@ -298,8 +298,8 @@ This project stands on the shoulders of excellent research and prior work:
 
 - **[CaMeL: Defeating Prompt Injections by Design](https://arxiv.org/abs/2503.18813)** — Debenedetti, Tramèr, et al. (Google DeepMind, 2025). The foundational paper that introduced capability-based security and taint tracking for LLM agents. HermesKatana extends CaMeL's value-level taint tracking to character-level granularity.
 - **[google-deepmind/dangerous-capabilities-evaluations](https://github.com/google-deepmind/dangerous-capabilities-evaluations)** — Google DeepMind's evaluation framework for dangerous AI capabilities, informing our adversarial eval design.
-- **[hermes-aegis](https://github.com/claudlos/hermes-aegis)** — The predecessor project by [@claudlos](https://github.com/claudlos). Pioneered the mitmproxy-based secret scrubbing proxy, encrypted vault, and command scanner patterns that HermesKatana builds upon.
-- **[Hermes Agent](https://github.com/hermes-ai/hermes)** — The AI agent runtime HermesKatana was designed to protect. The middleware chain architecture is tailored for Hermes's tool-dispatch pipeline.
+- **[hermes-aegis](https://github.com/Tranquil-Flow/hermes-aegis)** — The predecessor project by [@Tranquil-Flow](https://github.com/Tranquil-Flow). Pioneered the mitmproxy-based secret scrubbing proxy, encrypted vault, and command scanner patterns that HermesKatana builds upon.
+- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — The AI agent runtime by [Nous Research](https://github.com/NousResearch) that HermesKatana was designed to protect. The middleware chain architecture is tailored for Hermes's tool-dispatch pipeline.
 - **[NVIDIA NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)** — Inspiration for the declarative policy DSL approach and conversation-level rail concepts.
 - **[LLM Guard by Protect AI](https://github.com/protectai/llm-guard)** — Inspiration for modular scanner architecture and the input/output scanning pattern.
 - **[Invariant Labs](https://github.com/invariantlabs-ai/invariant)** — Inspiration for policy-as-code agent security and trace-level analysis concepts.
