@@ -600,28 +600,41 @@ class PolicyEngine:
         if isinstance(obj, (str, int, float, bool)) or obj is None:
             return obj
         if isinstance(obj, dict):
-            return (
-                "dict",
-                tuple(
-                    sorted(
-                        (
-                            str(k),
-                            PolicyEngine._canonical_taint_fingerprint(v),
-                        )
-                        for k, v in obj.items()
-                    )
-                ),
-            )
-        if isinstance(obj, (list, tuple)):
+            # Canonicalize both keys AND values (issue #4 follow-up: stringifying
+            # keys reintroduced the same collision class — {Spoof(): v} vs
+            # {"user": v} and {1: v} vs {"1": v} hashed identically).
+            # Sort by repr of the (key_fp, value_fp) pair so comparisons never
+            # hit TypeError across mixed key types.
+            items = [
+                (
+                    PolicyEngine._canonical_taint_fingerprint(k),
+                    PolicyEngine._canonical_taint_fingerprint(v),
+                )
+                for k, v in obj.items()
+            ]
+            items.sort(key=repr)
+            return ("dict", tuple(items))
+        # Preserve concrete container kind — list/tuple and set/frozenset are
+        # observably different to evaluate_condition() (which compares via
+        # str(arg_val)), so they must not share cache entries.
+        if isinstance(obj, list):
             return (
                 "list",
                 tuple(PolicyEngine._canonical_taint_fingerprint(x) for x in obj),
             )
-        if isinstance(obj, (set, frozenset)):
+        if isinstance(obj, tuple):
             return (
-                "frozenset",
-                tuple(sorted(repr(PolicyEngine._canonical_taint_fingerprint(x)) for x in obj)),
+                "tuple",
+                tuple(PolicyEngine._canonical_taint_fingerprint(x) for x in obj),
             )
+        if isinstance(obj, frozenset):
+            items = [PolicyEngine._canonical_taint_fingerprint(x) for x in obj]
+            items.sort(key=repr)
+            return ("frozenset", tuple(items))
+        if isinstance(obj, set):
+            items = [PolicyEngine._canonical_taint_fingerprint(x) for x in obj]
+            items.sort(key=repr)
+            return ("set", tuple(items))
         # Unknown type — include the QUALIFIED type name so foreign objects
         # cannot collide with primitives merely by having a matching repr.
         tp = type(obj)

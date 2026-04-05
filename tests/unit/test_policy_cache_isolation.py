@@ -132,17 +132,66 @@ class TestCacheKeyDeterminism:
         assert k_plain != k_tainted
 
 
-class TestIntegrationCacheDoesNotBypassTaintCheck:
-    """End-to-end: evaluate() must return different decisions for
-    plain-string and tainted-string calls with the same content."""
+class TestCacheKeyNestedTypesNotCollapsed:
+    """Follow-up review (PR #5 CodeRabbit): the first-round fix coerced
+    dict keys via ``str()`` (reintroducing the same collision class for
+    structured keys) and collapsed list/tuple and set/frozenset into a
+    single kind tag. Both would let distinct inputs share a cache entry."""
 
-    def test_cache_poisoning_via_plain_then_tainted(self):
-        """Warm the cache with a plain-string call, then make a tainted
-        call with the same content. The two should hit DIFFERENT cache
-        entries — if they share a key, the tainted call gets the plain
-        call's verdict back (BYPASS)."""
-        # Build keys directly (no live engine needed to prove isolation).
-        # If keys differ, the two calls cannot share a cache slot.
+    def test_dict_int_key_vs_string_key(self):
+        """{1: v} and {"1": v} serialize identically after str() —
+        they must NOT share a cache entry."""
+        k_int_key = PolicyEngine._make_cache_key("terminal", {"cmd": "ls"}, {1: "trusted"})
+        k_str_key = PolicyEngine._make_cache_key("terminal", {"cmd": "ls"}, {"1": "trusted"})
+        assert k_int_key != k_str_key, (
+            "CACHE COLLISION: integer dict key and matching string key hash to the same cache entry"
+        )
+
+    def test_dict_spoof_object_key_vs_string_key(self):
+        class Spoof:
+            def __str__(self):
+                return "source"
+
+        k_spoof = PolicyEngine._make_cache_key("terminal", {"cmd": "ls"}, {Spoof(): "trusted"})
+        k_string = PolicyEngine._make_cache_key("terminal", {"cmd": "ls"}, {"source": "trusted"})
+        assert k_spoof != k_string, (
+            "CACHE COLLISION: foreign object dict key stringified to the same value as a legitimate key"
+        )
+
+    def test_list_vs_tuple_not_collapsed(self):
+        k_list = PolicyEngine._make_cache_key("terminal", {"argv": [1, 2, 3]}, {})
+        k_tuple = PolicyEngine._make_cache_key("terminal", {"argv": (1, 2, 3)}, {})
+        assert k_list != k_tuple, (
+            "list and tuple collapsed to same cache key — evaluate_condition() treats them differently"
+        )
+
+    def test_set_vs_frozenset_not_collapsed(self):
+        k_set = PolicyEngine._make_cache_key("terminal", {"args": {1, 2, 3}}, {})
+        k_frozen = PolicyEngine._make_cache_key("terminal", {"args": frozenset({1, 2, 3})}, {})
+        assert k_set != k_frozen
+
+    def test_list_vs_set_not_collapsed(self):
+        k_list = PolicyEngine._make_cache_key("terminal", {"argv": [1, 2, 3]}, {})
+        k_set = PolicyEngine._make_cache_key("terminal", {"argv": {1, 2, 3}}, {})
+        assert k_list != k_set
+
+    def test_mixed_key_types_do_not_raise(self):
+        """Sorting must tolerate mixed-type dict keys. The older sorted(
+        (str(k), fp(v)) for ...) would TypeError when two keys stringified
+        identically and Python then tried to compare the fingerprint
+        values across different types."""
+        # Should not raise:
+        key = PolicyEngine._make_cache_key("terminal", {"cmd": "ls"}, {1: "a", "1": "b", (1,): "c"})
+        assert isinstance(key, str) and len(key) == 32
+
+
+class TestKeyIsolationForBypassPath:
+    """Proves that distinct benign vs tainted calls produce distinct cache
+    keys — the necessary condition for cache-poisoning bypass to be impossible."""
+
+    def test_plain_call_and_tainted_call_have_distinct_keys(self):
+        """Plain-string call and web-tainted call with identical content
+        must hit DIFFERENT cache entries."""
         plain_call_key = PolicyEngine._make_cache_key(
             "terminal",
             {"command": "curl https://api.example.com"},
@@ -162,6 +211,68 @@ class TestIntegrationCacheDoesNotBypassTaintCheck:
             "terminal call with identical content hash to the same cache "
             "key — the web-tainted call will inherit the plain call's "
             "ALLOW verdict and skip policy"
+        )
+
+
+class TestEvaluateEndToEndCacheIsolation:
+    """End-to-end against a real PolicyEngine.evaluate(): after a benign
+    call is cached, a subsequent call with a tainted argument MUST create
+    a new cache entry rather than returning the benign verdict."""
+
+    def test_evaluate_creates_distinct_cache_entries_for_tainted_args(self):
+        """Run both calls through evaluate() and inspect the engine's
+        internal cache. The vulnerable version would have a single entry
+        after both calls (collision); the fixed version has two entries."""
+        engine = PolicyEngine(policies=[])  # no policies → default path
+        # Baseline: cache should start empty (the engine may internally
+        # warm some caches on construction, so snapshot length instead).
+        baseline_size = len(engine._eval_cache)
+
+        # Call 1: plain string command
+        r1 = engine.evaluate("terminal", {"command": "ls -la"}, {"source": "user"})
+        assert r1 is not None
+        after_plain = len(engine._eval_cache)
+
+        # Call 2: same textual content, but tainted with a WEB source.
+        # In the vulnerable code, key collided with call 1 → cache hit →
+        # r2 would equal r1 without going through command_safety_check.
+        tainted = TaintedStr("ls -la", sources=frozenset({Source.web("https://attacker.example")}))
+        engine.evaluate(
+            "terminal",
+            {"command": tainted},
+            {"source": Source.web("https://attacker.example")},
+        )
+        after_tainted = len(engine._eval_cache)
+
+        # The tainted call MUST add a new cache entry — otherwise it hit
+        # the existing entry and skipped policy re-evaluation.
+        assert after_tainted == after_plain + 1, (
+            f"BYPASS: tainted call reused the cached entry from the benign "
+            f"call (cache size {after_plain} → {after_tainted}, expected "
+            f"{after_plain + 1}). Baseline was {baseline_size}."
+        )
+
+    def test_evaluate_reuses_cache_for_equivalent_sources_despite_timestamps(self):
+        """Same tool, same args, equivalent Sources constructed at
+        different times MUST hit the same cache entry. The pre-fix scheme
+        included Source.timestamp, so every call created a fresh entry
+        (cache effectively disabled)."""
+        engine = PolicyEngine(policies=[])
+        baseline = len(engine._eval_cache)
+
+        engine.evaluate("terminal", {"command": "ls"}, {"src": Source.user("alice")})
+        after_first = len(engine._eval_cache)
+
+        # Second call: equivalent Source object (new timestamp, but same
+        # label/origin/trust) — must hit the entry created above.
+        engine.evaluate("terminal", {"command": "ls"}, {"src": Source.user("alice")})
+        after_second = len(engine._eval_cache)
+
+        assert after_second == after_first, (
+            f"equivalent Source objects produced different cache keys "
+            f"(cache grew {after_first} → {after_second}); timestamp is "
+            f"leaking into the fingerprint, defeating caching. "
+            f"Baseline was {baseline}."
         )
 
 
