@@ -21,7 +21,7 @@ pip install -e ".[dev]"
 **Expected output:**
 
 ```
-Successfully installed hermes-katana-1.0.0
+Successfully installed hermes-katana-2.0.0
 ```
 
 ---

@@ -48,7 +48,7 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_SECURITY = 2
 
-VERSION = "1.0.0"
+VERSION = "2.0.0"
 
 
 # ---------------------------------------------------------------------------
@@ -913,7 +913,7 @@ def policy_export(path: str) -> None:
 
     policy_set = PolicySet(
         name="katana-export",
-        version="1.0.0",
+        version="2.0.0",
         description=f"Exported from {source}",
         policies=policies,
     )
