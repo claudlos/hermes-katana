@@ -52,8 +52,8 @@ class TestSecureKeyZeroing:
         vault._zero_key()  # second call should be safe
         assert vault._master_key is None
 
-    def test_del_calls_zero_key(self, tmp_path):
-        """__del__ should call _zero_key."""
+    def test_del_calls_close(self, tmp_path):
+        """__del__ should call close() to clean up the master key."""
         from hermes_katana.vault.store import Vault
 
         vault_path = tmp_path / "vault.json"
@@ -61,9 +61,9 @@ class TestSecureKeyZeroing:
             with patch("hermes_katana.vault.store._set_master_key"):
                 vault = Vault(path=vault_path, auto_create=True)
 
-        with patch.object(vault, "_zero_key") as mock_zero:
+        with patch.object(vault, "close") as mock_close:
             vault.__del__()
-            mock_zero.assert_called_once()
+            mock_close.assert_called_once()
 
     def test_zero_key_no_key_set(self, tmp_path):
         """_zero_key on vault with no key should not raise."""

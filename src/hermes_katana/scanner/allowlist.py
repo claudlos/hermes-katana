@@ -24,7 +24,6 @@ Usage::
 from __future__ import annotations
 
 import fnmatch
-import json
 import logging
 import re
 import time
@@ -291,7 +290,6 @@ class AllowlistManager:
     def __post_init__(self):
         if self.include_builtins:
             # Append builtins (lower priority than user-defined)
-            builtin_ids = {s.id for s in _BUILTIN_SUPPRESSIONS}
             existing_ids = {s.id for s in self.suppressions}
             for b in _BUILTIN_SUPPRESSIONS:
                 if b.id not in existing_ids:

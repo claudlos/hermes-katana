@@ -897,7 +897,3 @@ class Vault:
             except Exception:
                 pass
             self._master_key = None
-
-    def __del__(self) -> None:
-        """Zero master key on garbage collection."""
-        self._zero_key()
