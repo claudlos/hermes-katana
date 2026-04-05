@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 import json
-import tomllib
+import sys
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        import tomllib  # will fail on 3.10 without tomli
 from pathlib import Path
 
 from hermes_katana.installer.installer import KatanaInstaller
