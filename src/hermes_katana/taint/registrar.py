@@ -24,6 +24,18 @@ from hermes_katana.taint.value import TaintedStr
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "taint_user_input",
+    "taint_tool_output",
+    "taint_web_content",
+    "taint_file_content",
+    "taint_mcp_result",
+    "taint_mcp_description",
+    "taint_llm_response",
+    "taint_memory",
+    "taint_delegated",
+]
+
 
 def _get_tracker() -> TaintTracker:
     """Return the global tracker singleton."""

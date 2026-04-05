@@ -35,6 +35,14 @@ from typing import Any, Optional
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
+__all__ = [
+    "KatanaConfig",
+    "load_config",
+    "get_default_config",
+    "config_path",
+    "config_dir",
+]
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

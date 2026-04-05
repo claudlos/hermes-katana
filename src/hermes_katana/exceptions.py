@@ -8,6 +8,14 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+__all__ = [
+    "KatanaSecurityError",
+    "EscalationRequired",
+    "TaintFlowDenied",
+    "ScanBlocked",
+    "PolicyDenied",
+]
+
 
 class KatanaSecurityError(Exception):
     """Base exception for all security-related denials.

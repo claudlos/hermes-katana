@@ -29,6 +29,13 @@ from __future__ import annotations
 
 from typing import Any
 
+__all__ = [
+    "PARANOID_POLICIES",
+    "BALANCED_POLICIES",
+    "PERMISSIVE_POLICIES",
+    "BUILTIN_POLICY_SETS",
+]
+
 # ═══════════════════════════════════════════════════════════════════════════
 # PARANOID — deny everything untrusted
 # ═══════════════════════════════════════════════════════════════════════════

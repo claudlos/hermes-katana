@@ -32,6 +32,17 @@ can be added/removed while calls are in flight (hot-reload support).
 
 from __future__ import annotations
 
+__all__ = [
+    "CallContext",
+    "DispatchDecision",
+    "KatanaMiddleware",
+    "MiddlewareChain",
+    "register_protected_tool",
+    "get_bypass_warnings",
+    "clear_bypass_warnings",
+]
+
+
 import enum
 import logging
 import threading

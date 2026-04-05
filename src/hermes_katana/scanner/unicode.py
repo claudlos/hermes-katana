@@ -19,6 +19,23 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+__all__ = [
+    "UnicodeCategory",
+    "UnicodeSeverity",
+    "UnicodeFinding",
+    "normalize_text",
+    "normalize_and_scan",
+    "scan_unicode",
+    "BIDI_CHARS",
+    "ZERO_WIDTH_CHARS",
+    "CONFUSABLE_MAP",
+    "BIDI_PATTERN",
+    "ZERO_WIDTH_PATTERN",
+    "SCRIPT_GROUPS",
+    "SCRIPT_NEUTRAL_CATEGORIES",
+    "SUSPICIOUS_CONTROL_RANGES",
+]
+
 
 class UnicodeCategory(str, Enum):
     """Categories of Unicode-based attacks."""

@@ -5,4 +5,4 @@ CaMeL-inspired taint tracking, proxy-based secret guard, policy engine,
 and red-team benchmarking for LLM agent tool use.
 """
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"

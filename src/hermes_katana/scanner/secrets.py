@@ -27,6 +27,15 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+__all__ = [
+    "SecretCategory",
+    "SecretSeverity",
+    "SecretFinding",
+    "scan_for_secrets",
+    "scan_for_secrets_chunked",
+    "shannon_entropy",
+]
+
 
 class SecretCategory(str, Enum):
     """Categories of detected secrets."""

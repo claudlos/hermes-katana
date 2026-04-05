@@ -23,11 +23,11 @@ from __future__ import annotations
 import base64
 import ctypes
 import hashlib
-import platform
 import hmac
 import json
 import logging
 import os
+import platform
 import secrets
 import sys
 import tempfile
@@ -36,6 +36,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "VaultError",
+    "VaultLockedError",
+    "VaultIntegrityError",
+    "VaultKeyError",
+    "SecureBytes",
+    "Vault",
+    "default_vault_path",
+]
 
 
 class _VaultFileLock:

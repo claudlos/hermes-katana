@@ -20,6 +20,11 @@ Exit codes::
 
 from __future__ import annotations
 
+__all__ = [
+    "main",
+]
+
+
 import os
 import platform
 import shutil
@@ -43,7 +48,7 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_SECURITY = 2
 
-VERSION = "0.1.0"
+VERSION = "1.0.0"
 
 
 # ---------------------------------------------------------------------------

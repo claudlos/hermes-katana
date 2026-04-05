@@ -7,6 +7,8 @@ This file is loaded by ``mitmdump -s`` and instantiates the real
 
 from __future__ import annotations
 
+__all__ = ["addons"]
+
 import logging
 import os
 from pathlib import Path
@@ -18,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> ProxyConfig:
+    """Load proxy configuration from environment."""
     raw = os.environ.get("KATANA_PROXY_CONFIG_JSON")
     if raw:
         try:
@@ -27,7 +30,8 @@ def _load_config() -> ProxyConfig:
     return ProxyConfig()
 
 
-def _load_vault():
+def _load_vault() -> object | None:
+    """Load the vault backend for credential injection."""
     if os.environ.get("KATANA_PROXY_ENABLE_VAULT", "1") != "1":
         return None
 
@@ -44,7 +48,8 @@ def _load_vault():
         return None
 
 
-def _load_audit_trail():
+def _load_audit_trail() -> object | None:
+    """Load the audit trail backend for event logging."""
     if os.environ.get("KATANA_PROXY_ENABLE_AUDIT", "1") != "1":
         return None
 

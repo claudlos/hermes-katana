@@ -23,6 +23,14 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
+__all__ = [
+    "ContentCategory",
+    "ContentSeverity",
+    "ContentFinding",
+    "scan_content",
+    "content_risk_score",
+]
+
 
 class ContentCategory(str, Enum):
     """Categories of content-level attacks."""

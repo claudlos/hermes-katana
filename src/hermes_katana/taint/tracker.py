@@ -35,6 +35,11 @@ from hermes_katana.taint.value import (
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
+__all__ = [
+    "TrackerStats",
+    "TaintTracker",
+]
+
 
 # ---------------------------------------------------------------------------
 # Tracker statistics
@@ -55,9 +60,11 @@ class TrackerStats:
 
     @property
     def uptime_seconds(self) -> float:
+        """Seconds since the tracker session started."""
         return time.time() - self.session_start
 
     def record_flow(self, decision: FlowDecision) -> None:
+        """Increment flow counters based on the decision type."""
         self.flow_checks += 1
         if decision is FlowDecision.ALLOW:
             self.flow_allowed += 1

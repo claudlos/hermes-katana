@@ -35,6 +35,11 @@ from typing import Any, Optional
 
 import yaml
 
+__all__ = [
+    "Suppression",
+    "AllowlistManager",
+]
+
 logger = logging.getLogger(__name__)
 
 

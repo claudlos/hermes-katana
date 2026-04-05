@@ -37,6 +37,13 @@ import logging
 import time
 from typing import Any, Optional
 
+__all__ = [
+    "register",
+    "setup",
+    "plugin_name",
+    "plugin_version",
+]
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

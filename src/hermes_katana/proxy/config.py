@@ -7,6 +7,12 @@ network settings, scan modes, and rate limiting.
 
 from __future__ import annotations
 
+__all__ = [
+    "ScanModes",
+    "ProxyConfig",
+]
+
+
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator

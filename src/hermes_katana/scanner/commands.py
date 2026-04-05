@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass
+from enum import Enum
 
 # Confusable homoglyph map: maps visually similar Unicode characters
 # (e.g. Cyrillic, Greek) to their ASCII equivalents for security matching.
@@ -71,8 +73,14 @@ _CONFUSABLE_MAP = str.maketrans({
     '\uff0f': '/',  # Fullwidth solidus
     '\uff5c': '|',  # Fullwidth vertical bar
 })
-from dataclasses import dataclass
-from enum import Enum
+
+__all__ = [
+    "CommandSeverity",
+    "CommandCategory",
+    "CommandFinding",
+    "detect_dangerous_command",
+    "command_risk_score",
+]
 
 
 class CommandSeverity(str, Enum):

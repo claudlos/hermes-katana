@@ -50,6 +50,15 @@ from .models import PolicySet
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "PolicyValidationError",
+    "validate_policy_yaml",
+    "load_policy_file",
+    "load_policy_directory",
+    "export_policy_set",
+    "PolicyFileWatcher",
+]
+
 # ---------------------------------------------------------------------------
 # Validation helpers
 # ---------------------------------------------------------------------------

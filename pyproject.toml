@@ -4,48 +4,51 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hermes-katana"
-version = "0.2.0"
-description = "Defense-in-depth security toolkit for Hermes Agent — CaMeL taint tracking, proxy-based secret guard, policy engine, and red-team benchmarking"
-authors = [{name = "Carlos", email = "account-holder@example.com"}]
+version = "1.0.0"
+description = "Defense-in-depth security toolkit for LLM agents — taint tracking, proxy secret guard, policy engine, and red-team benchmarking"
+authors = [{name = "Carlos"}]
 requires-python = ">=3.10"
 license = {text = "MIT"}
 readme = "README.md"
-keywords = ["llm", "security", "prompt-injection", "taint-tracking", "hermes"]
+keywords = ["llm", "security", "prompt-injection", "taint-tracking", "hermes", "agent-security"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Security",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
 ]
 
 dependencies = [
-    "click>=8.0",
-    "cryptography>=41.0",
-    "keyring>=24.0",
-    "mitmproxy>=10.0",
-    "pyyaml>=6.0",
-    "requests>=2.32.5",
     "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "cryptography>=41.0",
+    "click>=8.0",
+    "keyring>=24.0",
+    "requests>=2.32.5",
     "rich>=13.0",
 ]
 
 [project.optional-dependencies]
+proxy = ["mitmproxy>=10.0"]
+ml = ["scikit-learn>=1.3", "numpy>=1.24"]
 container = ["docker>=7.0"]
 benchmark = ["agentdojo>=0.1"]
-ml = ["scikit-learn>=1.3", "numpy>=1.24"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=4.0",
+    "hypothesis>=6.0",
     "responses>=0.26.0",
-    "docker>=7.0",
     "ruff>=0.4",
+    "mypy>=1.8",
 ]
-all = ["hermes-katana[container,benchmark,ml,dev]"]
+all = ["hermes-katana[proxy,ml,container,benchmark,dev]"]
 
 [project.scripts]
 hermes-katana = "hermes_katana.cli.main:main"
@@ -64,3 +67,9 @@ asyncio_mode = "auto"
 [tool.ruff]
 target-version = "py310"
 line-length = 120
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
