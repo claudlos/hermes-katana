@@ -67,6 +67,7 @@ import hashlib
 import json
 import logging
 import time
+from dataclasses import replace
 from typing import Any
 
 from hermes_katana.middleware.chain import CallContext, DispatchDecision, KatanaMiddleware, MiddlewareChain
@@ -74,6 +75,98 @@ from hermes_katana.middleware.protectai_middleware import KatanaProtectAIMiddlew
 from hermes_katana.middleware.taint_middleware import KatanaTaintMiddleware
 
 logger = logging.getLogger(__name__)
+
+
+_CHAIN_PROFILE_ALIASES = {
+    "default": "balanced",
+    "production": "balanced",
+    "prod": "balanced",
+    "cpu": "fast_cpu",
+    "fast": "fast_cpu",
+    "fast-cpu": "fast_cpu",
+    "balanced": "balanced",
+    "paranoid": "paranoid",
+}
+
+
+def _normalize_chain_profile(profile: Any) -> str:
+    """Normalize a user-facing deployment profile name."""
+    normalized = str(profile or "balanced").strip().lower().replace("-", "_")
+    normalized = _CHAIN_PROFILE_ALIASES.get(normalized, normalized)
+    if normalized not in {"fast_cpu", "balanced", "paranoid"}:
+        raise ValueError("profile must be one of: fast_cpu, balanced, paranoid")
+    return normalized
+
+
+def _profile_defaults(profile: str) -> dict[str, Any]:
+    """Return explicit production-profile defaults for the middleware chain."""
+    if profile == "fast_cpu":
+        from hermes_katana.scabbard import ScabbardConfig
+
+        scabbard_config = replace(
+            ScabbardConfig.katana_v15_minilm(backend="onnx"),
+            protectai_enabled=False,
+            classifier_timeout_seconds=0.5,
+            classifier_timeout_decision="allow",
+        )
+        return {
+            "scabbard.config": scabbard_config,
+            "scabbard.enabled": True,
+            "scabbard.route_mode": "balanced",
+            "scabbard.scan_outputs": True,
+            "scabbard.audit_routes": True,
+            "scabbard.enforce_output_blocks": True,
+            "protectai.enabled": False,
+            "sentinel.enabled": False,
+            "scan.enabled": True,
+            "scan.route_aware": True,
+            "behavioral.enabled": False,
+            "policy.preset": "balanced",
+        }
+
+    if profile == "balanced":
+        return {
+            "scabbard.enabled": True,
+            "scabbard.route_mode": "balanced",
+            "scabbard.scan_outputs": True,
+            "scabbard.audit_routes": True,
+            "scabbard.enforce_output_blocks": True,
+            "protectai.enabled": False,
+            "sentinel.enabled": False,
+            "scan.enabled": True,
+            "scan.route_aware": True,
+            "behavioral.enabled": True,
+            "policy.preset": "balanced",
+        }
+
+    # paranoid: keep overlapping ML gates enabled and fail closed on output findings.
+    return {
+        "scabbard.enabled": True,
+        "scabbard.route_mode": "strict",
+        "scabbard.scan_outputs": True,
+        "scabbard.audit_routes": True,
+        "scabbard.enforce_output_blocks": True,
+        "protectai.enabled": True,
+        "sentinel.enabled": True,
+        "scan.enabled": True,
+        "scan.route_aware": False,
+        "scan.enforce_output_findings": True,
+        "scan.block_threshold": 0.5,
+        "scan.warn_threshold": 0.3,
+        "policy.preset": "paranoid",
+    }
+
+
+def _resolve_chain_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    """Merge explicit deployment profile defaults with caller overrides."""
+    caller_config = dict(config or {})
+    profile = _normalize_chain_profile(
+        caller_config.get("profile", caller_config.get("katana.profile", caller_config.get("deployment.profile")))
+    )
+    resolved = _profile_defaults(profile)
+    resolved.update(caller_config)
+    resolved["profile"] = profile
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -1417,7 +1510,7 @@ def create_default_chain(
     """
     from hermes_katana.middleware.chain import MiddlewareChain
 
-    cfg = config or {}
+    cfg = _resolve_chain_config(config)
     chain = MiddlewareChain()
 
     # 1. Taint tracking (highest priority)
@@ -1464,6 +1557,7 @@ def create_default_chain(
         check_secrets=cfg.get("scan.check_secrets", True),
         check_unicode=cfg.get("scan.check_unicode", True),
         check_content=cfg.get("scan.check_content", True),
+        enforce_output_findings=cfg.get("scan.enforce_output_findings", False),
         route_aware=cfg.get("scan.route_aware", True),
         enabled=cfg.get("scan.enabled", True),
     )
