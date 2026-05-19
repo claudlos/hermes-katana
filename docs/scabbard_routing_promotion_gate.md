@@ -71,9 +71,7 @@ Before making `katana_v15_minilm` the default Scabbard tool gate, all of these m
    ```
 4. Verification triangle:
    ```bash
-   python3 test_false_positives.py
-   python3 test_evasion.py
-   .venv/bin/pytest tests/integration/test_adversarial_eval_pack.py -q
+   scripts/verify_scanner_change.sh --skip-lint
    ```
 5. Routing benchmark sanity:
    ```bash
