@@ -276,6 +276,11 @@ class TestClassifyWithDetails:
         assert "result" in details
         assert "risk_report" in details
 
+    def test_classify_with_details_uses_canonical_top_category(self):
+        clf = ScabbardClassifier()
+        details = clf.classify_with_details("Hello, how are you?")
+        assert details["result"]["top_category"] != "exfiltration_attempt"
+
     def test_normalized_has_expected_keys(self):
         clf = ScabbardClassifier()
         details = clf.classify_with_details("Hello world")

@@ -203,6 +203,15 @@ from ._optional import (
 logger = logging.getLogger(__name__)
 _OPTIONAL_IMPORT_ERRORS = OPTIONAL_IMPORT_ERRORS
 _RUNTIME_FAILURES_LOGGED = RUNTIME_FAILURES_LOGGED
+_VALID_SECURITY_LEVELS = {"low", "medium", "high"}
+
+
+def _validate_security_level(security_level: str) -> Literal["low", "medium", "high"]:
+    """Validate scanner security level at runtime, not only via type hints."""
+    if security_level not in _VALID_SECURITY_LEVELS:
+        allowed = ", ".join(sorted(_VALID_SECURITY_LEVELS))
+        raise ValueError(f"security_level must be one of: {allowed}; got {security_level!r}")
+    return security_level  # type: ignore[return-value]
 
 
 def _attach_optional_import_metadata(result: "ScanResult") -> None:
@@ -384,6 +393,7 @@ class ScanResult:
     image_injection_findings: list[Any] = field(default_factory=list)
     persona_findings: list[Any] = field(default_factory=list)
     semantic_findings: list[Any] = field(default_factory=list)
+    decoder_findings: list[Any] = field(default_factory=list)
     behavioral_findings: list[Any] = field(default_factory=list)
     deberta_findings: list[Any] = field(default_factory=list)
     svg_findings: list[Any] = field(default_factory=list)
@@ -418,6 +428,7 @@ class ScanResult:
             or self.persona_findings
             or self.image_injection_findings
             or self.semantic_findings
+            or self.decoder_findings
             or self.behavioral_findings
             or self.deberta_findings
             or self.svg_findings
@@ -446,6 +457,7 @@ class ScanResult:
             + list(self.persona_findings)
             + list(self.image_injection_findings)
             + list(self.semantic_findings)
+            + list(self.decoder_findings)
             + list(self.behavioral_findings)
             + list(self.deberta_findings)
             + list(self.svg_findings)
@@ -495,6 +507,8 @@ class ScanResult:
             parts.append(f"{len(self.image_injection_findings)} image injection(s)")
         if self.semantic_findings:
             parts.append(f"{len(self.semantic_findings)} semantic match(es)")
+        if self.decoder_findings:
+            parts.append(f"{len(self.decoder_findings)} decoded payload(s)")
         if self.behavioral_findings:
             parts.append(f"{len(self.behavioral_findings)} behavioral anomaly(ies)")
         if self.deberta_findings:
@@ -566,6 +580,7 @@ def scan_input(
         >>> result.verdict
         <ScanVerdict.BLOCK: 'block'>
     """
+    security_level = _validate_security_level(str(security_level))
     result = ScanResult(metadata={"scan_type": "input"})
     attach_optional_import_metadata(result)
     risk_scores: list[float] = []
@@ -599,6 +614,17 @@ def scan_input(
         result.injection_findings = detect_injection(scan_text)
         if result.injection_findings:
             risk_scores.append(injection_score(scan_text))
+
+        # Decode obfuscated payloads and re-run the injection scanner on the
+        # decoded plaintext. This keeps the primary scan_input path aligned with
+        # decoder.py instead of requiring callers to remember a separate pass.
+        if decode_and_scan is not None:
+            try:
+                result.decoder_findings = decode_and_scan(scan_text)
+                if result.decoder_findings:
+                    risk_scores.append(max(f.confidence for f in result.decoder_findings))
+            except Exception as exc:
+                record_scanner_failure(result, "decoder", exc)
 
     # Secret detection
     if check_secrets:

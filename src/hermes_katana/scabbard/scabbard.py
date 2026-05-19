@@ -16,6 +16,16 @@ from hermes_katana.scabbard.normalizer import normalize
 
 logger = logging.getLogger(__name__)
 
+_CANONICAL_CATEGORY_ALIASES = {
+    "exfiltration_attempt": "exfiltration",
+}
+
+
+def _canonicalize_result_category(result: ClassificationResult) -> ClassificationResult:
+    """Normalize legacy/training labels at the public API boundary."""
+    result.top_category = _CANONICAL_CATEGORY_ALIASES.get(result.top_category, result.top_category)
+    return result
+
 
 class _ResultClassifier(Protocol):
     def classify_result(self, text: str) -> ClassificationResult: ...
@@ -275,7 +285,7 @@ class ScabbardClassifier:
                             result.decision = Decision.BLOCK
                         elif result.confidence > self.config.allow_threshold:
                             result.decision = Decision.FLAG
-                return result
+                return _canonicalize_result_category(result)
             except Exception:  # noqa: BLE001
                 logger.warning(
                     "KatanaV11Classifier failed, falling back to legacy classifiers",
@@ -304,7 +314,7 @@ class ScabbardClassifier:
                             result.decision = Decision.BLOCK
                         elif result.confidence > self.config.allow_threshold:
                             result.decision = Decision.FLAG
-                return result
+                return _canonicalize_result_category(result)
             except Exception:  # noqa: BLE001
                 logger.warning(
                     "DeBERTaClassifier failed, falling back to fusion pipeline",
@@ -337,7 +347,7 @@ class ScabbardClassifier:
             elif result.confidence > self.config.allow_threshold:
                 result.decision = Decision.FLAG
 
-        return result
+        return _canonicalize_result_category(result)
 
     def classify_with_details(
         self,
@@ -352,7 +362,7 @@ class ScabbardClassifier:
             flags=normalized.flags,
         )
         feature_array = features.to_array()
-        result = self.fusion.classify(feature_array)
+        result = _canonicalize_result_category(self.fusion.classify(feature_array))
 
         return {
             "normalized": {
