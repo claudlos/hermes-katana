@@ -32,7 +32,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, field_validator
 
 from hermes_katana._paths import home_or_fallback

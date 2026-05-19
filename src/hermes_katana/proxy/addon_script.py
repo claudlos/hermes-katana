@@ -12,9 +12,14 @@ __all__ = ["addons"]
 import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from hermes_katana.proxy.addon import KatanaAddon
 from hermes_katana.proxy.config import ProxyConfig
+
+if TYPE_CHECKING:
+    from hermes_katana.audit import AuditTrail
+    from hermes_katana.vault import Vault
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +35,7 @@ def _load_config() -> ProxyConfig:
     return ProxyConfig()
 
 
-def _load_vault() -> object | None:
+def _load_vault() -> Vault | None:
     """Load the vault backend for credential injection."""
     if os.environ.get("KATANA_PROXY_ENABLE_VAULT", "1") != "1":
         return None
@@ -39,16 +44,15 @@ def _load_vault() -> object | None:
         from hermes_katana.vault import Vault
 
         vault_path = os.environ.get("KATANA_PROXY_VAULT_PATH")
-        kwargs = {"auto_create": False}
         if vault_path:
-            kwargs["path"] = Path(vault_path)
-        return Vault(**kwargs)
+            return Vault(path=Path(vault_path), auto_create=False)
+        return Vault(auto_create=False)
     except Exception:
         logger.debug("Proxy addon could not load vault backend", exc_info=True)
         return None
 
 
-def _load_audit_trail() -> object | None:
+def _load_audit_trail() -> AuditTrail | None:
     """Load the audit trail backend for event logging."""
     if os.environ.get("KATANA_PROXY_ENABLE_AUDIT", "1") != "1":
         return None

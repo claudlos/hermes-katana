@@ -10,17 +10,23 @@ Demonstrates:
 
 Run:  python3 examples/vault_usage.py
 """
-import sys, os, tempfile, shutil
+
+import base64 as _b64
+import os
+import secrets as _secrets
+import tempfile
+import shutil
 from pathlib import Path
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from hermes_katana.vault import Vault, VaultError
+from hermes_katana.vault import Vault
 
 # Use a temp directory so we don't pollute real vault
 vault_dir = tempfile.mkdtemp(prefix="katana_vault_demo_")
 
 # Set a demo master key (in production, use OS keyring or a secure key manager)
-import secrets as _secrets, base64 as _b64
 os.environ["HERMES_KATANA_VAULT_KEY"] = _b64.b64encode(_secrets.token_bytes(32)).decode()
 
 vault = Vault(path=Path(vault_dir) / "demo.vault", auto_create=True)

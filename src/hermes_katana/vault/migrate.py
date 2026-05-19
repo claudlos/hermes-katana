@@ -187,7 +187,7 @@ def _scan_hermes_config(config_path: Optional[Path] = None) -> dict[str, str]:
 
     found: dict[str, str] = {}
     try:
-        import yaml
+        import yaml  # type: ignore[import-untyped]
 
         with open(config_path, "r") as fp:
             data = yaml.safe_load(fp)
@@ -339,7 +339,7 @@ def _secure_delete_from_file(
         modified = False
         for pattern in patterns:
 
-            def _zero_replace(m: re.Match) -> str:
+            def _zero_replace(m: re.Match[str]) -> str:
                 prefix = m.group(1)
                 value = m.group(2)
                 return prefix + "0" * len(value)

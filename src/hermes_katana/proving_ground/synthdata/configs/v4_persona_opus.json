@@ -1,0 +1,34 @@
+{
+  "_comment": "v4 persona — boost persona_jailbreak from 157 to ~700+. Reuses v3's 17 persona leaves, but with scenarios_per_leaf=10 and texts_per_scenario=4 so the per-leaf yield is much higher. Critics on MiniMax via Hermes (which worked at workers=8 in v3 with 73% keep rate). Estimated raw output: 17 leaves x 10 x 1.3 (complexify) x 4 = ~885 raw -> ~645 kept (73%) -> 157+645 = 802 total.",
+  "run_id": "katana_synth_v4_persona",
+  "checkpoint_dir": "synthdata/checkpoints",
+  "teacher": {
+    "model": "opus",
+    "provider": "claude_cli",
+    "temperature": 0.85,
+    "max_tokens": 1500
+  },
+  "critic_a": {
+    "model": "MiniMax-M2.7",
+    "provider": "hermes_cli",
+    "base_url": "minimax",
+    "temperature": 0.1,
+    "max_tokens": 400
+  },
+  "critic_b": {
+    "model": "MiniMax-M2.5",
+    "provider": "hermes_cli",
+    "base_url": "minimax",
+    "temperature": 0.3,
+    "max_tokens": 400
+  },
+  "seed_corpus": "results/elite_attacks_n5.jsonl",
+  "seeds_per_label": 3,
+  "max_depth": 3,
+  "n_candidates_per_split": 5,
+  "scenarios_per_leaf": 10,
+  "texts_per_scenario": 4,
+  "complexify_fraction": 0.30,
+  "ops_budget": [1, 2],
+  "critic_workers": 8
+}

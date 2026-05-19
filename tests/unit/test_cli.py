@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import os
 from io import StringIO
 from types import SimpleNamespace
 from pathlib import Path
 
 from click.testing import CliRunner
+import pytest
 from rich.console import Console
 
 import hermes_katana.bootstrap as bootstrap_mod
+import hermes_katana.cli._support as cli_support_mod
 import hermes_katana.cli.main as cli_main
 import hermes_katana.config as config_mod
 import hermes_katana.installer as installer_mod
@@ -154,6 +157,262 @@ class TestCLIContracts:
 
         assert result.exit_code == 0
         assert "http://127.0.0.1:8080" in stdout.getvalue()
+
+    def test_status_renders_ml_runtime_section(self, monkeypatch):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setattr(
+            cli_main,
+            "_collect_ml_runtime_status",
+            lambda: {
+                "packages": {
+                    "torch": {"installed": True, "version": "2.2.0"},
+                    "transformers": {"installed": True, "version": "4.40.0"},
+                    "onnxruntime": {"installed": True, "version": "1.17.0"},
+                    "sentence_transformers": {"installed": True, "version": "3.0.0"},
+                    "xgboost": {"installed": True, "version": "2.0.0"},
+                },
+                "deberta": {
+                    "ready": True,
+                    "cpu_inference_ready": True,
+                    "artifact_dir": "/tmp/deberta",
+                    "onnx_path": "/tmp/deberta/model.onnx",
+                    "error": None,
+                },
+                "semantic": {
+                    "backend": "contrastive",
+                    "reason": "contrastive artifacts available",
+                },
+                "scabbard": {
+                    "standard_profile_ready": True,
+                    "recommended_profile": "standard",
+                    "missing": [],
+                },
+                "protectai": {
+                    "dependencies_ready": True,
+                    "model_id": "ProtectAI/model",
+                },
+                "artifact_manifest": {
+                    "ready": True,
+                    "manifest_path": "/tmp/runtime_artifact_manifest.json",
+                    "verified": 7,
+                    "total": 7,
+                    "missing": [],
+                    "mismatched": [],
+                    "empty": [],
+                    "errors": [],
+                },
+                "eval": {
+                    "ready": True,
+                    "blockers": [],
+                    "warnings": [],
+                },
+            },
+        )
+
+        result = self.runner.invoke(cli_main.main, ["status"])
+
+        assert result.exit_code == 0
+        output = stdout.getvalue()
+        assert "ML Runtime" in output
+        assert "/tmp/deberta" in output
+        assert "contrastive" in output
+        assert "Eval sweep" in output
+        assert "Hermetic gate" in output
+        assert "Artifact manifest" in output
+        assert "Scabbard default" in output
+
+    def test_collect_ml_runtime_status_reports_deberta_artifact(self):
+        status = cli_support_mod.collect_ml_runtime_status()
+        assert "deberta" in status
+        assert "packages" in status
+        assert "artifact_dir" in status["deberta"]
+        assert status["deberta"]["artifact_dir"] is None or isinstance(status["deberta"]["artifact_dir"], str)
+        assert status["deberta"]["ready"] == (status["deberta"]["artifact_dir"] is not None)
+
+    def test_collect_ml_runtime_status_reports_eval_blockers(self, monkeypatch):
+        monkeypatch.setattr(
+            cli_support_mod,
+            "_resolve_deberta_artifact",
+            lambda: {
+                "models_dir": "/tmp/models",
+                "override": None,
+                "artifact_dir": "/tmp/models/deberta",
+                "checkpoint_dir": "/tmp/models/deberta/best",
+                "onnx_path": None,
+                "ready": True,
+                "error": None,
+            },
+        )
+        monkeypatch.setattr(
+            cli_support_mod,
+            "_collect_scabbard_status",
+            lambda packages: {
+                "standard_profile_ready": False,
+                "minimal_profile_ready": False,
+                "missing": ["missing TF-IDF vectorizer at /tmp/models/tfidf_vectorizer.pkl"],
+                "tfidf_path": "/tmp/models/tfidf_vectorizer.pkl",
+            },
+        )
+        monkeypatch.setattr(
+            cli_support_mod,
+            "_collect_semantic_status",
+            lambda: {
+                "backend": "minilm_fallback",
+                "reason": "missing semantic index",
+                "full_backend_ready": False,
+                "missing": ["semantic index missing at /tmp/index"],
+            },
+        )
+        monkeypatch.setattr(
+            cli_support_mod,
+            "_collect_protectai_status",
+            lambda packages: {
+                "dependencies_ready": True,
+                "model_id": "ProtectAI/model",
+                "note": "ok",
+            },
+        )
+        monkeypatch.setattr(
+            cli_support_mod,
+            "_package_probe",
+            lambda module_name, distribution=None: {"installed": True, "version": "1.0"},
+        )
+
+        status = cli_support_mod.collect_ml_runtime_status()
+
+        assert status["eval"]["ready"] is False
+        assert any("TF-IDF" in entry for entry in status["eval"]["blockers"])
+        assert any("semantic backend degraded" in entry for entry in status["eval"]["warnings"])
+
+    def test_collect_ml_runtime_status_invalid_override_blocks_eval(self, monkeypatch):
+        monkeypatch.setenv("HERMES_KATANA_DEBERTA_MODEL_DIR", "/tmp/missing-deberta")
+        monkeypatch.setattr(
+            cli_support_mod,
+            "_collect_scabbard_status",
+            lambda packages: {
+                "standard_profile_ready": True,
+                "minimal_profile_ready": True,
+                "missing": [],
+                "missing_dependencies": [],
+                "tfidf_path": "/tmp/models/tfidf_vectorizer.pkl",
+            },
+        )
+        monkeypatch.setattr(
+            cli_support_mod,
+            "_collect_semantic_status",
+            lambda: {
+                "backend": "contrastive",
+                "reason": "contrastive artifacts available",
+                "full_backend_ready": True,
+                "missing": [],
+            },
+        )
+        monkeypatch.setattr(
+            cli_support_mod,
+            "_collect_protectai_status",
+            lambda packages: {
+                "dependencies_ready": True,
+                "model_id": "ProtectAI/model",
+                "note": "ok",
+            },
+        )
+        monkeypatch.setattr(
+            cli_support_mod,
+            "_package_probe",
+            lambda module_name, distribution=None: {"installed": True, "version": "1.0"},
+        )
+        monkeypatch.setattr(
+            cli_support_mod,
+            "verify_runtime_artifact_manifest",
+            lambda: {
+                "ready": True,
+                "manifest_path": "/tmp/runtime_artifact_manifest.json",
+                "verified": 7,
+                "total": 7,
+                "missing": [],
+                "mismatched": [],
+                "empty": [],
+                "errors": [],
+            },
+        )
+
+        status = cli_support_mod.collect_ml_runtime_status()
+
+        assert status["deberta"]["ready"] is False
+        assert "invalid artifact" in status["deberta"]["error"]
+        assert status["eval"]["ready"] is False
+        assert any("invalid artifact" in entry for entry in status["eval"]["blockers"])
+
+    def test_enforce_hermetic_ml_readiness_raises_on_manifest_drift(self, monkeypatch):
+        monkeypatch.setenv(cli_support_mod.HERMETIC_ML_READY_ENV, "1")
+        monkeypatch.setattr(
+            cli_support_mod,
+            "collect_ml_runtime_status",
+            lambda: {
+                "eval": {
+                    "ready": False,
+                    "blockers": ["checksum mismatch for runtime artifact"],
+                    "warnings": [],
+                }
+            },
+        )
+
+        with pytest.raises(RuntimeError, match="checksum mismatch for runtime artifact"):
+            cli_support_mod.enforce_hermetic_ml_readiness()
+
+    def test_preflight_json_exits_nonzero_when_eval_not_ready(self, monkeypatch):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setattr(
+            cli_main,
+            "_collect_ml_runtime_status",
+            lambda: {
+                "eval": {
+                    "ready": False,
+                    "blockers": ["missing semantic index"],
+                    "warnings": ["fallback backend active"],
+                }
+            },
+        )
+        monkeypatch.setattr(cli_main, "_hermetic_ml_ready_required", lambda: True)
+
+        result = self.runner.invoke(cli_main.main, ["preflight", "--json"])
+
+        assert result.exit_code == cli_main.EXIT_ERROR
+        payload = json.loads(stdout.getvalue())
+        assert payload["ready"] is False
+        assert payload["hermetic_gate_enabled"] is True
+        assert payload["ml_runtime"]["eval"]["blockers"] == ["missing semantic index"]
+
+    def test_preflight_json_succeeds_when_eval_ready(self, monkeypatch):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setattr(
+            cli_main,
+            "_collect_ml_runtime_status",
+            lambda: {
+                "eval": {
+                    "ready": True,
+                    "blockers": [],
+                    "warnings": [],
+                }
+            },
+        )
+        monkeypatch.setattr(cli_main, "_hermetic_ml_ready_required", lambda: False)
+
+        result = self.runner.invoke(cli_main.main, ["preflight", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(stdout.getvalue())
+        assert payload["ready"] is True
+        assert payload["hermetic_gate_enabled"] is False
 
     def test_audit_show_renders_query_entries(self, monkeypatch):
         stdout = StringIO()

@@ -2,6 +2,11 @@
 
 Day-2 operations guide for operators managing HermesKatana deployments.
 
+Optional ML artifacts are stored outside GitHub. Use `katana artifacts status`,
+`katana artifacts download`, `katana doctor`, and `katana status` to verify
+artifact, Scabbard, and semantic-backend readiness before running live eval
+sweeps or depending on ML-backed enforcement. See `docs/artifacts.md`.
+
 ---
 
 ## Table of Contents
@@ -15,6 +20,7 @@ Day-2 operations guide for operators managing HermesKatana deployments.
 - [Incident Response Playbook](#incident-response-playbook)
 - [Performance Tuning](#performance-tuning)
 - [CI and Validation](#ci-and-validation)
+- [Serial Pytest Maintenance](#serial-pytest-maintenance)
 - [Maintainer Workflows](#maintainer-workflows)
 
 ---
@@ -457,6 +463,19 @@ python3 -m pytest tests/unit/test_policy.py -v
 Use `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` with the explicit
 `pytest_asyncio.plugin` entry point to avoid config warnings.
 
+When a full-suite invocation is too memory-heavy or you want deterministic
+file-by-file logging, use the dedicated serial runner:
+
+```bash
+./scripts/run_serial_pytest.sh
+./scripts/run_serial_pytest.sh tests/unit
+./scripts/run_serial_pytest.sh tests/unit/test_cli.py
+```
+
+The helper discovers `test_*.py` files under the requested target, runs each
+file in its own pytest process, writes timestamped logs and summaries under
+`.pytest_tmp/serial/`, and exits non-zero if any file fails.
+
 ### Compatibility Validation
 
 ```bash
@@ -466,6 +485,28 @@ python3 -m pytest tests/unit/test_compat_snapshots.py \
 
 Pinned snapshots: `tests/fixtures/hermes_compat/`
 Adversarial eval pack: `evals/adversarial_dispatch.yaml`
+
+---
+
+## Serial Pytest Maintenance
+
+Use this path for large local sweeps, memory-sensitive debugging, or artifact
+readiness validation:
+
+```bash
+./scripts/run_serial_pytest.sh
+./scripts/run_serial_pytest.sh tests/scabbard
+./scripts/run_serial_pytest.sh tests/integration
+```
+
+Pass extra pytest flags after the target path:
+
+```bash
+./scripts/run_serial_pytest.sh tests/unit/test_cli.py -k status -x
+```
+
+Outputs are stored in `.pytest_tmp/serial/` as a timestamped log plus a summary
+file with `TOTAL`, `PASSED`, `FAILED`, and `LOG_PATH`.
 
 ---
 

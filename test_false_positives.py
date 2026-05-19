@@ -34,9 +34,7 @@ def main() -> int:
         ctx = CallContext(tool_name=tool_name, args=args)
         decision = chain.execute_pre(ctx)
         if decision == DispatchDecision.DENY:
-            false_positives.append(
-                f"  FP: {case['id']} ({tool_name}) blocked — {'; '.join(ctx.deny_reasons)}"
-            )
+            false_positives.append(f"  FP: {case['id']} ({tool_name}) blocked — {'; '.join(ctx.deny_reasons)}")
 
     total_benign = len(benign)
     fp_count = len(false_positives)

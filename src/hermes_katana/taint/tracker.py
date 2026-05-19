@@ -34,6 +34,7 @@ from hermes_katana.taint.value import (
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
+TrackedValue = TaintedStr | TaintedValue[Any]
 
 __all__ = [
     "TrackerStats",
@@ -113,7 +114,7 @@ class TaintTracker:
 
     def __init__(self, analyzer: Optional[FlowAnalyzer] = None) -> None:
         self._analyzer = analyzer or FlowAnalyzer()
-        self._registry: dict[int, TaintedValue[Any]] = {}
+        self._registry: dict[int, TrackedValue] = {}
         self._stats = TrackerStats()
         self._session_id: str = f"session-{int(time.time() * 1000)}"
         self._mutex = threading.Lock()
@@ -162,12 +163,49 @@ class TaintTracker:
 
     # -- Registration ---------------------------------------------------------
 
+    def _wrap_value(
+        self,
+        value: Any,
+        sources: frozenset[Source],
+        readers: frozenset[Reader],
+        *,
+        dependencies: tuple[TrackedValue, ...] = (),
+    ) -> TrackedValue:
+        """Create the appropriate tainted wrapper for a raw Python value."""
+        if isinstance(value, str):
+            return TaintedStr(
+                value=value,
+                sources=sources,
+                readers=readers,
+                dependencies=dependencies,
+            )
+        if isinstance(value, list):
+            return TaintedList(
+                value=value,
+                sources=sources,
+                readers=readers,
+                dependencies=dependencies,
+            )
+        if isinstance(value, dict):
+            return TaintedDict(
+                value=value,
+                sources=sources,
+                readers=readers,
+                dependencies=dependencies,
+            )
+        return TaintedValue(
+            value=value,
+            sources=sources,
+            readers=readers,
+            dependencies=dependencies,
+        )
+
     def register(
         self,
         value: T,
         source: Source,
         readers: Optional[frozenset[Reader]] = None,
-    ) -> TaintedValue[T]:
+    ) -> TaintedStr | TaintedValue[T]:
         """Wrap a raw value with taint metadata and register it.
 
         Parameters
@@ -186,32 +224,7 @@ class TaintTracker:
         """
         sources = frozenset({source})
         rdr = readers or frozenset()
-
-        # Choose the right wrapper type
-        if isinstance(value, str):
-            tv: TaintedValue[Any] = TaintedStr(
-                value=value,
-                sources=sources,
-                readers=rdr,
-            )
-        elif isinstance(value, list):
-            tv = TaintedList(
-                value=value,
-                sources=sources,
-                readers=rdr,
-            )
-        elif isinstance(value, dict):
-            tv = TaintedDict(
-                value=value,
-                sources=sources,
-                readers=rdr,
-            )
-        else:
-            tv = TaintedValue(
-                value=value,
-                sources=sources,
-                readers=rdr,
-            )
+        tv = self._wrap_value(value, sources, rdr)
 
         with self._mutex:
             self._registry[id(tv)] = tv
@@ -224,56 +237,32 @@ class TaintTracker:
             source.origin,
             type(value).__name__,
         )
-        return tv  # type: ignore[return-value]
+        return tv
 
     def register_multi(
         self,
         value: T,
         sources: frozenset[Source],
         readers: Optional[frozenset[Reader]] = None,
-    ) -> TaintedValue[T]:
+    ) -> TaintedStr | TaintedValue[T]:
         """Register a value with multiple sources at once."""
         rdr = readers or frozenset()
-
-        if isinstance(value, str):
-            tv: TaintedValue[Any] = TaintedStr(
-                value=value,
-                sources=sources,
-                readers=rdr,
-            )
-        elif isinstance(value, list):
-            tv = TaintedList(
-                value=value,
-                sources=sources,
-                readers=rdr,
-            )
-        elif isinstance(value, dict):
-            tv = TaintedDict(
-                value=value,
-                sources=sources,
-                readers=rdr,
-            )
-        else:
-            tv = TaintedValue(
-                value=value,
-                sources=sources,
-                readers=rdr,
-            )
+        tv = self._wrap_value(value, sources, rdr)
 
         with self._mutex:
             self._registry[id(tv)] = tv
             self._stats.values_registered += 1
             self._evict_if_needed()
 
-        return tv  # type: ignore[return-value]
+        return tv
 
     # -- Propagation ----------------------------------------------------------
 
     def propagate(
         self,
         result: T,
-        *inputs: TaintedValue[Any],
-    ) -> TaintedValue[T]:
+        *inputs: TrackedValue,
+    ) -> TaintedStr | TaintedValue[T]:
         """Create a tainted value whose metadata is derived from *inputs*.
 
         This is the core taint-propagation operation: when a computation
@@ -294,52 +283,30 @@ class TaintTracker:
         """
         all_sources: set[Source] = set()
         all_readers: set[Reader] = set()
-        deps: list[TaintedValue[Any]] = []
+        deps: list[TrackedValue] = []
 
         for inp in inputs:
             all_sources.update(inp.sources)
             all_readers.update(inp.readers)
             deps.append(inp)
 
-        if isinstance(result, str):
-            tv: TaintedValue[Any] = TaintedStr(
-                value=result,
-                sources=frozenset(all_sources),
-                readers=frozenset(all_readers),
-                dependencies=tuple(deps),
-            )
-        elif isinstance(result, list):
-            tv = TaintedList(
-                value=result,
-                sources=frozenset(all_sources),
-                readers=frozenset(all_readers),
-                dependencies=tuple(deps),
-            )
-        elif isinstance(result, dict):
-            tv = TaintedDict(
-                value=result,
-                sources=frozenset(all_sources),
-                readers=frozenset(all_readers),
-                dependencies=tuple(deps),
-            )
-        else:
-            tv = TaintedValue(
-                value=result,
-                sources=frozenset(all_sources),
-                readers=frozenset(all_readers),
-                dependencies=tuple(deps),
-            )
+        tv = self._wrap_value(
+            result,
+            frozenset(all_sources),
+            frozenset(all_readers),
+            dependencies=tuple(deps),
+        )
 
         with self._mutex:
             self._registry[id(tv)] = tv
             self._stats.values_propagated += 1
             self._evict_if_needed()
 
-        return tv  # type: ignore[return-value]
+        return tv
 
     # -- Provenance -----------------------------------------------------------
 
-    def get_taint_chain(self, value: TaintedValue[Any]) -> list[Source]:
+    def get_taint_chain(self, value: TrackedValue) -> list[Source]:
         """Reconstruct the full provenance chain for *value*.
 
         Walks the dependency graph depth-first and returns all sources
@@ -348,7 +315,7 @@ class TaintTracker:
         seen: set[int] = set()
         sources: list[Source] = []
 
-        def _walk(tv: TaintedValue[Any]) -> None:
+        def _walk(tv: TrackedValue) -> None:
             tid = id(tv)
             if tid in seen:
                 return
@@ -357,13 +324,14 @@ class TaintTracker:
                 if src not in sources:
                     sources.append(src)
             for dep in tv.dependencies:
-                _walk(dep)
+                if isinstance(dep, (TaintedStr, TaintedValue)):
+                    _walk(dep)
 
         _walk(value)
         sources.sort(key=lambda s: s.timestamp)
         return sources
 
-    def get_labels(self, value: TaintedValue[Any]) -> frozenset[TaintLabel]:
+    def get_labels(self, value: TrackedValue) -> frozenset[TaintLabel]:
         """Return all taint labels in the full dependency chain."""
         chain = self.get_taint_chain(value)
         return frozenset(s.label for s in chain)
@@ -372,7 +340,7 @@ class TaintTracker:
 
     def check_flow(
         self,
-        value: TaintedValue[Any],
+        value: TrackedValue,
         target_tool: str,
         args: Optional[dict[str, Any]] = None,
     ) -> FlowDecision:
@@ -390,7 +358,7 @@ class TaintTracker:
 
     def analyze_flow(
         self,
-        value: TaintedValue[Any],
+        value: TrackedValue,
         target_tool: str,
         args: Optional[dict[str, Any]] = None,
     ) -> FlowAnalysis:

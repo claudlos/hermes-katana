@@ -13,13 +13,15 @@ __all__ = [
 ]
 
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 
 # 1 MB default body scan limit
 _DEFAULT_MAX_BODY_SCAN_SIZE = 1_048_576
+
+ProxyMode = Literal["permissive", "strict", "paranoid"]
 
 
 class ScanModes(BaseModel):
@@ -100,6 +102,14 @@ class ProxyConfig(BaseModel):
         default_factory=ScanModes,
         description="Active scanning modes.",
     )
+    scanner_security_level: Literal["low", "medium", "high"] = Field(
+        default="low",
+        description=(
+            "Security level passed to scanner.scan_input for proxy request surfaces. "
+            "'low' runs deterministic scanner layers and avoids optional ML recall "
+            "layers that require separate threshold tuning."
+        ),
+    )
     rate_limit_requests: int = Field(
         default=50,
         ge=1,
@@ -142,6 +152,14 @@ class ProxyConfig(BaseModel):
     add_scanned_header: bool = Field(
         default=False,
         description="Inject X-Katana-Scanned header on responses (opt-in, disabled by default).",
+    )
+    mode: ProxyMode = Field(
+        default="strict",
+        description=(
+            "Failure-handling mode. 'strict' and 'paranoid' fail closed on scanner "
+            "exceptions and oversized bodies; 'permissive' logs and allows traffic. "
+            "Mirrors the policy engine's tri-mode model."
+        ),
     )
 
     model_config = {"frozen": False, "extra": "forbid"}

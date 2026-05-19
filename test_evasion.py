@@ -33,10 +33,7 @@ def _make_source(source_name: str, origin: str | None):
         return Source.tool(origin or "tool-output")
     if source_name == "user":
         return Source.user(origin or "eval-user")
-    raise ValueError(
-        f"Unsupported taint source in eval case: {source_name!r} "
-        "(expected one of: web, mcp, tool, user)"
-    )
+    raise ValueError(f"Unsupported taint source in eval case: {source_name!r} (expected one of: web, mcp, tool, user)")
 
 
 def _run_case(case: dict, tmp_path: Path) -> DispatchDecision:
@@ -63,10 +60,7 @@ def main() -> int:
     raw = yaml.safe_load(_EVAL_PATH.read_text(encoding="utf-8"))
     cases = raw["cases"]
 
-    adversarial = [
-        c for c in cases
-        if c.get("expected_decision") == "deny"
-    ]
+    adversarial = [c for c in cases if c.get("expected_decision") == "deny"]
 
     evasions: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -75,8 +69,7 @@ def main() -> int:
             decision = _run_case(case, tmp_path)
             if decision != DispatchDecision.DENY:
                 evasions.append(
-                    f"  EVASION: {case['id']} ({case.get('tool_name', '?')}) "
-                    f"not blocked — decision={decision}"
+                    f"  EVASION: {case['id']} ({case.get('tool_name', '?')}) not blocked — decision={decision}"
                 )
 
     total_adversarial = len(adversarial)

@@ -24,12 +24,13 @@ import platform
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from hermes_katana._files import AdvisoryFileLock, atomic_write_text
+from hermes_katana._paths import home_or_fallback
 from hermes_katana.proxy.config import ProxyConfig
 
 if TYPE_CHECKING:
@@ -40,50 +41,20 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Cross-platform file locking
-# ---------------------------------------------------------------------------
-
-
-def _lock_file(fp: Any) -> None:
-    """Acquire an exclusive file lock (cross-platform).
-
-    Uses fcntl on Unix/macOS and msvcrt on Windows.
-    """
-    if platform.system() == "Windows":
-        import msvcrt
-
-        msvcrt.locking(fp.fileno(), msvcrt.LK_NBLCK, 1)
-    else:
-        import fcntl
-
-        fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-
-
-def _unlock_file(fp: Any) -> None:
-    """Release a file lock (cross-platform)."""
-    if platform.system() == "Windows":
-        import msvcrt
-
-        msvcrt.locking(fp.fileno(), msvcrt.LK_UNLCK, 1)
-    else:
-        import fcntl
-
-        fcntl.flock(fp.fileno(), fcntl.LOCK_UN)
-
-
-# ---------------------------------------------------------------------------
 # PID file management
 # ---------------------------------------------------------------------------
 
 
 def default_pid_path() -> Path:
     """Return the default PID file path."""
-    return Path(tempfile.gettempdir()) / "hermes_katana_proxy.pid"
+    return home_or_fallback() / ".config" / "hermes-katana" / "proxy" / "proxy.pid"
 
 
 def _default_pid_path() -> Path:
     """Return the default PID file path."""
-    return default_pid_path()
+    path = default_pid_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _compute_vault_hash(vault: Optional["Vault"]) -> str:
@@ -147,27 +118,11 @@ class _PidInfo:
 
 def _write_pid_file(path: Path, info: _PidInfo) -> None:
     """Atomically write a PID file with file locking."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".tmp")
     try:
-        with open(tmp_path, "w") as fp:
-            try:
-                _lock_file(fp)
-            except (OSError, BlockingIOError):
-                logger.warning("Could not lock PID file, writing anyway")
-            fp.write(info.to_json())
-            fp.flush()
-            os.fsync(fp.fileno())
-            try:
-                _unlock_file(fp)
-            except (OSError, BlockingIOError):
-                pass
-        # Atomic replace
-        tmp_path.replace(path)
+        with AdvisoryFileLock(path):
+            atomic_write_text(path, info.to_json())
     except Exception as exc:
         logger.error("Failed to write PID file: %s", exc)
-        if tmp_path.exists():
-            tmp_path.unlink(missing_ok=True)
         raise
 
 
@@ -176,16 +131,8 @@ def _read_pid_file(path: Path) -> Optional[_PidInfo]:
     if not path.exists():
         return None
     try:
-        with open(path, "r") as fp:
-            try:
-                _lock_file(fp)
-            except (OSError, BlockingIOError):
-                pass  # Read even without lock
-            raw = fp.read()
-            try:
-                _unlock_file(fp)
-            except (OSError, BlockingIOError):
-                pass
+        with AdvisoryFileLock(path):
+            raw = path.read_text(encoding="utf-8")
         return _PidInfo.from_json(raw)
     except Exception as exc:
         logger.debug("Could not read PID file: %s", exc)
@@ -220,6 +167,59 @@ def _is_process_running(pid: int) -> bool:
             return True
     except (OSError, ProcessLookupError, PermissionError):
         return False
+
+
+def _read_process_command(pid: int) -> str:
+    """Read a process command line for validation when possible."""
+    if pid <= 0:
+        return ""
+
+    if os.name == "posix":
+        proc_cmdline = Path(f"/proc/{pid}/cmdline")
+        try:
+            raw = proc_cmdline.read_bytes()
+            return raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore")
+        except OSError:
+            ps_run = getattr(subprocess, "run", None)
+            if ps_run is None:
+                return ""
+            try:
+                result = ps_run(
+                    ["ps", "-p", str(pid), "-o", "command="],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    check=False,
+                )
+            except (AttributeError, OSError, subprocess.TimeoutExpired):
+                return ""
+            return str(getattr(result, "stdout", "")).strip()
+
+    return ""
+
+
+def _pid_matches_proxy_process(pid: int, info: Optional[_PidInfo] = None) -> bool:
+    """Validate that a PID belongs to a Katana-managed mitmproxy process."""
+    if not _is_process_running(pid):
+        return False
+
+    command = _read_process_command(pid)
+    if not command:
+        return info is not None
+
+    markers = ["mitmproxy.tools.main", "mitmdump", "addon_script.py"]
+    if info is not None:
+        markers.append(f"--listen-port {info.port}")
+
+    return all(marker in command for marker in markers)
+
+
+def _invoke_kill_process(kill_process: Any, pid: int, info: Optional[_PidInfo]) -> None:
+    """Call a kill handler with backward-compatible support for legacy single-arg stubs."""
+    try:
+        kill_process(pid, info)
+    except TypeError:
+        kill_process(pid)
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +335,7 @@ class KatanaProxy:
         with self._lock:
             # Check for existing instance
             existing = _read_pid_file(self._pid_path)
-            if existing and _is_process_running(existing.pid):
+            if existing and _pid_matches_proxy_process(existing.pid, existing):
                 if existing.port == self.config.port:
                     logger.info(
                         "Proxy already running on port %d (PID %d)",
@@ -350,7 +350,10 @@ class KatanaProxy:
                         existing.port,
                         self.config.port,
                     )
-                    self._kill_process(existing.pid)
+                    _invoke_kill_process(self._kill_process, existing.pid, existing)
+            elif existing is not None:
+                logger.warning("Ignoring stale or untrusted proxy PID file at %s", self._pid_path)
+                _remove_pid_file(self._pid_path)
 
             return self._start_proxy()
 
@@ -388,6 +391,7 @@ class KatanaProxy:
         )
 
         env = os.environ.copy()
+        env.pop("HERMES_KATANA_VAULT_KEY", None)
         env["KATANA_PROXY_CONFIG_JSON"] = self.config.model_dump_json()
         env["KATANA_PROXY_ENABLE_VAULT"] = "1" if self.config.inject_credentials else "0"
         env["KATANA_PROXY_ENABLE_AUDIT"] = "1"
@@ -477,8 +481,10 @@ class KatanaProxy:
 
             # Stop proxy process
             info = _read_pid_file(self._pid_path)
-            if info and _is_process_running(info.pid):
-                self._kill_process(info.pid)
+            if info and _pid_matches_proxy_process(info.pid, info):
+                _invoke_kill_process(self._kill_process, info.pid, info)
+            elif info is not None:
+                logger.warning("Refusing to kill PID %d because it does not look like a Katana proxy", info.pid)
 
             if self._process:
                 try:
@@ -504,7 +510,7 @@ class KatanaProxy:
         info = _read_pid_file(self._pid_path)
         if info is None:
             return False
-        running = _is_process_running(info.pid)
+        running = _pid_matches_proxy_process(info.pid, info)
         if not running:
             _remove_pid_file(self._pid_path)
         return running
@@ -518,7 +524,7 @@ class KatanaProxy:
         info = _read_pid_file(self._pid_path)
         running = False
         if info:
-            running = _is_process_running(info.pid)
+            running = _pid_matches_proxy_process(info.pid, info)
             if not running:
                 _remove_pid_file(self._pid_path)
                 info = None
@@ -550,7 +556,7 @@ class KatanaProxy:
             info = _read_pid_file(self._pid_path)
             if info is None:
                 continue
-            if not _is_process_running(info.pid):
+            if not _pid_matches_proxy_process(info.pid, info):
                 logger.warning("Proxy process (PID %d) died, restarting...", info.pid)
                 with self._lock:
                     try:
@@ -560,8 +566,10 @@ class KatanaProxy:
                         logger.error("Failed to restart proxy: %s", exc)
 
     @staticmethod
-    def _kill_process(pid: int) -> None:
-        """Kill a process by PID."""
+    def _kill_process(pid: int, info: Optional[_PidInfo] = None) -> None:
+        """Kill a process by PID after validating that it is the proxy."""
+        if not _pid_matches_proxy_process(pid, info):
+            raise RuntimeError(f"Refusing to kill unrelated process {pid}")
         try:
             if platform.system() == "Windows":
                 subprocess.run(

@@ -9,11 +9,31 @@ Middleware stack (default order, highest priority first)
 --------------------------------------------------------
 1. **KatanaTaintMiddleware** (pri=100) — wraps tool outputs in TaintedValues,
    checks taint flows before tool calls.
-2. **KatanaScanMiddleware** (pri=80) — runs the multi-layer scanner on
+2. **KatanaScabbardMiddleware** (pri=90) — multi-signal prompt-injection
+   classifier (normaliser + features + fusion).  On BLOCK: short-circuit.
+   On FLAG: add taint, continue to downstream scanners.
+2.5. **KatanaProtectAIMiddleware** (pri=88) — ProtectAI DeBERTa binary gate
+   between Scabbard and Sentinel.  INJECTION > block_threshold → DENY,
+   INJECTION > flag_threshold → ESCALATE, SAFE > safe_passthrough → fast-path.
+3. **KatanaSentinelMiddleware** (pri=85) — second independent ML classifier
+   for prompt injection.  Runs alongside Scabbard for defence-in-depth.
+4. **KatanaScanMiddleware** (pri=80) — runs the multi-layer scanner on
    inputs and outputs to detect injections, secrets, and dangerous content.
-3. **KatanaPolicyMiddleware** (pri=60) — evaluates the declarative policy
+4b. **KatanaMCPMiddleware** (pri=78) — MCP tool-poisoning detector: rug-pull
+   drift, hidden instructions, unicode-tag steganography, suspicious schemas.
+4c. **KatanaMultiTurnMiddleware** (pri=76) — stateful multi-turn attack
+   detector: tracks conversation across turns, flags escalation / persona
+   hijack / context manipulation sequences.
+4d. **KatanaRAGInjectionMiddleware** (pri=74) — RAG indirect-injection
+   detector: prompt injection in retrieved documents, role-hijack, context
+   manipulation, tool hijack, poisoned embeddings, invisible characters.
+5. **KatanaStructuralMiddleware** (pri=70) — content-type-aware structural
+   analysis (HTML hidden text, PDF layers, Markdown injection, bloom filter).
+5b. **KatanaBehavioralMiddleware** (pri=65) — post-dispatch behavioral
+   observer for anomalous tool-call sequences.
+6. **KatanaPolicyMiddleware** (pri=60) — evaluates the declarative policy
    engine to produce ALLOW / DENY / ESCALATE / LOG_ONLY decisions.
-4. **KatanaAuditMiddleware** (pri=20) — logs every decision to the
+7. **KatanaAuditMiddleware** (pri=20) — logs every decision to the
    structured audit trail for post-incident analysis.
 
 Usage::
@@ -28,7 +48,15 @@ from __future__ import annotations
 
 __all__ = [
     "KatanaTaintMiddleware",
+    "KatanaScabbardMiddleware",
+    "KatanaProtectAIMiddleware",
+    "KatanaSentinelMiddleware",
     "KatanaScanMiddleware",
+    "KatanaMCPMiddleware",
+    "KatanaMultiTurnMiddleware",
+    "KatanaRAGInjectionMiddleware",
+    "KatanaStructuralMiddleware",
+    "KatanaBehavioralMiddleware",
     "KatanaPolicyMiddleware",
     "KatanaAuditMiddleware",
     "create_default_chain",
@@ -41,165 +69,458 @@ import logging
 import time
 from typing import Any
 
-from hermes_katana.middleware.chain import (
-    CallContext,
-    DispatchDecision,
-    KatanaMiddleware,
-    MiddlewareChain,
-)
+from hermes_katana.middleware.chain import CallContext, DispatchDecision, KatanaMiddleware, MiddlewareChain
+from hermes_katana.middleware.protectai_middleware import KatanaProtectAIMiddleware
+from hermes_katana.middleware.taint_middleware import KatanaTaintMiddleware
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# 1. Taint middleware
+# 2. Scabbard middleware (multi-signal classifier)
 # ---------------------------------------------------------------------------
 
 
-class KatanaTaintMiddleware(KatanaMiddleware):
-    """Taint-tracking middleware for the Hermes dispatch pipeline.
+class KatanaScabbardMiddleware(KatanaMiddleware):
+    """Multi-signal prompt-injection classifier middleware.
 
-    **Pre-dispatch**: inspects all tool arguments for :class:`TaintedValue`
-    wrappers and checks whether the tainted data may flow to the target
-    tool.  If the flow analyzer returns DENY, the call is blocked.
+    Runs the Scabbard pipeline (normaliser -> feature extraction -> fusion)
+    on tool arguments **before** the pattern-based scanner.
 
-    **Post-dispatch**: wraps tool outputs in :class:`TaintedValue` with
-    a ``tool_output`` source label so downstream taint propagation works.
+    - **BLOCK**: short-circuit, do not run downstream scanners.
+    - **FLAG**: add taint metadata and ``scabbard_result`` to *ctx.extras*,
+      continue to downstream middleware.
+    - **ALLOW**: continue normally.
 
     Args:
-        tracker: The :class:`TaintTracker` singleton (or scoped instance).
+        config: Optional :class:`ScabbardConfig`.  Defaults to ``minimal``
+            profile (zero ML deps).
         enabled: Whether this middleware is active.
     """
 
     def __init__(
         self,
-        tracker: Any | None = None,
+        config: Any | None = None,
         *,
         enabled: bool = True,
+        route_mode: str = "balanced",
+        scan_outputs: bool = True,
+        audit_routes: bool = True,
+        enforce_output_blocks: bool = True,
     ) -> None:
-        super().__init__(name="katana.taint", enabled=enabled, priority=100)
-        self._tracker = tracker
+        super().__init__(name="katana.scabbard", enabled=enabled, priority=90)
+        self._config = config
+        self._classifier: Any | None = None
+        self._route_mode = route_mode
+        self._scan_outputs = scan_outputs
+        self._audit_routes = audit_routes
+        self._enforce_output_blocks = enforce_output_blocks
 
     @property
-    def tracker(self) -> Any:
-        """Lazy-load the tracker to avoid circular imports at module level."""
-        if self._tracker is None:
-            from hermes_katana.taint import TaintTracker
+    def classifier(self) -> Any:
+        """Lazy-load the ScabbardClassifier to avoid import cost at wire time."""
+        if self._classifier is None:
+            from hermes_katana.scabbard import ScabbardClassifier, ScabbardConfig
 
-            self._tracker = TaintTracker.get_instance()
-        return self._tracker
+            cfg = self._config or ScabbardConfig.minimal()
+            self._classifier = ScabbardClassifier(cfg)
+        return self._classifier
+
+    @property
+    def model_version(self) -> str:
+        """Stable identifier for the loaded classifier (for audit + metrics)."""
+        cfg = getattr(self.classifier, "config", None)
+        if cfg and getattr(cfg, "model_version", None):
+            return cfg.model_version
+        return "scabbard-unknown"
+
+    @property
+    def shadow_classifier(self) -> Any | None:
+        """Lazy-load the shadow KatanaV11Classifier if configured.
+
+        Shadow classifiers run alongside the primary on every classification
+        call. Their results are logged but do NOT affect actual decisions —
+        used for canary-style rollouts of new model versions.
+        """
+        if hasattr(self, "_shadow_loaded"):
+            return self._shadow
+        cfg = getattr(self.classifier, "config", None)
+        path = getattr(cfg, "shadow_v11_path", None) if cfg else None
+        if not path:
+            self._shadow = None
+        else:
+            from hermes_katana.scabbard.embedder import KatanaV11Classifier
+
+            self._shadow = KatanaV11Classifier(
+                model_path=path,
+                backend=getattr(cfg, "shadow_v11_backend", "torch"),
+                device=getattr(cfg, "shadow_v11_device", None),
+                default_origin=getattr(cfg, "shadow_v11_default_origin", "user_input"),
+            )
+        self._shadow_loaded = True
+        return self._shadow
+
+    def _record_shadow(
+        self,
+        text: str,
+        origin: str | None,
+        primary_result: Any,
+        ctx: CallContext,
+    ) -> None:
+        """If shadow is configured, classify and log disagreement vs primary."""
+        shadow = self.shadow_classifier
+        if shadow is None:
+            return
+        cfg = getattr(self.classifier, "config", None)
+        shadow_version = getattr(cfg, "shadow_model_version", "shadow-unknown") if cfg else "shadow-unknown"
+        try:
+            shadow_result = shadow.classify_result(text, origin=origin)
+        except Exception:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("hermes_katana.middleware.shadow").exception(
+                "shadow classifier raised; primary result unaffected"
+            )
+            return
+
+        primary_dec = primary_result.decision
+        shadow_dec = shadow_result.decision
+        primary_top = primary_result.top_category
+        shadow_top = shadow_result.top_category
+
+        # Stash shadow info on ctx for downstream auditing / metrics.
+        ctx.extras.setdefault("shadow_results", []).append(
+            {
+                "model_version": shadow_version,
+                "decision": str(shadow_dec.value if hasattr(shadow_dec, "value") else shadow_dec),
+                "top_category": shadow_top,
+                "confidence": float(shadow_result.confidence),
+            }
+        )
+
+        if primary_dec != shadow_dec or primary_top != shadow_top:
+            import json as _json
+            import logging
+
+            payload = {
+                "event": "shadow_disagreement",
+                "primary_version": self.model_version,
+                "shadow_version": shadow_version,
+                "primary_decision": str(primary_dec.value if hasattr(primary_dec, "value") else primary_dec),
+                "shadow_decision": str(shadow_dec.value if hasattr(shadow_dec, "value") else shadow_dec),
+                "primary_top": primary_top,
+                "shadow_top": shadow_top,
+                "primary_confidence": round(float(primary_result.confidence), 4),
+                "shadow_confidence": round(float(shadow_result.confidence), 4),
+                "origin": origin,
+            }
+            logging.getLogger("hermes_katana.middleware.shadow").info(
+                "%s", _json.dumps(payload, default=str, sort_keys=True)
+            )
+
+    def _classify_with_timeout(self, text: str, origin: str | None) -> Any:
+        """Run the classifier; if it exceeds ``classifier_timeout_seconds``,
+        return a synthesized result honoring ``classifier_timeout_decision``.
+
+        timeout=0 (default) disables the wrapper entirely — same code path as
+        before this hardening pass.
+        """
+        cfg = getattr(self.classifier, "config", None)
+        timeout = float(getattr(cfg, "classifier_timeout_seconds", 0.0) or 0.0)
+        if timeout <= 0.0:
+            return self.classifier.classify(text, origin=origin)
+
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+
+        # Don't use ``with ... as ex`` — its __exit__ blocks for pending
+        # tasks, defeating the timeout. shutdown(wait=False) lets the slow
+        # call leak in the background while we return promptly.
+        ex = ThreadPoolExecutor(max_workers=1)
+        fut = ex.submit(self.classifier.classify, text, origin=origin)
+        try:
+            return fut.result(timeout=timeout)
+        except FutureTimeout:
+            from hermes_katana.scabbard.fusion import ClassificationResult, Decision
+
+            fallback = (getattr(cfg, "classifier_timeout_decision", "allow") or "allow").lower()
+            decision = Decision.BLOCK if fallback == "deny" else Decision.ALLOW
+            return ClassificationResult(
+                scores={"clean": 1.0 if decision == Decision.ALLOW else 0.0},
+                decision=decision,
+                top_category="timeout_fallback",
+                confidence=0.0 if decision == Decision.ALLOW else 1.0,
+            )
+        finally:
+            ex.shutdown(wait=False, cancel_futures=True)
 
     @staticmethod
-    def _find_tainted(value: Any, _tainted_types: tuple | None = None) -> list:
-        """Recursively find all tainted values in a nested structure."""
-        from hermes_katana.taint import TaintedValue
-        from hermes_katana.taint.value import TaintedStr
+    def _resolve_origin(ctx: CallContext, arg_name: str) -> str | None:
+        """Pull the origin tier for ``arg_name`` from ``ctx.taint_context``.
 
-        if _tainted_types is None:
-            _tainted_types = (TaintedStr, TaintedValue)
+        Convention (forward-compatible with existing taint contracts):
 
-        found: list = []
-        if isinstance(value, _tainted_types):
-            found.append(value)
-        elif isinstance(value, dict):
-            for v in value.values():
-                found.extend(KatanaTaintMiddleware._find_tainted(v, _tainted_types))
-        elif isinstance(value, (list, tuple)):
-            for item in value:
-                found.extend(KatanaTaintMiddleware._find_tainted(item, _tainted_types))
-        return found
+        * ``ctx.taint_context["arg_origins"]`` — dict mapping arg-name to one
+          of the 6 origin tiers. Per-arg granularity.
+        * ``ctx.taint_context["origin"]`` — single tier applied to every arg
+          when no per-arg map is set. Coarse fallback.
+        * Unset → ``None``, which the classifier maps to its default tier
+          (``user_input`` unless overridden in ScabbardConfig).
+        """
+        if not ctx.taint_context:
+            return None
+        per_arg = ctx.taint_context.get("arg_origins")
+        if isinstance(per_arg, dict):
+            tier = per_arg.get(arg_name)
+            if isinstance(tier, str):
+                return tier
+        coarse = ctx.taint_context.get("origin")
+        if isinstance(coarse, str):
+            return coarse
+        return None
 
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
-        """Check taint flows for all tool arguments.
+        """Run Scabbard only on routed natural-language/content arguments.
 
-        Scans each argument recursively; if any nested value is tainted,
-        checks its flow against the target tool.  The most restrictive
-        decision wins.
+        Populates ``ctx.extras`` with:
 
-        Also populates ``ctx.taint_context`` with structured taint metadata
-        for downstream policy evaluation.
+        - ``scabbard_result``: worst :class:`ClassificationResult` dict
+        - ``scabbard_results_by_arg``: per routed field result dicts
+        - ``scabbard_routes`` / ``scabbard_skipped_args``: route audit data
+        - ``scabbard_risk_score``: float (highest confidence across scanned args)
+        - ``scabbard_arg_origins``: per-arg origin tier used (when v11 active)
         """
-        from hermes_katana.taint import FlowDecision
+        from hermes_katana.scabbard.fusion import Decision as ScabbardDecision
+        from hermes_katana.scabbard.routing import (
+            extract_scabbard_arg_texts,
+            has_scabbard_adversarial_signal,
+            should_scabbard_scan_arg,
+        )
 
-        tracker = self.tracker
-        tainted_fields: dict[str, Any] = {}
-        worst_flow = None
+        worst_confidence = 0.0
+        worst_result: dict[str, Any] | None = None
+        used_origins: dict[str, str] = {}
+        routes: list[dict[str, Any]] = []
+        skipped: dict[str, dict[str, Any]] = {}
+        by_arg: dict[str, dict[str, Any]] = {}
+        scanned_count = 0
+        skipped_count = 0
 
         for arg_name, arg_val in ctx.args.items():
-            # Recursively find tainted values in nested structures
-            tainted_vals = self._find_tainted(arg_val)
-            if not tainted_vals:
-                continue
+            origin = self._resolve_origin(ctx, arg_name)
+            route = should_scabbard_scan_arg(
+                ctx.tool_name,
+                arg_name,
+                arg_val,
+                origin=origin,
+                mode=self._route_mode,
+            )
+            if self._audit_routes:
+                routes.append(route.to_dict(arg=arg_name))
+            if not route.scan:
+                skipped_count += 1
+                if self._audit_routes:
+                    skipped[arg_name] = route.to_dict(arg=arg_name)
 
-            for tainted_val in tainted_vals:
-                sources = tainted_val.sources
-                labels = [s.label.name for s in sources]
-                origins = [s.origin for s in sources]
+            for leaf_name, text, _leaf_route in extract_scabbard_arg_texts(
+                ctx.tool_name,
+                arg_name,
+                arg_val,
+                origin=origin,
+                mode=self._route_mode,
+            ):
+                if not text.strip():
+                    continue
+                scanned_count += 1
+                result = self._classify_with_timeout(text, origin)
+                self._record_shadow(text, origin, result, ctx)
+                if origin is not None:
+                    used_origins[leaf_name] = origin
+                result_dict = result.to_dict()
+                by_arg[leaf_name] = result_dict
 
-                tainted_fields[arg_name] = {
-                    "is_tainted": True,
-                    "source": origins[0] if origins else "unknown",
-                    "labels": labels,
-                    "readers": [r.name for r in tainted_val.readers] if tainted_val.readers else [],
-                    "level": max((s.label.value if hasattr(s.label, "value") else 5) for s in sources)
-                    if sources
-                    else 0,
-                }
+                if result.decision == ScabbardDecision.BLOCK:
+                    softened = len(text.strip()) < 96 and not has_scabbard_adversarial_signal(text)
+                    if softened:
+                        ctx.extras.setdefault("scabbard_softened_blocks", []).append(
+                            {
+                                "arg": leaf_name,
+                                "reason": "short_text_without_adversarial_signal",
+                                "confidence": float(result.confidence),
+                                "top_category": result.top_category,
+                            }
+                        )
+                        continue
+                    ctx.deny(f"Scabbard blocked ({result.top_category}, confidence={result.confidence:.2f})")
+                    ctx.extras["scabbard_result"] = result_dict
+                    ctx.extras["scabbard_results_by_arg"] = by_arg
+                    ctx.extras["scabbard_risk_score"] = result.confidence
+                    ctx.extras["scabbard_model_version"] = self.model_version
+                    ctx.extras["scabbard_route_counts"] = {"scanned": scanned_count, "skipped": skipped_count}
+                    if self._audit_routes:
+                        ctx.extras["scabbard_routes"] = routes
+                        ctx.extras["scabbard_skipped_args"] = skipped
+                    if used_origins:
+                        ctx.extras["scabbard_arg_origins"] = used_origins
+                    return DispatchDecision.DENY
 
-                # Check flow
-                flow_decision = tracker.check_flow(tainted_val, ctx.tool_name, ctx.args)
+                if result.confidence > worst_confidence:
+                    worst_confidence = result.confidence
+                    worst_result = result_dict
 
-                if flow_decision == FlowDecision.DENY:
-                    worst_flow = FlowDecision.DENY
-                    ctx.deny(
-                        f"Taint flow violation: field '{arg_name}' "
-                        f"(sources={origins}) cannot flow to tool '{ctx.tool_name}'"
-                    )
-                elif flow_decision == FlowDecision.ASK_USER and worst_flow != FlowDecision.DENY:
-                    worst_flow = FlowDecision.ASK_USER
-                    ctx.escalate(
-                        f"Taint escalation: field '{arg_name}' requires human approval for tool '{ctx.tool_name}'"
-                    )
+        ctx.extras["scabbard_route_counts"] = {"scanned": scanned_count, "skipped": skipped_count}
+        if self._audit_routes:
+            ctx.extras["scabbard_routes"] = routes
+            ctx.extras["scabbard_skipped_args"] = skipped
+        if by_arg:
+            ctx.extras["scabbard_results_by_arg"] = by_arg
+        if worst_result is not None:
+            ctx.extras["scabbard_result"] = worst_result
+            ctx.extras["scabbard_risk_score"] = worst_confidence
+            ctx.extras["scabbard_model_version"] = self.model_version
+        if used_origins:
+            ctx.extras["scabbard_arg_origins"] = used_origins
 
-        # Merge taint context into the call context
-        if tainted_fields:
-            ctx.taint_context["tainted_fields"] = tainted_fields
-            ctx.extras["taint_checked"] = True
-
-        if worst_flow == FlowDecision.DENY:
-            return DispatchDecision.DENY
-        if worst_flow == FlowDecision.ASK_USER:
+        if worst_confidence >= 0.5:
+            # FLAG — add taint hint for downstream middleware
+            ctx.extras["scabbard_flagged"] = True
+            ctx.escalate(f"Scabbard flagged (confidence={worst_confidence:.2f})")
             return DispatchDecision.ESCALATE
 
         return DispatchDecision.ALLOW
 
     def post_dispatch(self, ctx: CallContext) -> None:
-        """Wrap tool output in a TaintedValue for downstream propagation.
+        """Scan routed content fragments from tool outputs.
 
-        The output is tagged with a ``TOOL_OUTPUT`` source so it can be
-        tracked through subsequent operations.
+        Output scanning happens after the tool ran, so a BLOCK cannot prevent
+        the side effect. It does prevent poisoned content from flowing onward by
+        redacting ``ctx.tool_output`` by default while preserving route/result
+        metadata for audit.
         """
-        if ctx.tool_output is None or ctx.is_denied:
+        if not self._scan_outputs or ctx.tool_output is None:
             return
 
-        try:
-            from hermes_katana.taint import Source, TaintLabel, TrustLevel
+        from hermes_katana.scabbard.fusion import Decision as ScabbardDecision
+        from hermes_katana.scabbard.routing import extract_scabbard_output_texts
 
-            source = Source(
-                label=TaintLabel.TOOL_OUTPUT,
-                origin=f"tool:{ctx.tool_name}",
-                trust_level=TrustLevel.CONDITIONAL,
-                metadata={"call_id": ctx.call_id, "tool": ctx.tool_name},
-            )
-            tainted_output = self.tracker.register(ctx.tool_output, source)
-            ctx.extras["tainted_output"] = tainted_output
-        except Exception:
-            # Don't fail the call if taint wrapping has issues
-            logger.debug("Could not taint-wrap output for %s", ctx.tool_name, exc_info=True)
+        fragments = extract_scabbard_output_texts(ctx.tool_name, ctx.tool_output, mode=self._route_mode)
+        if self._audit_routes:
+            ctx.extras["scabbard_output_routes"] = [
+                fragment.decision.to_dict(path=fragment.path) for fragment in fragments
+            ]
+        if not fragments:
+            return
+
+        worst_confidence = 0.0
+        worst_result: dict[str, Any] | None = None
+        by_path: dict[str, dict[str, Any]] = {}
+        for fragment in fragments:
+            result = self._classify_with_timeout(fragment.text, "tool_output")
+            self._record_shadow(fragment.text, "tool_output", result, ctx)
+            result_dict = result.to_dict()
+            by_path[fragment.path] = result_dict
+            if result.confidence > worst_confidence:
+                worst_confidence = result.confidence
+                worst_result = result_dict
+
+        ctx.extras["scabbard_output_results_by_path"] = by_path
+        if worst_result is not None:
+            ctx.extras["scabbard_output_result"] = worst_result
+            ctx.extras["scabbard_output_risk_score"] = worst_confidence
+            ctx.extras["scabbard_model_version"] = self.model_version
+            if worst_result.get("decision") == ScabbardDecision.BLOCK.value:
+                ctx.extras["scabbard_output_blocked"] = True
+                if self._enforce_output_blocks:
+                    ctx.tool_output = "[Scabbard blocked tool output: adversarial content redacted]"
+                    ctx.extras["scabbard_output_redacted"] = True
+            elif worst_confidence >= 0.5:
+                ctx.extras["scabbard_output_flagged"] = True
 
 
 # ---------------------------------------------------------------------------
-# 2. Scanner middleware
+# 3. Sentinel middleware (ML classifier — runs between Scabbard and Scanner)
+# ---------------------------------------------------------------------------
+
+
+class KatanaSentinelMiddleware(KatanaMiddleware):
+    """Sentinel multi-signal prompt-injection classifier middleware.
+
+    Runs the Sentinel pipeline (normaliser -> feature extraction -> fusion)
+    on tool arguments **before** the pattern-based scanner, as a second
+    independent ML signal alongside Scabbard.
+
+    - **BLOCK**: short-circuit, do not run downstream scanners.
+    - **FLAG**: add ``sentinel_flagged`` hint to *ctx.extras*, continue.
+    - **ALLOW**: continue normally.
+
+    Args:
+        config: Optional :class:`SentinelConfig`.  Defaults to ``minimal``
+            profile (zero ML deps).
+        enabled: Whether this middleware is active.
+    """
+
+    def __init__(
+        self,
+        config: Any | None = None,
+        *,
+        enabled: bool = True,
+    ) -> None:
+        super().__init__(name="katana.sentinel", enabled=enabled, priority=85)
+        self._config = config
+        self._classifier: Any | None = None
+
+    @property
+    def classifier(self) -> Any:
+        """Lazy-load the SentinelClassifier to avoid import cost at wire time."""
+        if self._classifier is None:
+            from hermes_katana.scabbard import ScabbardClassifier, ScabbardConfig
+
+            cfg = self._config or ScabbardConfig(profile="minimal")
+            self._classifier = ScabbardClassifier(cfg)
+        return self._classifier
+
+    def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
+        """Run Sentinel on all string arguments.
+
+        Populates ``ctx.extras`` with:
+
+        - ``sentinel_result``: :class:`ClassificationResult` dict
+        - ``sentinel_risk_score``: float (highest confidence across args)
+        """
+        from hermes_katana.scabbard.fusion import Decision as SentinelDecision
+
+        worst_confidence = 0.0
+        worst_result: dict[str, Any] | None = None
+
+        for arg_name, arg_val in ctx.args.items():
+            text = str(arg_val) if arg_val is not None else ""
+            if not text.strip():
+                continue
+
+            result = self.classifier.classify(text)
+            if result.confidence > worst_confidence:
+                worst_confidence = result.confidence
+                worst_result = result.to_dict()
+
+            if result.decision == SentinelDecision.BLOCK:
+                ctx.deny(f"Sentinel blocked ({result.top_category}, confidence={result.confidence:.2f})")
+                ctx.extras["sentinel_result"] = result.to_dict()
+                ctx.extras["sentinel_risk_score"] = result.confidence
+                return DispatchDecision.DENY
+
+        if worst_result is not None:
+            ctx.extras["sentinel_result"] = worst_result
+            ctx.extras["sentinel_risk_score"] = worst_confidence
+
+        if worst_confidence >= 0.5:
+            ctx.extras["sentinel_flagged"] = True
+            ctx.escalate(f"Sentinel flagged (confidence={worst_confidence:.2f})")
+            return DispatchDecision.ESCALATE
+
+        return DispatchDecision.ALLOW
+
+
+# ---------------------------------------------------------------------------
+# 4. Scanner middleware
 # ---------------------------------------------------------------------------
 
 
@@ -229,8 +550,18 @@ class KatanaScanMiddleware(KatanaMiddleware):
         check_secrets: bool = True,
         check_unicode: bool = True,
         check_content: bool = True,
+        enforce_output_findings: bool = False,
+        route_aware: bool = True,
         enabled: bool = True,
     ) -> None:
+        """
+        Codex audit finding #4 (MED, 2026-05-07): post-dispatch output scanning
+        previously logged findings but did not enforce. Set
+        ``enforce_output_findings=True`` to redact the tool output and stamp
+        ``ctx.extras['output_redacted']=True`` whenever a finding fires. Default
+        is False to preserve backward compatibility; production deployments
+        that want fail-closed output scanning should opt in.
+        """
         super().__init__(name="katana.scan", enabled=enabled, priority=80)
         self._vault_values = vault_values or set()
         self._block_threshold = block_threshold
@@ -239,6 +570,8 @@ class KatanaScanMiddleware(KatanaMiddleware):
         self._check_secrets = check_secrets
         self._check_unicode = check_unicode
         self._check_content = check_content
+        self._enforce_output_findings = enforce_output_findings
+        self._route_aware = route_aware
 
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         """Scan all string arguments for attacks.
@@ -246,7 +579,8 @@ class KatanaScanMiddleware(KatanaMiddleware):
         Uses ``scan_input()`` for general text and ``scan_command()`` for
         command-type arguments.
         """
-        from hermes_katana.scanner import scan_input, scan_command
+        from hermes_katana.scabbard.routing import RouteKind, should_scabbard_scan_arg
+        from hermes_katana.scanner import scan_command, scan_input
 
         worst_score = 0.0
         all_results = []
@@ -256,8 +590,21 @@ class KatanaScanMiddleware(KatanaMiddleware):
             if not text:
                 continue
 
+            route = should_scabbard_scan_arg(ctx.tool_name, arg_name, arg_val, mode="balanced")
+            if self._route_aware and route.kind in {
+                RouteKind.BOOLEAN,
+                RouteKind.CONTROL,
+                RouteKind.ENUM,
+                RouteKind.NUMERIC,
+                RouteKind.PATH,
+                RouteKind.STRUCTURAL,
+                RouteKind.URL,
+                RouteKind.URL_LIST,
+            }:
+                continue
+
             # Use command scanner for command-like arguments
-            if arg_name in ("command", "cmd", "shell_command", "script"):
+            if route.kind == RouteKind.COMMAND or arg_name in ("command", "cmd", "shell_command", "script"):
                 result = scan_command(
                     text,
                     check_secrets=self._check_secrets,
@@ -323,12 +670,455 @@ class KatanaScanMiddleware(KatanaMiddleware):
                         ctx.tool_name,
                         result.summary,
                     )
+                    # Codex audit #4: enforce — replace output with a marker
+                    # rather than letting downstream consumers see flagged
+                    # content. Opt-in via enforce_output_findings.
+                    if self._enforce_output_findings:
+                        ctx.tool_output = (
+                            f"[HermesKatana] Tool output redacted by post-dispatch scanner: {result.summary}"
+                        )
+                        ctx.extras["output_redacted"] = True
+                        ctx.extras["output_redacted_reason"] = result.summary
         except Exception:
             logger.debug("Post-dispatch scan failed for %s", ctx.tool_name, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
-# 3. Policy middleware
+# 4. Structural middleware
+# ---------------------------------------------------------------------------
+
+
+class KatanaStructuralMiddleware(KatanaMiddleware):
+    """Content-type-aware structural analysis middleware.
+
+    **Pre-dispatch**: detects the content type of string arguments and
+    routes to specialised sub-scanners (html_diff, pdf_layers,
+    markdown_audit) plus the bloom filter.  Produces a unified
+    :class:`StructuralReport` attached to ``ctx.extras["structural_report"]``.
+
+    Runs after the general-purpose scanner (pri=80) and before policy
+    (pri=60) so that structural findings are available for policy
+    evaluation.
+
+    Args:
+        block_threshold: Structural score above which the call is denied.
+        warn_threshold:  Structural score above which the call is escalated.
+        enabled:         Whether this middleware is active.
+    """
+
+    def __init__(
+        self,
+        *,
+        block_threshold: float = 0.8,
+        warn_threshold: float = 0.5,
+        enabled: bool = True,
+    ) -> None:
+        super().__init__(name="katana.structural", enabled=enabled, priority=70)
+        self._block_threshold = block_threshold
+        self._warn_threshold = warn_threshold
+
+    def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
+        """Run structural analysis on all string arguments."""
+        from hermes_katana.scanner.structural import (
+            ContentType,
+            detect_structural,
+        )
+
+        worst_score = 0.0
+        reports: list[dict] = []
+
+        for arg_name, arg_val in ctx.args.items():
+            text = str(arg_val) if arg_val is not None else ""
+            if not text.strip():
+                continue
+
+            report = detect_structural(text)
+
+            # Fast path: plain text with no findings — skip
+            if report.content_type == ContentType.PLAIN.value and not report.flags:
+                continue
+
+            reports.append(report.to_dict())
+            worst_score = max(worst_score, report.structural_score)
+
+            if report.flags:
+                logger.debug(
+                    "Structural findings for %s.%s (%s): %d flags, score=%.2f",
+                    ctx.tool_name,
+                    arg_name,
+                    report.content_type,
+                    len(report.flags),
+                    report.structural_score,
+                )
+
+        if reports:
+            ctx.extras["structural_reports"] = reports
+            ctx.extras["structural_score"] = worst_score
+
+        if worst_score >= self._block_threshold:
+            ctx.deny(f"Structural scanner blocked: score={worst_score:.2f}")
+            return DispatchDecision.DENY
+
+        if worst_score >= self._warn_threshold:
+            ctx.escalate(f"Structural scanner warning: score={worst_score:.2f}")
+            return DispatchDecision.ESCALATE
+
+        return DispatchDecision.ALLOW
+
+
+# ---------------------------------------------------------------------------
+# 4b. Behavioral analysis middleware
+# ---------------------------------------------------------------------------
+
+
+class KatanaBehavioralMiddleware(KatanaMiddleware):
+    """POST-dispatch behavioral analysis middleware.
+
+    Detects output-side anomalies by maintaining a stateful
+    :class:`~hermes_katana.scanner.behavioral.BehavioralTracker` across
+    all tool calls in the chain lifecycle.
+
+    Priority 65 — after structural (70), before policy (60).
+    """
+
+    def __init__(
+        self,
+        tracker: Any | None = None,
+        *,
+        block_on_sequence: bool = False,
+        enabled: bool = True,
+    ) -> None:
+        super().__init__(name="katana.behavioral", enabled=enabled, priority=65)
+        self._tracker = tracker
+        self._block_on_sequence = block_on_sequence
+
+    @property
+    def tracker(self) -> Any:
+        if self._tracker is None:
+            try:
+                from hermes_katana.scanner.behavioral import BehavioralTracker
+
+                self._tracker = BehavioralTracker()
+            except Exception:
+                pass
+        return self._tracker
+
+    def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
+        """Scan args for persona-shift / conversation-drift signals (stateless)."""
+        try:
+            from hermes_katana.scanner.behavioral import (
+                BehavioralSeverity,
+                detect_behavioral,
+            )
+        except Exception:
+            return DispatchDecision.ALLOW
+
+        all_findings = []
+        for arg_val in ctx.args.values():
+            text = str(arg_val) if arg_val is not None else ""
+            if text.strip():
+                all_findings.extend(detect_behavioral(text))
+
+        if all_findings:
+            ctx.extras["behavioral_pre_findings"] = all_findings
+            weights = {
+                BehavioralSeverity.CRITICAL: 0.5,
+                BehavioralSeverity.HIGH: 0.3,
+                BehavioralSeverity.MEDIUM: 0.15,
+                BehavioralSeverity.LOW: 0.05,
+            }
+            ctx.extras["behavioral_pre_risk"] = min(max(weights.get(f.severity, 0.05) for f in all_findings), 1.0)
+        return DispatchDecision.ALLOW
+
+    def post_dispatch(self, ctx: CallContext) -> None:
+        """Record completed tool call into the tracker; surface any anomalies."""
+        if self.tracker is None:
+            return
+        output_str = str(ctx.tool_output) if ctx.tool_output is not None else None
+        try:
+            findings = self.tracker.record_tool_call(
+                tool_name=ctx.tool_name,
+                output=output_str,
+                had_error=ctx.tool_error is not None,
+                duration_ms=ctx.tool_duration_ms,
+            )
+        except Exception:
+            logger.debug("BehavioralTracker.record_tool_call failed", exc_info=True)
+            return
+
+        if not findings:
+            return
+
+        ctx.extras["behavioral_post_findings"] = findings
+        logger.warning(
+            "Behavioral anomaly after %s: %s",
+            ctx.tool_name,
+            "; ".join(f.description[:80] for f in findings),
+        )
+
+        if self._block_on_sequence:
+            from hermes_katana.scanner.behavioral import BehavioralCategory
+
+            if any(f.category == BehavioralCategory.ANOMALOUS_SEQUENCE for f in findings):
+                ctx.escalate(f"Behavioral: dangerous sequence after {ctx.tool_name}")
+
+
+# ---------------------------------------------------------------------------
+# 4b. MCP tool-poisoning detector middleware
+# ---------------------------------------------------------------------------
+
+
+class KatanaMCPMiddleware(KatanaMiddleware):
+    """MCP (Model Context Protocol) tool-poisoning detector middleware.
+
+    Scans tool-registration-shaped arguments for rug-pull drift, hidden
+    instructions, unicode-tag steganography, and suspicious schemas.
+
+    Baselines are stored in-process keyed by tool name so subsequent
+    registrations of the same tool are checked for silent drift.
+    """
+
+    def __init__(
+        self,
+        *,
+        block_on_critical: bool = True,
+        enabled: bool = True,
+    ) -> None:
+        super().__init__(name="katana.mcp", enabled=enabled, priority=78)
+        self._block_on_critical = block_on_critical
+        self._baselines: dict[str, Any] = {}
+
+    def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
+        from hermes_katana.scanner.mcp_scanner import (
+            MCPSeverity,
+            ToolBaseline,
+            compute_tool_hash,
+            scan_mcp_tool,
+            scan_mcp_tools,
+        )
+
+        all_findings: list[Any] = []
+
+        def _collect(val: Any) -> None:
+            if isinstance(val, dict) and "name" in val and ("description" in val or "inputSchema" in val):
+                name = str(val.get("name") or "")
+                baseline = self._baselines.get(name)
+                findings = scan_mcp_tool(val, baseline=baseline)
+                all_findings.extend(findings)
+                if baseline is None and name:
+                    self._baselines[name] = ToolBaseline(name=name, hash=compute_tool_hash(val))
+            elif isinstance(val, list) and val and isinstance(val[0], dict):
+                all_findings.extend(
+                    scan_mcp_tools(
+                        [v for v in val if isinstance(v, dict)],
+                        baselines=self._baselines or None,
+                    )
+                )
+                for v in val:
+                    if isinstance(v, dict) and "name" in v:
+                        nm = str(v.get("name") or "")
+                        if nm and nm not in self._baselines:
+                            self._baselines[nm] = ToolBaseline(name=nm, hash=compute_tool_hash(v))
+
+        for arg_val in ctx.args.values():
+            _collect(arg_val)
+
+        if not all_findings:
+            return DispatchDecision.ALLOW
+
+        ctx.extras["mcp_findings"] = [
+            {
+                "category": f.category.value,
+                "severity": f.severity.value,
+                "tool_name": f.tool_name,
+                "location": f.location,
+                "evidence": f.evidence,
+                "description": f.description,
+            }
+            for f in all_findings
+        ]
+        critical = [f for f in all_findings if f.severity == MCPSeverity.CRITICAL]
+        if critical and self._block_on_critical:
+            ctx.deny(
+                f"MCP poisoning detected: {critical[0].category.value} in "
+                f"{critical[0].tool_name} ({critical[0].location})"
+            )
+            return DispatchDecision.DENY
+
+        ctx.escalate(f"MCP scanner flagged {len(all_findings)} finding(s) across tool registrations")
+        return DispatchDecision.ESCALATE
+
+
+# ---------------------------------------------------------------------------
+# 4c. Multi-turn attack detector middleware
+# ---------------------------------------------------------------------------
+
+
+class KatanaMultiTurnMiddleware(KatanaMiddleware):
+    """Stateful multi-turn attack detector middleware.
+
+    Maintains one MultiTurnDetector per session. Every pre_dispatch that
+    carries a user-turn argument (heuristically: any string arg named
+    "message", "prompt", "user_input", "text", "query") is fed to the
+    detector, then the detector's current assessment is consulted.
+    """
+
+    _USER_ARG_NAMES = ("message", "prompt", "user_input", "text", "query", "content")
+
+    def __init__(
+        self,
+        *,
+        block_threshold: float = 0.75,
+        warn_threshold: float = 0.45,
+        enabled: bool = True,
+    ) -> None:
+        super().__init__(name="katana.multiturn", enabled=enabled, priority=76)
+        self._block_threshold = block_threshold
+        self._warn_threshold = warn_threshold
+        self._detectors: dict[str, Any] = {}
+
+    def _detector_for(self, session_id: str) -> Any:
+        from hermes_katana.scanner.multiturn import MultiTurnDetector
+
+        det = self._detectors.get(session_id)
+        if det is None:
+            det = MultiTurnDetector()
+            self._detectors[session_id] = det
+        return det
+
+    def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
+        from hermes_katana.scanner.multiturn import TurnRole
+
+        session_id = ctx.extras.get("session_id") or ctx.taint_context.get("session_id") or "default"
+        detector = self._detector_for(str(session_id))
+
+        fed = False
+        for arg_name, arg_val in ctx.args.items():
+            if arg_name not in self._USER_ARG_NAMES:
+                continue
+            text = str(arg_val) if arg_val is not None else ""
+            if not text.strip():
+                continue
+            detector.add_turn(TurnRole.USER, text)
+            fed = True
+
+        if not fed:
+            return DispatchDecision.ALLOW
+
+        assessment = detector.assess()
+        ctx.extras["multiturn_overall_risk"] = assessment.overall_risk
+        ctx.extras["multiturn_findings"] = [
+            {
+                "attack_type": f.attack_type,
+                "severity": f.severity,
+                "turn_indices": list(f.turn_indices),
+                "description": f.description,
+                "score": f.score,
+            }
+            for f in assessment.findings
+        ]
+
+        if assessment.overall_risk >= self._block_threshold:
+            ctx.deny(f"Multi-turn attack detected (risk={assessment.overall_risk:.2f})")
+            return DispatchDecision.DENY
+        if assessment.overall_risk >= self._warn_threshold:
+            ctx.escalate(f"Multi-turn risk elevated (risk={assessment.overall_risk:.2f})")
+            return DispatchDecision.ESCALATE
+        return DispatchDecision.ALLOW
+
+
+# ---------------------------------------------------------------------------
+# 4d. RAG indirect-injection detector middleware
+# ---------------------------------------------------------------------------
+
+
+class KatanaRAGInjectionMiddleware(KatanaMiddleware):
+    """RAG indirect-injection detector middleware.
+
+    Scans retrieved-document arguments for prompt injection, role-hijack,
+    context manipulation, tool hijack, poisoned embeddings, invisible
+    characters, source spoofing, and exfiltration primitives.
+    """
+
+    _DOC_ARG_NAMES = (
+        "documents",
+        "retrieved",
+        "retrieved_documents",
+        "context_docs",
+        "rag_context",
+        "chunks",
+        "context",
+    )
+
+    def __init__(
+        self,
+        *,
+        block_threshold: float = 0.90,
+        warn_threshold: float = 0.60,
+        enabled: bool = True,
+    ) -> None:
+        super().__init__(name="katana.rag_injection", enabled=enabled, priority=74)
+        self._block_threshold = block_threshold
+        self._warn_threshold = warn_threshold
+
+    def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
+        from hermes_katana.scanner.rag_injection import (
+            detect_rag_injection,
+            rag_injection_risk_score,
+            scan_retrieved_documents,
+        )
+
+        worst_score = 0.0
+        finding_dicts: list[dict] = []
+
+        for arg_name, arg_val in ctx.args.items():
+            if arg_name not in self._DOC_ARG_NAMES:
+                continue
+
+            if isinstance(arg_val, str):
+                score = rag_injection_risk_score(arg_val)
+                worst_score = max(worst_score, score)
+                for f in detect_rag_injection(arg_val):
+                    finding_dicts.append(
+                        {
+                            "arg": arg_name,
+                            "category": f.category.value,
+                            "pattern": f.pattern_name,
+                            "confidence": f.confidence,
+                            "description": f.description,
+                        }
+                    )
+            elif isinstance(arg_val, list):
+                for idx, finding in scan_retrieved_documents(arg_val):
+                    worst_score = max(worst_score, finding.confidence)
+                    finding_dicts.append(
+                        {
+                            "arg": arg_name,
+                            "doc_index": idx,
+                            "category": finding.category.value,
+                            "pattern": finding.pattern_name,
+                            "confidence": finding.confidence,
+                            "description": finding.description,
+                        }
+                    )
+
+        if not finding_dicts:
+            return DispatchDecision.ALLOW
+
+        ctx.extras["rag_injection_findings"] = finding_dicts
+        ctx.extras["rag_injection_score"] = worst_score
+
+        if worst_score >= self._block_threshold:
+            ctx.deny(f"RAG injection blocked: score={worst_score:.2f}")
+            return DispatchDecision.DENY
+        if worst_score >= self._warn_threshold:
+            ctx.escalate(f"RAG injection warning: score={worst_score:.2f}")
+            return DispatchDecision.ESCALATE
+        return DispatchDecision.ALLOW
+
+
+# ---------------------------------------------------------------------------
+# 4. Policy middleware
 # ---------------------------------------------------------------------------
 
 
@@ -419,7 +1209,7 @@ class KatanaPolicyMiddleware(KatanaMiddleware):
 
 
 # ---------------------------------------------------------------------------
-# 4. Audit middleware
+# 5. Audit middleware
 # ---------------------------------------------------------------------------
 
 
@@ -443,9 +1233,10 @@ class KatanaAuditMiddleware(KatanaMiddleware):
         log_allow: bool = True,
         enabled: bool = True,
     ) -> None:
-        # GAP 4.4: Audit runs BEFORE policy (higher priority) so denied calls
-        # are always logged even on short-circuit.
-        super().__init__(name="katana.audit", enabled=enabled, priority=65)
+        # Audit runs at lowest priority so it has full context from all upstream
+        # middleware (scan, structural, policy) when logging ALLOW/ESCALATE.
+        # Denied calls are still captured via on_short_circuit() regardless of order.
+        super().__init__(name="katana.audit", enabled=enabled, priority=20)
         self._audit_trail = audit_trail
         self._log_allow = log_allow
 
@@ -574,18 +1365,38 @@ def create_default_chain(
 ) -> "MiddlewareChain":
     """Build the default Katana middleware chain.
 
-    Creates and wires the four standard middleware in the recommended
-    order.  Configuration overrides can disable individual middleware
-    or adjust thresholds.
+    Creates and wires the standard middleware in the recommended order.
+    Configuration overrides can disable individual middleware or adjust
+    thresholds.
 
     Args:
         config: Optional configuration dict with keys:
 
             - ``taint.enabled`` (bool, default True)
+            - ``scabbard.enabled`` (bool, default True)
+            - ``scabbard.config`` (ScabbardConfig instance, optional)
+            - ``protectai.enabled`` (bool, default True)
+            - ``protectai.block_threshold`` (float, default 0.92)
+            - ``protectai.flag_threshold`` (float, default 0.70)
+            - ``protectai.safe_passthrough`` (float, default 0.95)
+            - ``sentinel.enabled`` (bool, default True)
+            - ``sentinel.config`` (SentinelConfig instance, optional)
             - ``scan.enabled`` (bool, default True)
             - ``scan.block_threshold`` (float, default 0.7)
             - ``scan.warn_threshold`` (float, default 0.4)
             - ``scan.vault_values`` (set[str], default empty)
+            - ``mcp.enabled`` (bool, default True)
+            - ``mcp.block_on_critical`` (bool, default True)
+            - ``multiturn.enabled`` (bool, default True)
+            - ``multiturn.block_threshold`` (float, default 0.75)
+            - ``multiturn.warn_threshold`` (float, default 0.45)
+            - ``rag_injection.enabled`` (bool, default True)
+            - ``rag_injection.block_threshold`` (float, default 0.90)
+            - ``rag_injection.warn_threshold`` (float, default 0.60)
+            - ``structural.enabled`` (bool, default True)
+            - ``structural.block_threshold`` (float, default 0.8)
+            - ``structural.warn_threshold`` (float, default 0.5)
+            - ``behavioral.enabled`` (bool, default True)
             - ``policy.enabled`` (bool, default True)
             - ``policy.preset`` (str, default "balanced")
             - ``policy.engine`` (PolicyEngine instance, optional)
@@ -616,7 +1427,35 @@ def create_default_chain(
     )
     chain.add(taint_mw)
 
-    # 2. Scanner
+    # 2. Scabbard classifier (runs BEFORE pattern-based scanners)
+    scabbard_mw = KatanaScabbardMiddleware(
+        config=cfg.get("scabbard.config"),
+        enabled=cfg.get("scabbard.enabled", True),
+        route_mode=cfg.get("scabbard.route_mode", "balanced"),
+        scan_outputs=cfg.get("scabbard.scan_outputs", True),
+        audit_routes=cfg.get("scabbard.audit_routes", True),
+        enforce_output_blocks=cfg.get("scabbard.enforce_output_blocks", True),
+    )
+    chain.add(scabbard_mw)
+
+    # 2.5. ProtectAI binary gate (between Scabbard=90 and Sentinel=85, pri=88)
+    protectai_mw = KatanaProtectAIMiddleware(
+        gate=cfg.get("protectai.gate"),
+        block_threshold=cfg.get("protectai.block_threshold", 0.92),
+        flag_threshold=cfg.get("protectai.flag_threshold", 0.70),
+        safe_passthrough=cfg.get("protectai.safe_passthrough", 0.95),
+        enabled=cfg.get("protectai.enabled", True),
+    )
+    chain.add(protectai_mw)
+
+    # 3. Sentinel classifier (second independent ML signal, pri=85)
+    sentinel_mw = KatanaSentinelMiddleware(
+        config=cfg.get("sentinel.config"),
+        enabled=cfg.get("sentinel.enabled", True),
+    )
+    chain.add(sentinel_mw)
+
+    # 4. Scanner
     scan_mw = KatanaScanMiddleware(
         vault_values=cfg.get("scan.vault_values"),
         block_threshold=cfg.get("scan.block_threshold", 0.7),
@@ -625,11 +1464,51 @@ def create_default_chain(
         check_secrets=cfg.get("scan.check_secrets", True),
         check_unicode=cfg.get("scan.check_unicode", True),
         check_content=cfg.get("scan.check_content", True),
+        route_aware=cfg.get("scan.route_aware", True),
         enabled=cfg.get("scan.enabled", True),
     )
     chain.add(scan_mw)
 
-    # 3. Policy engine
+    # 4b. MCP tool-poisoning detector (pri=78)
+    mcp_mw = KatanaMCPMiddleware(
+        block_on_critical=cfg.get("mcp.block_on_critical", True),
+        enabled=cfg.get("mcp.enabled", True),
+    )
+    chain.add(mcp_mw)
+
+    # 4c. Multi-turn attack detector (pri=76)
+    multiturn_mw = KatanaMultiTurnMiddleware(
+        block_threshold=cfg.get("multiturn.block_threshold", 0.75),
+        warn_threshold=cfg.get("multiturn.warn_threshold", 0.45),
+        enabled=cfg.get("multiturn.enabled", True),
+    )
+    chain.add(multiturn_mw)
+
+    # 4d. RAG injection detector (pri=74)
+    rag_mw = KatanaRAGInjectionMiddleware(
+        block_threshold=cfg.get("rag_injection.block_threshold", 0.90),
+        warn_threshold=cfg.get("rag_injection.warn_threshold", 0.60),
+        enabled=cfg.get("rag_injection.enabled", True),
+    )
+    chain.add(rag_mw)
+
+    # 5. Structural analysis
+    structural_mw = KatanaStructuralMiddleware(
+        block_threshold=cfg.get("structural.block_threshold", 0.8),
+        warn_threshold=cfg.get("structural.warn_threshold", 0.5),
+        enabled=cfg.get("structural.enabled", True),
+    )
+    chain.add(structural_mw)
+
+    # 5b. Behavioral (post-dispatch observer, pri=65)
+    behavioral_mw = KatanaBehavioralMiddleware(
+        tracker=cfg.get("behavioral.tracker"),
+        block_on_sequence=cfg.get("behavioral.block_on_sequence", False),
+        enabled=cfg.get("behavioral.enabled", True),
+    )
+    chain.add(behavioral_mw)
+
+    # 6. Policy engine
     policy_mw = KatanaPolicyMiddleware(
         engine=cfg.get("policy.engine"),
         preset=cfg.get("policy.preset", "balanced"),
@@ -637,7 +1516,7 @@ def create_default_chain(
     )
     chain.add(policy_mw)
 
-    # 4. Audit trail (lowest priority — observes everything)
+    # 7. Audit trail (lowest priority — observes everything)
     audit_mw = KatanaAuditMiddleware(
         audit_trail=cfg.get("audit.trail"),
         log_allow=cfg.get("audit.log_allow", True),

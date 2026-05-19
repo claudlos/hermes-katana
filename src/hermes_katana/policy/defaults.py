@@ -342,13 +342,13 @@ BALANCED_POLICIES: dict[str, Any] = {
         },
         {
             "name": "balanced_terminal_git_readonly_low_taint",
-            "description": "Allow read-only git subcommands with low taint.",
+            "description": "Allow read-only git subcommands with low taint. Write ops (push, commit, stash, reset) are excluded.",
             "tool_pattern": "terminal",
             "conditions": [
                 {
                     "field": "command",
                     "operator": "matches_pattern",
-                    "value": r"^\s*(sudo\s+)?git\s+(status|log|diff|show|branch|tag|remote|stash|describe|shortlog|reflog|config|ls-files|ls-tree)\b.*",
+                    "value": r"^\s*(sudo\s+)?git\s+(status|log|diff|show|branch|tag|remote|describe|shortlog|reflog|config|ls-files|ls-tree)\b.*",
                 },
                 {"field": "*", "operator": "taint_level_lte", "value": 3},
             ],

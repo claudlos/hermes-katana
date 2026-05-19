@@ -86,7 +86,7 @@ class TestBalancedAllowsDevWorkflows:
             "python3 manage.py migrate",
             "pytest --cov=src tests/",
             "mypy src/ --strict",
-            "black --check src/",
+            "python3 -m black --check src/",
         ],
     )
     def test_python_dev_commands_allowed(self, tmp_dir, cmd):

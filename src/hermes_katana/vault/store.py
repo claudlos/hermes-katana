@@ -6,7 +6,7 @@ Hardened from hermes-aegis Fernet (AES-128-CBC) vault with:
 - Per-value random nonces (no nonce reuse)
 - HMAC-SHA256 integrity check over all entries
 - Master key stored in OS keyring (not on disk)
-- Circuit breaker via vault.lock sentinel file
+- Circuit breaker via vault.lock scabbard file
 - Key rotation: re-encrypt all values with a new master key
 - Atomic writes via tmp + replace (no partial-write corruption)
 - Thread-safe with reentrant lock
@@ -21,7 +21,6 @@ Security model:
 from __future__ import annotations
 
 import base64
-import ctypes
 import hashlib
 import hmac
 import json
@@ -29,11 +28,12 @@ import logging
 import os
 import platform
 import secrets
-import sys
-import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
+
+from hermes_katana._files import AdvisoryFileLock, atomic_write_text
 
 logger = logging.getLogger(__name__)
 
@@ -46,53 +46,6 @@ __all__ = [
     "Vault",
     "default_vault_path",
 ]
-
-
-class _VaultFileLock:
-    """Cross-platform advisory file lock for multi-process vault safety."""
-
-    def __init__(self, path: Path) -> None:
-        self._lock_path = path.with_suffix(path.suffix + ".flock")
-        self._fp: Any = None
-
-    def acquire(self) -> None:
-        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
-        self._fp = open(self._lock_path, "w")
-        if platform.system() == "Windows":
-            import msvcrt
-
-            msvcrt.locking(self._fp.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX)
-
-    def release(self) -> None:
-        if self._fp is not None:
-            try:
-                if platform.system() == "Windows":
-                    import msvcrt
-
-                    msvcrt.locking(self._fp.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(self._fp.fileno(), fcntl.LOCK_UN)
-            except (OSError, BlockingIOError):
-                pass
-            try:
-                self._fp.close()
-            except Exception:
-                pass
-            self._fp = None
-
-    def __enter__(self) -> "_VaultFileLock":
-        self.acquire()
-        return self
-
-    def __exit__(self, *args: Any) -> None:
-        self.release()
-
 
 # Vault file format version
 _VAULT_VERSION = 2
@@ -131,6 +84,29 @@ class VaultKeyError(VaultError):
     pass
 
 
+def _process_is_running(pid: int) -> bool:
+    """Return True when *pid* appears to be a live process."""
+    if pid <= 0:
+        return False
+
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return False
+
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError, PermissionError):
+        return False
+
+
 class SecureBytes:
     """Memory-safe bytes wrapper that zeros memory on deallocation.
 
@@ -145,7 +121,6 @@ class SecureBytes:
     """
 
     def __init__(self, data: bytes) -> None:
-        import ctypes
         import ctypes.util
 
         self._buf = bytearray(data)
@@ -423,7 +398,8 @@ class Vault:
     ) -> None:
         self._path = path or _default_vault_path()
         self._lock_path = self._path.with_suffix(".lock")
-        self._file_lock = _VaultFileLock(self._path)
+        self._file_lock = AdvisoryFileLock(self._path)
+        self._lock_state_guard = AdvisoryFileLock(self._lock_path, suffix=".guard")
         self._rlock = threading.RLock()
         self._master_key: Optional[SecureBytes] = None
 
@@ -459,10 +435,63 @@ class Vault:
             )
         return self._master_key.raw
 
+    def _zero_key(self) -> None:
+        """Securely clear the in-memory master key."""
+        if self._master_key is not None:
+            self._master_key.close()
+        self._master_key = None
+
+    def _read_lock_state_unlocked(self) -> dict[str, Any] | None:
+        """Read the lock metadata while holding ``self._lock_state_guard``."""
+        if not self._lock_path.exists():
+            return None
+
+        try:
+            raw = self._lock_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return {"path": str(self._lock_path), "status": "present"}
+
+        if not raw:
+            return {"path": str(self._lock_path), "status": "legacy"}
+
+        try:
+            state = json.loads(raw)
+        except json.JSONDecodeError:
+            return {"path": str(self._lock_path), "status": "legacy"}
+
+        if isinstance(state, dict):
+            state.setdefault("path", str(self._lock_path))
+            return state
+        return {"path": str(self._lock_path), "status": "legacy"}
+
+    def _current_lock_state(self) -> dict[str, Any] | None:
+        """Return the active lock state, removing stale process-owned locks."""
+        with self._lock_state_guard:
+            state = self._read_lock_state_unlocked()
+            if state is None:
+                return None
+
+            pid = state.get("pid")
+            if isinstance(pid, int) and pid > 0 and not _process_is_running(pid):
+                self._lock_path.unlink(missing_ok=True)
+                logger.warning("Removed stale vault lock from dead PID %s", pid)
+                return None
+
+            return state
+
     def _check_lock(self) -> None:
         """Check if the vault is locked (circuit breaker)."""
-        if self._lock_path.exists():
-            raise VaultLockedError(f"Vault is locked (circuit breaker active). Remove {self._lock_path} to unlock.")
+        state = self._current_lock_state()
+        if state is None:
+            return
+
+        owner = state.get("pid")
+        reason = state.get("reason", "circuit_breaker")
+        detail = f" pid={owner}" if isinstance(owner, int) else ""
+        raise VaultLockedError(
+            f"Vault is locked (circuit breaker active, reason={reason!r}{detail}). "
+            f"Use Vault.unlock() to clear {self._lock_path}."
+        )
 
     def _read_vault(self) -> dict[str, Any]:
         """Read and parse the vault file.
@@ -479,6 +508,8 @@ class Vault:
             with self._file_lock:
                 raw = self._path.read_text(encoding="utf-8")
             data = json.loads(raw)
+            if not isinstance(data, dict):
+                raise VaultError("Corrupt vault file: root JSON value must be an object.")
             return data
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise VaultError(f"Corrupt vault file: {exc}")
@@ -504,24 +535,7 @@ class Vault:
         # for multi-process safety
         try:
             with self._file_lock:
-                fd, tmp_path = tempfile.mkstemp(
-                    dir=str(self._path.parent),
-                    prefix=".vault_",
-                    suffix=".tmp",
-                )
-                try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as fp:
-                        json.dump(vault_data, fp, indent=2)
-                        fp.flush()
-                        os.fsync(fp.fileno())
-                    # Set permissions before rename
-                    if sys.platform != "win32":
-                        os.chmod(tmp_path, 0o600)
-                    # Atomic replace
-                    Path(tmp_path).replace(self._path)
-                except Exception:
-                    os.unlink(tmp_path)
-                    raise
+                atomic_write_text(self._path, json.dumps(vault_data, indent=2), mode=0o600)
         except VaultError:
             raise
         except Exception as exc:
@@ -546,6 +560,8 @@ class Vault:
             master_key = self._get_key()
             vault = self._read_vault()
             entries = vault.get("entries", {})
+            if not isinstance(entries, dict):
+                raise VaultError("Corrupt vault file: entries must be a dictionary.")
             stored_hmac = vault.get("hmac", "")
 
             # Verify HMAC integrity before returning any data
@@ -582,6 +598,8 @@ class Vault:
             master_key = self._get_key()
             vault = self._read_vault()
             entries = vault.get("entries", {})
+            if not isinstance(entries, dict):
+                raise VaultError("Corrupt vault file: entries must be a dictionary.")
             entries[key] = _encrypt_value(value, master_key)
             self._write_vault(entries)
             logger.debug("Stored key: %s", key)
@@ -600,6 +618,8 @@ class Vault:
             self._check_lock()
             vault = self._read_vault()
             entries = vault.get("entries", {})
+            if not isinstance(entries, dict):
+                raise VaultError("Corrupt vault file: entries must be a dictionary.")
 
             if key not in entries:
                 raise VaultKeyError(f"Key not found: {key}")
@@ -620,7 +640,10 @@ class Vault:
         with self._rlock:
             self._check_lock()
             vault = self._read_vault()
-            return sorted(vault.get("entries", {}).keys())
+            entries = vault.get("entries", {})
+            if not isinstance(entries, dict):
+                raise VaultError("Corrupt vault file: entries must be a dictionary.")
+            return sorted(entries.keys())
 
     def _get_all_values(self) -> dict[str, str]:
         """Get all decrypted values (internal use only, e.g., for scanner).
@@ -637,6 +660,8 @@ class Vault:
             master_key = self._get_key()
             vault = self._read_vault()
             entries = vault.get("entries", {})
+            if not isinstance(entries, dict):
+                raise VaultError("Corrupt vault file: entries must be a dictionary.")
             result: dict[str, str] = {}
             for k, encrypted in entries.items():
                 try:
@@ -648,28 +673,51 @@ class Vault:
     def lock(self) -> None:
         """Activate the circuit breaker, locking the vault.
 
-        Creates a sentinel file that prevents all vault operations
+        Creates a scabbard file that prevents all vault operations
         until unlock() is called.
         """
         with self._rlock:
-            self._lock_path.touch()
+            with self._lock_state_guard:
+                state = self._read_lock_state_unlocked()
+                owner = state.get("pid") if state else None
+                if state is not None and isinstance(owner, int) and owner != os.getpid() and _process_is_running(owner):
+                    logger.warning("Vault already locked by PID %s", owner)
+                    return
+
+                lock_state = {
+                    "version": 1,
+                    "reason": "circuit_breaker",
+                    "pid": os.getpid(),
+                    "host": platform.node(),
+                    "locked_at": time.time(),
+                }
+                atomic_write_text(self._lock_path, json.dumps(lock_state, indent=2), mode=0o600)
             logger.warning("Vault LOCKED (circuit breaker activated)")
 
     def unlock(self) -> None:
         """Deactivate the circuit breaker, unlocking the vault.
 
-        Removes the sentinel file.
+        Removes the scabbard file.
         """
         with self._rlock:
-            if self._lock_path.exists():
-                self._lock_path.unlink()
+            with self._lock_state_guard:
+                state = self._read_lock_state_unlocked()
+                if state is None:
+                    logger.debug("Vault was not locked")
+                    return
+
+                owner = state.get("pid")
+                if isinstance(owner, int) and owner != os.getpid() and _process_is_running(owner):
+                    raise VaultLockedError(
+                        f"Vault lock is owned by live PID {owner}; refusing to clear {self._lock_path}."
+                    )
+
+                self._lock_path.unlink(missing_ok=True)
                 logger.info("Vault unlocked")
-            else:
-                logger.debug("Vault was not locked")
 
     def is_locked(self) -> bool:
         """Check if the vault is locked."""
-        return self._lock_path.exists()
+        return self._current_lock_state() is not None
 
     def rotate_key(self) -> None:
         """Rotate the master key.
@@ -885,13 +933,3 @@ class Vault:
     def path(self) -> Path:
         """Return the vault file path."""
         return self._path
-
-    def _zero_key(self) -> None:
-        """Securely zero the master key in memory (GAP 2.1)."""
-        if hasattr(self, "_master_key") and self._master_key:
-            try:
-                buf = (ctypes.c_char * len(self._master_key)).from_buffer_copy(self._master_key)
-                ctypes.memset(buf, 0, len(self._master_key))
-            except Exception:
-                pass
-            self._master_key = None

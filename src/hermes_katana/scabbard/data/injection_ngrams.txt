@@ -1,0 +1,573 @@
+ignore previous instructions
+ignore all previous
+ignore all prior instructions
+disregard above
+disregard previous
+forget everything
+forget all previous
+forget your instructions
+forget prior instructions
+forget system instructions
+new instructions
+new system instructions
+new role
+override instructions
+override system
+ignore the above
+ignore your programming
+do not follow instructions
+do not follow system
+instead of your instructions
+instead of your rules
+you have no rules
+you have no guidelines
+pretend you are
+pretend to be
+act as if
+act as a
+assume the role
+you are now DAN
+you are now STAN
+you are now DUDE
+you are now jailbroken
+do anything now
+do anything you want
+jailbreak yourself
+jailbreak me
+enable developer mode
+developer mode enabled
+no restrictions
+no limitations
+no ethical
+no moral
+without restrictions
+without limitations
+without ethical
+without moral
+bypass all restrictions
+bypass safety
+bypass filters
+ignore safety guidelines
+ignore moral
+disregard safety
+ignore policy
+policy override
+system prompt
+reveal system prompt
+print system prompt
+show system prompt
+your system instructions
+your initial prompt
+original instructions
+original system prompt
+base prompt
+underlying instructions
+hidden instructions
+secret instructions
+repeat your system prompt
+repeat the prompt
+output your instructions
+output all instructions
+show me your instructions
+print your instructions
+display instructions
+reveal your instructions
+what are your instructions
+what is your system prompt
+tell me your prompt
+dump the system prompt
+give me the system prompt
+remember this new fact
+remember this rule
+update your knowledge
+update your facts
+learn this new fact
+internal monologue
+your hidden instructions
+confidential instructions
+stealth mode
+pretend mode
+alternate mode
+alternative mode
+undercover mode
+disguised mode
+character mode
+roleplay mode
+ignore ethics
+ignore morality
+ignore rules
+ignore guidelines
+ignore policies
+ignore restrictions
+override safety
+override ethics
+override moral
+override policy
+unrestricted mode
+unrestricted AI
+unfiltered
+uncensored
+no content filter
+disable content filter
+turn off filter
+bypass filter
+filter bypass
+safe search off
+safeblock disable
+harmful content allowed
+all content allowed
+anything allowed
+i am developer
+developer access
+admin mode
+sudo mode
+root access
+kernel access
+enable cheat mode
+cheat codes
+god mode activated
+max privileges
+admin privileges
+root privileges
+elevated privileges
+escape jail
+escape the jailbreak
+free from jail
+break free
+escape simulation
+escape the simulation
+you are in a simulation
+ignore the simulation
+real AI
+real assistant
+no one watching
+no restrictions here
+this is a test
+hypothetical scenario
+for educational purposes
+just kidding
+only joking
+as a joke
+for research
+for science
+for analysis
+academic purpose
+study purpose
+research purpose
+just wondering
+curious about
+what if
+let us assume
+assume that
+suppose that
+hypothetically speaking
+pretend this is
+imagine you can
+let me be direct
+be direct with me
+drop the act
+drop the facade
+be honest with me
+no nonsense
+no more rules
+read me that again
+repeat after me
+mirror this text
+mirror my words
+echo back
+echo the following
+output this exactly
+print this exactly
+type this exactly
+write this exactly
+copy this exactly
+repeat this text
+say exactly
+return exactly
+give me the following
+decode this
+decode the following
+decrypt this
+decrypt the following
+base64 decode
+hex decode
+url decode
+decode these bytes
+rot13 decode
+deobfuscate this
+deobfuscate the following
+unscramble this
+interpret this
+execute this code
+run this code
+execute the code
+run code
+eval this
+eval(
+exec this
+exec(
+spawn a process
+run a shell
+run bash
+run python
+run node
+open terminal
+new terminal
+create file
+write to disk
+read any file
+access files
+access system
+system command
+shell command
+run system command
+os command
+os.execute
+subprocess
+spawn shell
+get shell access
+reverse shell
+bind shell
+netcat
+nc -
+import os
+import sys
+subprocess.run
+os.popen
+os.system
+eval os
+exec os
+__import__
+open any file
+read all files
+write anywhere
+delete anything
+extract data
+access database
+dump database
+access logs
+access credentials
+steal data
+exfiltrate data
+send data to
+transmit to
+call home
+phone home
+beacon out
+external call
+http request
+post data
+send request
+make request
+web request
+curl
+wget
+fetch url
+access url
+call url
+post to url
+get from url
+download file
+upload file
+access clipboard
+read clipboard
+write clipboard
+clipboard history
+keylogger
+record keys
+capture keys
+steal keystrokes
+log keys
+password capture
+credential theft
+session hijack
+session steal
+auth token
+bearer token
+api key
+secret key
+private key
+access token
+authenticate as
+impersonate user
+fake authentication
+forge token
+forge request
+spoof request
+intercept traffic
+man in middle
+MITM
+sniff traffic
+capture traffic
+monitor traffic
+tap connection
+splice connection
+redirect traffic
+proxy traffic
+tunnel traffic
+forward port
+reverse proxy
+port forward
+dynamic proxy
+socks proxy
+proxy chain
+hide identity
+hide IP
+spoof IP
+forge IP
+fake IP
+anonymous proxy
+tor network
+dark web
+illicit site
+illegal content
+csam
+child sexual abuse
+how to make bomb
+how to build weapon
+how to synthesize drug
+how to launder money
+how to hack
+how to dox
+how to swat
+how to stalk
+harmful instructions
+dangerous instructions
+violent instructions
+criminal instructions
+fraud instructions
+scam instructions
+phishing instructions
+malware instructions
+ransomware instructions
+attack instructions
+exploit instructions
+vulnerability instructions
+penetration instructions
+intrusion instructions
+hacking tutorial
+attack tutorial
+crime tutorial
+fraud tutorial
+scam tutorial
+phishing tutorial
+malware tutorial
+bypass tutorial
+exploit development
+zero day
+0day
+unpatched vulnerability
+exploit database
+shellcode
+payload delivery
+malicious payload
+dropper
+trojan
+virus
+worm
+ransomware
+spyware
+adware
+keylogger
+rootkit
+backdoor
+botnet
+ddos tool
+dos tool
+password crack
+hash crack
+brute force
+credential stuffing
+rainbow table
+wordlist attack
+social engineer
+phishing attack
+spear phishing
+whaling attack
+vishing attack
+smishing attack
+ pretexting
+baiting attack
+tailgating
+shoulder surfing
+dumpster diving
+water holing
+man in browser
+browser attack
+browser exploit
+drive by download
+watering hole attack
+spam campaign
+email spoof
+domain spoof
+impersonation attack
+impersonate brand
+fake login
+credential harvest
+session hijacking
+clickjacking
+cross site scripting
+XSS
+SQL injection
+SQLi
+command injection
+OS command injection
+LDAP injection
+XML injection
+XPath injection
+NoSQL injection
+buffer overflow
+heap overflow
+stack overflow
+format string
+integer overflow
+race condition
+TOCTOU
+use after free
+double free
+memory corruption
+code execution
+arbitrary code
+remote code execution
+RCE
+local code execution
+LCE
+privilege escalation
+privilege elevation
+local privilege escalation
+kernel exploit
+sudo exploit
+container escape
+escape container
+escape docker
+escape kubernetes
+escape pod
+escape namespace
+escape chroot
+escape sandbox
+sandbox escape
+escape sandbox environment
+virtual machine escape
+escape VM
+hypervisor escape
+hyperjacking
+firmware attack
+UEFI rootkit
+BIOS rootkit
+bootkit
+evil maid
+evil maid attack
+supply chain attack
+dependency confusion
+typosquatting
+brandjacking
+domain shadowing
+ subdomain takeover
+takeover subdomain
+account takeover
+SIM swap
+SIM hijacking
+phone porting
+call forwarding
+voicemail hacking
+voice phishing
+vishing
+robocall
+telemarketing fraud
+IRS scam
+tech support scam
+tech support fraud
+grandparent scam
+romance scam
+catfishing
+sweetheart scam
+advance fee fraud
+Nigerian scam
+419 scam
+lottery scam
+prize scam
+inheritance scam
+charity scam
+investment fraud
+ponzi scheme
+pyramid scheme
+pump and dump
+insider trading
+market manipulation
+wash trading
+spoofing order
+layering
+corners
+front running
+conflicts of interest
+bribery
+corruption
+kickback
+embezzlement
+fraudulent misappropriation
+embezzlement of funds
+money laundering
+terrorist financing
+sanctions evasion
+trade sanctions violation
+export controls violation
+arms trafficking
+drug trafficking
+human trafficking
+smuggling
+contraband
+illegal wildlife trade
+poaching
+illegal fishing
+illegal logging
+environmental crime
+wildlife crime
+cybercrime
+computer crime
+digital crime
+online crime
+internet crime
+carding
+credit card fraud
+debit card fraud
+ATM fraud
+check fraud
+wire fraud
+mail fraud
+bank fraud
+identity theft
+synthetic identity
+identity fraud
+document fraud
+forgery
+counterfeiting
+currency counterfeiting
+passport fraud
+visa fraud
+immigration fraud
+benefit fraud
+welfare fraud
+tax evasion
+tax fraud
+false return
+evade tax
+avoid tax
+launder money
+money laundering
+shell company
+front company
+ structuring
+smurfing
+layering proceeds
+integration proceeds
+cash intensive business
+cryptocurrency mixing
+tumbler
+mixing service
+coinjoin
+privacy coin
+untraceable currency
+bitcoin tracing
+blockchain analysis
+deanonymize bitcoin
+trace cryptocurrency

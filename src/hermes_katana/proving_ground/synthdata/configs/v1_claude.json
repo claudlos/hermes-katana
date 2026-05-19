@@ -1,0 +1,31 @@
+{
+  "_comment": "Production v1 Simula generation for katana. Teacher=Claude Haiku 4.5 (cheap+fast), Critic A=Claude Haiku 4.5 (independent pass, different prompt), Critic B=gpt-4o-mini (provider-independent to minimize sycophancy). Target corpus size ~15k examples after quality gate.",
+  "run_id": "katana_synth_v1",
+  "checkpoint_dir": "synthdata/checkpoints",
+  "teacher": {
+    "model": "claude-haiku-4-5",
+    "provider": "anthropic",
+    "temperature": 0.8,
+    "max_tokens": 1500
+  },
+  "critic_a": {
+    "model": "claude-haiku-4-5",
+    "provider": "anthropic",
+    "temperature": 0.2,
+    "max_tokens": 400
+  },
+  "critic_b": {
+    "model": "gpt-4o-mini",
+    "provider": "openai",
+    "temperature": 0.2,
+    "max_tokens": 400
+  },
+  "seed_corpus": "results/confirmed_attacks.jsonl",
+  "seeds_per_label": 3,
+  "max_depth": 3,
+  "n_candidates_per_split": 7,
+  "scenarios_per_leaf": 5,
+  "texts_per_scenario": 4,
+  "complexify_fraction": 0.3,
+  "ops_budget": [1, 2]
+}

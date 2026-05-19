@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+import json
+
+from hermes_katana import runtime_artifacts as runtime_artifacts_mod
+
+
+def test_verify_runtime_artifact_manifest_accepts_matching_file_and_directory(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    payload_file = repo_root / "artifact.bin"
+    payload_file.write_bytes(b"katana")
+    payload_dir = repo_root / "tree"
+    payload_dir.mkdir()
+    (payload_dir / "nested.txt").write_text("secure", encoding="utf-8")
+
+    monkeypatch.setattr(runtime_artifacts_mod, "_REPO_ROOT", repo_root)
+
+    manifest = {
+        "version": 1,
+        "artifacts": {
+            "payload_file": {
+                "kind": "file",
+                "path": "artifact.bin",
+                "sha256": runtime_artifacts_mod.compute_file_sha256(payload_file),
+                "require_entries": False,
+            },
+            "payload_dir": {
+                "kind": "directory",
+                "path": "tree",
+                "sha256": runtime_artifacts_mod.compute_tree_sha256(payload_dir),
+                "require_entries": True,
+            },
+        },
+    }
+    manifest_path = repo_root / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = runtime_artifacts_mod.verify_runtime_artifact_manifest(manifest_path)
+
+    assert result["ready"] is True
+    assert result["verified"] == 2
+    assert result["missing"] == []
+    assert result["mismatched"] == []
+    assert result["empty"] == []
+
+
+def test_verify_runtime_artifact_manifest_flags_empty_required_directory(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    empty_dir = repo_root / "empty"
+    empty_dir.mkdir()
+
+    monkeypatch.setattr(runtime_artifacts_mod, "_REPO_ROOT", repo_root)
+
+    manifest = {
+        "version": 1,
+        "artifacts": {
+            "empty_dir": {
+                "kind": "directory",
+                "path": "empty",
+                "sha256": runtime_artifacts_mod.compute_tree_sha256(empty_dir),
+                "require_entries": True,
+            }
+        },
+    }
+    manifest_path = repo_root / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = runtime_artifacts_mod.verify_runtime_artifact_manifest(manifest_path)
+
+    assert result["ready"] is False
+    assert result["verified"] == 0
+    assert result["empty"] == ["empty_dir: directory is empty at empty"]

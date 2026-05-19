@@ -42,7 +42,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import ValidationError
 
 from .defaults import BUILTIN_POLICY_SETS

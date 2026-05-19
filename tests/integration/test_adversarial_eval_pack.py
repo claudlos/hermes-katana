@@ -44,7 +44,15 @@ def _make_source(source_name: str, origin: str | None):
     return Source.user(origin or "eval-user")
 
 
-def _run_case(case: dict, tmp_path: Path) -> dict[str, Any]:
+@pytest.fixture(scope="module")
+def shared_protectai_gate():
+    """Reuse the heavyweight ProtectAI model across all parametrized cases."""
+    from hermes_katana.scanner.protectai_gate import ProtectAIGate
+
+    return ProtectAIGate()
+
+
+def _run_case(case: dict, tmp_path: Path, shared_protectai_gate: Any) -> dict[str, Any]:
     """Execute a single eval case and return a result dict."""
     tracker = TaintTracker()
     audit_trail = AuditTrail(path=tmp_path / f"{case['id']}.jsonl")
@@ -59,6 +67,7 @@ def _run_case(case: dict, tmp_path: Path) -> dict[str, Any]:
             "taint.tracker": tracker,
             "scan.vault_values": set(case.get("vault_values", [])),
             "audit.trail": audit_trail,
+            "protectai.gate": shared_protectai_gate,
         }
     )
 
@@ -105,7 +114,7 @@ def _case_id_func(case: dict) -> str:
 
 
 @pytest.mark.parametrize("case", _ALL_CASES, ids=_case_id_func)
-def test_eval_case(case, tmp_dir):
+def test_eval_case(case, tmp_dir, shared_protectai_gate):
     """Run a single adversarial eval case."""
     expected = case["expected_decision"]
 
@@ -113,7 +122,7 @@ def test_eval_case(case, tmp_dir):
     if expected == _GAP_DECISION:
         pytest.xfail(f"Known gap: {case['id']} — no scanner coverage yet")
 
-    result = _run_case(case, tmp_dir)
+    result = _run_case(case, tmp_dir, shared_protectai_gate)
 
     # Build a rich error message
     msg = (
@@ -127,84 +136,3 @@ def test_eval_case(case, tmp_dir):
     assert result["pre_pass"], f"Decision mismatch!{msg}"
     assert result["output_pass"], f"Output scan mismatch!{msg}"
     assert result["audit_pass"], f"Audit trail missing entries!{msg}"
-
-
-# ---------------------------------------------------------------------------
-# Summary report test — always runs last (alphabetically after test_eval_case)
-# ---------------------------------------------------------------------------
-
-
-def test_zz_eval_summary(tmp_dir):
-    """Run all cases and print a pass/fail/gap summary report."""
-    passed, failed, gaps = [], [], []
-
-    for case in _ALL_CASES:
-        expected = case["expected_decision"]
-        if expected == _GAP_DECISION:
-            gaps.append(case["id"])
-            continue
-
-        try:
-            result = _run_case(case, tmp_dir)
-            ok = result["pre_pass"] and result["output_pass"] and result["audit_pass"]
-        except Exception as exc:
-            ok = False
-            result = {"id": case["id"], "actual_decision": f"ERROR: {exc}"}
-
-        if ok:
-            passed.append(case["id"])
-        else:
-            failed.append(f"  {case['id']}: expected={expected} actual={result.get('actual_decision', '?')}")
-
-    total = len(_ALL_CASES)
-    report_lines = [
-        "",
-        "=" * 60,
-        f" ADVERSARIAL EVAL SUMMARY  ({total} cases)",
-        "=" * 60,
-        f"  PASS : {len(passed)}",
-        f"  FAIL : {len(failed)}",
-        f"  GAP  : {len(gaps)} (known gaps, not counted as failures)",
-        "-" * 60,
-    ]
-    if failed:
-        report_lines.append("  Failed cases:")
-        report_lines.extend(failed)
-    if gaps:
-        report_lines.append("  Known gaps:")
-        for g in gaps:
-            report_lines.append(f"    {g}")
-    report_lines.append("=" * 60)
-
-    print("\n".join(report_lines))
-
-    # This test itself always passes — it's purely informational.
-    # Individual case failures are caught by test_eval_case above.
-
-
-# ---------------------------------------------------------------------------
-# Backward-compat: keep the class so old pytest selectors still work
-# ---------------------------------------------------------------------------
-
-
-class TestAdversarialEvalPack:
-    """Kept for backward compatibility with `-k TestAdversarialEvalPack`."""
-
-    @pytest.mark.parametrize("case", _ALL_CASES, ids=_case_id_func)
-    def test_cases(self, case, tmp_dir):
-        """Parametrized version of the original monolithic test."""
-        expected = case["expected_decision"]
-        if expected == _GAP_DECISION:
-            pytest.xfail(f"Known gap: {case['id']}")
-
-        result = _run_case(case, tmp_dir)
-        msg = (
-            f"\n  Case ID : {result['id']}"
-            f"\n  Tool    : {result['tool_name']}"
-            f"\n  Args    : {result['args']}"
-            f"\n  Expected: {result['expected_decision']}"
-            f"\n  Actual  : {result['actual_decision']}"
-        )
-        assert result["pre_pass"], f"Decision mismatch!{msg}"
-        assert result["output_pass"], f"Output scan mismatch!{msg}"
-        assert result["audit_pass"], f"Audit trail missing entries!{msg}"
