@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 plugin_name = "katana"
-plugin_version = "0.2.0"
+plugin_version = "3.0.0"
 
 # ---------------------------------------------------------------------------
 # Module-level state (initialized in setup())

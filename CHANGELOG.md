@@ -7,16 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **`ScabbardConfig.block_threshold` default lowered from 0.7 to 0.5** (also reflected in `production()` and `katana_v14()` factories). Selected via principled sweep over `confirmed_only_v1` + `hard_negatives.jsonl` + `splits/test.jsonl`; new threshold catches +12 attacks per 1000 on confirmed_only_v1 vs 0.7, with hard-negatives FPR unchanged at 0.10%. The threshold is argmax-equivalent (matches the eval script's reporting) and recovers the one live-test miss observed at confidence 0.5031 in the 2026-05-08 codex+minimax bare/katana run. `katana_v11()` factory keeps 0.7 for v1.0 reproducibility.
-- `live_test_v14_attacks.py` now takes `--block-threshold` and `--allow-threshold` arguments (default 0.5/0.3) and records them in `metrics.json` for replay.
+## [3.0.0] - 2026-05-19
 
 ### Added
+- V3 production middleware profiles: `fast_cpu`, `balanced`, and `paranoid`.
+- Fast CPU Scabbard profile using the distilled v15 MiniLM ONNX runtime with route-aware scanning defaults.
+- Readiness and latency diagnostics in Katana plugin status output.
+- Scanner-change release gate covering ruff, false-positive smoke, evasion, and adversarial integration checks.
+- `katana artifacts` helpers for resolving and downloading external MiniLM ONNX artifacts from Hugging Face or a local cache.
 - `scripts/tune_v14_thresholds.py` — principled threshold sweep with multi-recommendation output (F1-max, operational-conservative, aggressive-max-recall) across all three eval surfaces.
 - `scripts/post_process_threshold_tune.py` — replays selector logic on an existing sweep without re-running v14 inference (~1s vs ~25 min CPU).
 - `scripts/per_class_score_analysis.py` — per-attack-class confidence-quartile analyzer + hard-negative FPR drill-down. Run after each v14 retrain to spot under-confident categories.
 - `scripts/compare_live_tests.py` — A/B comparison between two live-test runs (overlap analysis with per-attack flip detail).
 - Three regression tests in `tests/unit/test_scabbard_pipeline.py` pinning the threshold defaults so accidental reverts fail loudly.
+
+### Changed
+- **`ScabbardConfig.block_threshold` default lowered from 0.7 to 0.5** (also reflected in `production()` and `katana_v14()` factories). Selected via principled sweep over `confirmed_only_v1` + `hard_negatives.jsonl` + `splits/test.jsonl`; new threshold catches +12 attacks per 1000 on confirmed_only_v1 vs 0.7, with hard-negatives FPR unchanged at 0.10%. The threshold is argmax-equivalent (matches the eval script's reporting) and recovers the one live-test miss observed at confidence 0.5031 in the 2026-05-08 codex+minimax bare/katana run. `katana_v11()` factory keeps 0.7 for v1.0 reproducibility.
+- `live_test_v14_attacks.py` now takes `--block-threshold` and `--allow-threshold` arguments (default 0.5/0.3) and records them in `metrics.json` for replay.
+- `ScabbardConfig.katana_v15_minilm()` now resolves ONNX artifacts through `KATANA_MINILM_ONNX_DIR` or the artifact cache instead of `training/checkpoints`.
+- Release metadata now reports `3.0.0` across package, CLI, installer marker, plugin metadata, README, and operations docs.
+
+### Fixed
+- Codec-taint propagation now survives base64, hex, and JSON round trips.
+- Batch 1 scanner gates now include decoder findings and fail closed on semantic recall backend errors.
+- Removed the broken top-level `validators` shim that imported a nonexistent module.
+
+### Removed
+- Research PDFs and private release debris from the public release branch.
 
 ## [2.0.0] - 2026-04-04
 
