@@ -27,6 +27,7 @@ from hypothesis import strategies as st
 
 from hermes_katana.taint import (
     Source,
+    TaintedBytes,
     TaintedStr,
     TaintLabel,
     TrustLevel,
@@ -173,20 +174,16 @@ class TestMonotonicLabels:
     @given(ts=tainted_strs(min_len=1))
     @settings(max_examples=40, deadline=None)
     def test_encode_decode_roundtrip_does_not_silently_drop(self, ts: TaintedStr) -> None:
-        # encode returns plain bytes (taint is lost by design — and WARNED).
-        # The contract: the library warns; we verify it emits bytes identical
-        # to the raw string. This test documents the known drop site.
-        import warnings
+        raw = ts.encode("utf-8")
 
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            raw = ts.encode("utf-8")
-            # Must warn that taint was dropped
-            assert any("taint" in str(w.message).lower() for w in caught), (
-                "encode() dropped taint without emitting a warning"
-            )
-        # Raw-str equivalence (go through str directly to avoid the warning).
+        assert isinstance(raw, TaintedBytes)
+        assert raw.sources == ts.sources
         assert raw == str.__str__(ts).encode("utf-8")
+
+        decoded = raw.decode("utf-8")
+        assert isinstance(decoded, TaintedStr)
+        assert decoded.sources == ts.sources
+        assert str.__str__(decoded) == str.__str__(ts)
 
     @given(ts=tainted_strs(min_len=1), sep=st.sampled_from([None, " ", ",", "."]))
     @settings(max_examples=40, deadline=None)
