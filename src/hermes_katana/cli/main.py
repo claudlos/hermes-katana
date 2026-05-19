@@ -67,7 +67,7 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_SECURITY = 2
 
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 
 
 def _build_preflight_summary(target: str | None = None) -> dict[str, object]:
@@ -927,7 +927,7 @@ def policy_export(path: str) -> None:
 
     policy_set = PolicySet(
         name="katana-export",
-        version="2.0.0",
+        version="3.0.0",
         description=f"Exported from {source}",
         policies=policies,
     )

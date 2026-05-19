@@ -253,7 +253,7 @@ PARANOID_POLICIES: dict[str, Any] = {
 
 BALANCED_POLICIES: dict[str, Any] = {
     "name": "balanced",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "description": (
         "Smart defaults: allow clean calls without hesitation, block dangerous "
         "tainted tools, escalate ambiguous cases, and use taint-level gradients "

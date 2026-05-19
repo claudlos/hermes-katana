@@ -21,7 +21,7 @@ pip install -e ".[ml,security]"
 **Expected output:**
 
 ```
-Successfully installed hermes-katana-2.0.0
+Successfully installed hermes-katana-3.0.0
 ```
 
 ---

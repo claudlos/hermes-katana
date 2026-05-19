@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/tests-unit%20%2B%20eval-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/eval-live%20baselines-blue" alt="Eval">
-  <img src="https://img.shields.io/badge/version-v2.0.0-orange" alt="Version">
+  <img src="https://img.shields.io/badge/version-v3.0.0-orange" alt="Version">
 </p>
 
 ---
@@ -156,7 +156,7 @@ Custom YAML policies with hot-reload:
 
 ```yaml
 name: my-policies
-version: "2.0.0"
+version: "3.0.0"
 extends: balanced
 policies:
   - name: block_crypto_mining

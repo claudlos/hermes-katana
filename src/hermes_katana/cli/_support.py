@@ -15,7 +15,7 @@ from hermes_katana.runtime_artifacts import verify_runtime_artifact_manifest
 from rich import box
 from rich.panel import Panel
 
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 HERMETIC_ML_READY_ENV = "HERMES_KATANA_REQUIRE_ML_READY"
 _TRUTHY = {"1", "true", "yes", "on"}
 
