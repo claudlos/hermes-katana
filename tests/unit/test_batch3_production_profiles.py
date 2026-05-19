@@ -16,7 +16,10 @@ def _middleware_by_name(chain):
     return {mw.name: mw for mw in chain.list_middleware()}
 
 
-def test_fast_cpu_profile_uses_cpu_first_scabbard_without_redundant_ml_gates():
+def test_fast_cpu_profile_uses_cpu_first_scabbard_without_redundant_ml_gates(monkeypatch, tmp_path):
+    monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+    monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+
     chain = create_default_chain({"profile": "fast_cpu"})
 
     middleware = _middleware_by_name(chain)
@@ -29,6 +32,8 @@ def test_fast_cpu_profile_uses_cpu_first_scabbard_without_redundant_ml_gates():
     assert scabbard._route_mode == "balanced"
     assert scabbard._config.katana_v11_backend == "onnx"
     assert scabbard._config.katana_v11_device is None
+    assert scabbard._config.katana_v11_path.startswith(str(tmp_path / "artifacts"))
+    assert "training/checkpoints" not in scabbard._config.katana_v11_path
     assert scabbard._config.protectai_enabled is False
     assert scabbard._config.model_version == "katana_v15_distill_minilm"
 

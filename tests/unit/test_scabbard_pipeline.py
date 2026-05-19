@@ -7,8 +7,15 @@ import time
 import pytest
 
 
+from hermes_katana.artifacts import MINILM_ONNX_REQUIRED_FILES, artifact_path, minilm_onnx_spec
 from hermes_katana.scabbard.pipeline import ScabbardConfig, ScabbardClassifier
 from hermes_katana.scabbard.fusion import Decision
+
+
+def _write_minilm_artifact(path):
+    path.mkdir(parents=True, exist_ok=True)
+    for name in MINILM_ONNX_REQUIRED_FILES:
+        (path / name).write_text("x")
 
 
 # =============================================================================
@@ -99,12 +106,33 @@ class TestScabbardConfig:
         assert cfg.katana_v11_backend == "torch"
         assert cfg.katana_v11_device == "cuda"
 
-    def test_katana_v15_minilm_factory_defaults_to_onnx_cpu_artifact(self):
+    def test_katana_v15_minilm_factory_uses_explicit_onnx_artifact(self, monkeypatch, tmp_path):
+        artifact_dir = tmp_path / "minilm-onnx"
+        _write_minilm_artifact(artifact_dir)
+        monkeypatch.setenv("KATANA_MINILM_ONNX_DIR", str(artifact_dir))
+
         cfg = ScabbardConfig.katana_v15_minilm()
+
         assert cfg.model_version == "katana_v15_distill_minilm"
-        assert cfg.katana_v11_path.endswith("training/checkpoints/katana_v15_distill_minilm/onnx")
+        assert cfg.katana_v11_path == str(artifact_dir.resolve())
+        assert "training/checkpoints" not in cfg.katana_v11_path
         assert cfg.katana_v11_backend == "onnx"
         assert cfg.katana_v11_device is None
+
+    def test_katana_v15_minilm_factory_uses_artifact_cache(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+        monkeypatch.setenv("KATANA_HF_REPO_ID", "local/minilm")
+        monkeypatch.setenv("KATANA_HF_REVISION", "unit-test")
+        artifact_dir = artifact_path(minilm_onnx_spec())
+        _write_minilm_artifact(artifact_dir)
+
+        cfg = ScabbardConfig.katana_v15_minilm()
+
+        assert cfg.model_version == "katana_v15_distill_minilm"
+        assert cfg.katana_v11_path == str(artifact_dir)
+        assert "training/checkpoints" not in cfg.katana_v11_path
+        assert ScabbardConfig.katana_v15_minilm_available(backend="onnx")
 
     def test_katana_v15_minilm_torch_source_checkpoint(self):
         cfg = ScabbardConfig.katana_v15_minilm(backend="torch", device="cpu")

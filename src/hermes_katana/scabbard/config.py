@@ -38,6 +38,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from hermes_katana.artifacts import ArtifactNotFoundError, artifact_status, minilm_onnx_spec, resolve_minilm_onnx
+
 # -----------------------------------------------------------------------
 # Default model paths (relative to project root)
 # -----------------------------------------------------------------------
@@ -66,6 +68,7 @@ _KATANA_V12_BEST = _CHECKPOINTS / "katana_v12" / "best"  # data_v6 (3.5% origin 
 _KATANA_V14_BEST = _CHECKPOINTS / "katana_v14" / "best"  # PRODUCTION (data_v7, LR fix)
 _KATANA_V15_BEST = _CHECKPOINTS / "katana_v15" / "best"  # candidate (data_v8; explicit only)
 _KATANA_V15_MINILM_BEST = _CHECKPOINTS / "katana_v15_distill_minilm" / "best"
+_KATANA_V15_MINILM_TAG = "katana_v15_distill_minilm"
 
 
 def _newest_available_katana_checkpoint() -> Path:
@@ -122,6 +125,14 @@ def _model_version_for_checkpoint(checkpoint_path: Path) -> str:
             continue
         return tag
     return p.parent.name or "katana-unknown"
+
+
+def _katana_v15_minilm_onnx_artifact_path() -> Path:
+    """Return the configured MiniLM ONNX artifact path without downloading."""
+    try:
+        return resolve_minilm_onnx(download=False)
+    except ArtifactNotFoundError:
+        return artifact_status(minilm_onnx_spec()).path
 
 
 def _module_available(module_name: str) -> bool:
@@ -306,7 +317,7 @@ class ScabbardConfig:
     def katana_v15_minilm_available(cls, *, backend: str = "onnx") -> bool:
         """Return True if the distilled v15 MiniLM artifact is present locally."""
         if backend == "onnx":
-            return (_KATANA_V15_MINILM_BEST.parent / "onnx" / "model.onnx").is_file()
+            return artifact_status(minilm_onnx_spec()).present
         if backend == "torch":
             return (_KATANA_V15_MINILM_BEST / "model.safetensors").is_file()
         return False
@@ -537,7 +548,7 @@ class ScabbardConfig:
         if backend == "onnx_int8":
             raise ValueError("katana_v15_distill_minilm ships as fp32 ONNX; INT8 is not configured")
         if backend == "onnx" and model_path is None:
-            model_path = str(_KATANA_V15_MINILM_BEST.parent / "onnx")
+            model_path = str(_katana_v15_minilm_onnx_artifact_path())
         resolved_path = model_path or str(_KATANA_V15_MINILM_BEST)
         return cls(
             profile="standard",
@@ -547,7 +558,7 @@ class ScabbardConfig:
             katana_v11_device=device,
             allow_threshold=allow_threshold,
             block_threshold=block_threshold,
-            model_version=_model_version_for_checkpoint(Path(resolved_path)),
+            model_version=_KATANA_V15_MINILM_TAG,
             centroid_path=None,
             tfidf_path=None,
             fusion_model=None,
