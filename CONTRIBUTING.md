@@ -19,7 +19,8 @@ pytest tests/ -q  # verify everything passes
 4. Run the linter: `ruff check src/ tests/`
 5. Run the formatter: `ruff format src/ tests/`
 6. For scanner, policy, routing, or security-threshold changes, run: `scripts/verify_scanner_change.sh`
-7. Submit a pull request.
+7. Before release, run: `scripts/release_gate.sh`
+8. Submit a pull request.
 
 ## Code Style
 
