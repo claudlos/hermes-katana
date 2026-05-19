@@ -76,6 +76,8 @@ dev = [
     "responses>=0.26.0",
     "ruff>=0.4",
     "mypy>=1.8",
+    "build>=1.2",
+    "twine>=5.0",
 ]
 all = ["hermes-katana[proxy,ml,container,benchmark,hf,proving-ground,dev]"]
 

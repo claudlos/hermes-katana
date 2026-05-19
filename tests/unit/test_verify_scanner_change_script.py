@@ -90,4 +90,4 @@ def test_release_gate_dry_run_lists_required_release_gates():
     assert "python3 -m build" in output
     assert "python3 -m twine check" in output
     assert "katana artifacts status" in output
-    assert "gitleaks detect --source . --redact --no-banner" in output
+    assert "gitleaks detect --source . --redact --no-banner --config .gitleaks.toml" in output

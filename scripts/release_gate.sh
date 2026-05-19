@@ -97,9 +97,10 @@ run_shell "python3 -m twine check ${DIST_DIR}/*" "'${PYTHON_BIN}' -m twine check
 run_shell "katana artifacts status" "PYTHONPATH=src '${PYTHON_BIN}' -m hermes_katana.cli.main artifacts status"
 
 if command -v gitleaks >/dev/null 2>&1; then
-  run_cmd "gitleaks detect --source . --redact --no-banner" gitleaks detect --source . --redact --no-banner
+  run_cmd "gitleaks detect --source . --redact --no-banner --config .gitleaks.toml" \
+    gitleaks detect --source . --redact --no-banner --config .gitleaks.toml
 elif [[ "${DRY_RUN}" -eq 1 ]]; then
-  echo "+ gitleaks detect --source . --redact --no-banner"
+  echo "+ gitleaks detect --source . --redact --no-banner --config .gitleaks.toml"
 elif [[ "${ALLOW_MISSING_GITLEAKS}" -eq 1 ]]; then
   echo "gitleaks not installed; skipping because --allow-missing-gitleaks was set"
 else
