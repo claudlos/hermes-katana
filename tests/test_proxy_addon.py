@@ -178,6 +178,21 @@ class TestRateTracker:
         # Violation should have decayed
 
 
+class TestProxyConfigScannerSecurityLevel:
+    def test_permissive_mode_defaults_to_low_scanner_security(self):
+        assert ProxyConfig(mode="permissive").scanner_security_level == "low"
+
+    def test_strict_mode_defaults_to_medium_scanner_security(self):
+        assert ProxyConfig(mode="strict").scanner_security_level == "medium"
+
+    def test_paranoid_mode_defaults_to_high_scanner_security(self):
+        assert ProxyConfig(mode="paranoid").scanner_security_level == "high"
+
+    def test_explicit_scanner_security_level_is_preserved(self):
+        cfg = ProxyConfig(mode="paranoid", scanner_security_level="medium")
+        assert cfg.scanner_security_level == "medium"
+
+
 # ---------------------------------------------------------------------------
 # KatanaAddon tests
 # ---------------------------------------------------------------------------

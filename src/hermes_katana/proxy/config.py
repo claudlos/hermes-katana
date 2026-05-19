@@ -15,7 +15,7 @@ __all__ = [
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # 1 MB default body scan limit
@@ -103,11 +103,11 @@ class ProxyConfig(BaseModel):
         description="Active scanning modes.",
     )
     scanner_security_level: Literal["low", "medium", "high"] = Field(
-        default="low",
+        default=None,  # type: ignore[assignment]
         description=(
             "Security level passed to scanner.scan_input for proxy request surfaces. "
-            "'low' runs deterministic scanner layers and avoids optional ML recall "
-            "layers that require separate threshold tuning."
+            "When omitted, the level follows proxy mode: permissive=low, "
+            "strict=medium, paranoid=high."
         ),
     )
     rate_limit_requests: int = Field(
@@ -163,6 +163,20 @@ class ProxyConfig(BaseModel):
     )
 
     model_config = {"frozen": False, "extra": "forbid"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_scanner_security_level(cls, data: object) -> object:
+        """Derive scanner strength from proxy fail-closed mode unless explicit."""
+        if isinstance(data, dict) and data.get("scanner_security_level") is None:
+            mode = data.get("mode", "strict")
+            data = dict(data)
+            data["scanner_security_level"] = {
+                "permissive": "low",
+                "strict": "medium",
+                "paranoid": "high",
+            }.get(mode, "medium")
+        return data
 
     @field_validator("host")
     @classmethod
