@@ -59,7 +59,8 @@ All checks passed.
 > `katana doctor` and `katana status` also show ML runtime readiness,
 > including artifact discovery, Scabbard asset state, and semantic backend
 > readiness. Optional model artifacts are downloaded explicitly with
-> `katana artifacts download`; see [`docs/artifacts.md`](artifacts.md).
+> `katana artifacts setup` or `katana artifacts download`; see
+> [`docs/artifacts.md`](artifacts.md).
 
 ---
 

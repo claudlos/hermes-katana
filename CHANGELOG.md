@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fast CPU Scabbard profile using the distilled v15 MiniLM ONNX runtime with route-aware scanning defaults.
 - Readiness and latency diagnostics in Katana plugin status output.
 - Scanner-change release gate covering ruff, false-positive smoke, evasion, and adversarial integration checks.
-- `katana artifacts` helpers for resolving and downloading external MiniLM ONNX artifacts from Hugging Face or a local cache.
+- `katana artifacts` registry and guided setup for the default MiniLM ONNX artifact and optional large local model.
 - `scripts/tune_v14_thresholds.py` — principled threshold sweep with multi-recommendation output (F1-max, operational-conservative, aggressive-max-recall) across all three eval surfaces.
 - `scripts/post_process_threshold_tune.py` — replays selector logic on an existing sweep without re-running v14 inference (~1s vs ~25 min CPU).
 - `scripts/per_class_score_analysis.py` — per-attack-class confidence-quartile analyzer + hard-negative FPR drill-down. Run after each v14 retrain to spot under-confident categories.

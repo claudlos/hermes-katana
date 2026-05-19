@@ -203,6 +203,7 @@ class TestPluginSetup:
         monkeypatch.setattr(hermes_plugin, "_open_audit", lambda _config: None)
         monkeypatch.setattr(hermes_plugin, "_collect_vault_values", lambda _vault: set())
         monkeypatch.setattr(integration_mod, "create_default_chain", lambda cfg: captured.setdefault("config", cfg))
+        monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
 
         cfg = {"audit_enabled": False, "scabbard_profile": profile}
         if "v15" in profile and "minilm" not in profile:

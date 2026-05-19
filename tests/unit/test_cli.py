@@ -12,6 +12,7 @@ from click.testing import CliRunner
 import pytest
 from rich.console import Console
 
+import hermes_katana.artifacts as artifacts_mod
 import hermes_katana.bootstrap as bootstrap_mod
 import hermes_katana.cli._support as cli_support_mod
 import hermes_katana.cli.main as cli_main
@@ -514,3 +515,74 @@ class TestCLIContracts:
         output = stdout.getvalue()
         assert "Restore hermes/tools/dispatch.py" in output
         assert "Dry run complete." in output
+
+    def test_artifacts_status_lists_all_registered_models(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_dir / "artifacts"))
+
+        result = self.runner.invoke(cli_main.main, ["artifacts", "status", "--all"])
+
+        assert result.exit_code == 0
+        output = stdout.getvalue()
+        assert "katana_v15_distill_minilm_onnx" in output
+        assert "katana_v15_large" in output
+
+    def test_artifacts_setup_noninteractive_requires_explicit_choice(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_dir / "artifacts"))
+
+        result = self.runner.invoke(cli_main.main, ["artifacts", "setup"])
+
+        assert result.exit_code != 0
+        assert "Non-interactive setup requires" in result.output
+
+    def test_artifacts_setup_yes_downloads_small_only(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_dir / "artifacts"))
+        calls = []
+
+        def fake_download(spec, target_dir=None, *, force=False):
+            path = Path(target_dir or tmp_dir / spec.name)
+            calls.append((spec.name, path, force))
+            return artifacts_mod.ArtifactStatus(spec=spec, path=path, present=True, missing_files=(), source="test")
+
+        monkeypatch.setattr(artifacts_mod, "download_artifact", fake_download)
+
+        result = self.runner.invoke(cli_main.main, ["artifacts", "setup", "--yes"])
+
+        assert result.exit_code == 0
+        assert [call[0] for call in calls] == ["katana_v15_distill_minilm_onnx"]
+
+    def test_artifacts_setup_all_downloads_small_and_large(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_dir / "artifacts"))
+        calls = []
+
+        def fake_download(spec, target_dir=None, *, force=False):
+            path = Path(target_dir or tmp_dir / spec.name)
+            calls.append((spec.name, path, force))
+            return artifacts_mod.ArtifactStatus(spec=spec, path=path, present=True, missing_files=(), source="test")
+
+        monkeypatch.setattr(artifacts_mod, "download_artifact", fake_download)
+
+        result = self.runner.invoke(
+            cli_main.main,
+            ["artifacts", "setup", "--all", "--target-dir", str(tmp_dir / "cache")],
+        )
+
+        assert result.exit_code == 0
+        assert [call[0] for call in calls] == ["katana_v15_distill_minilm_onnx", "katana_v15_large"]
+        assert calls[0][1] == tmp_dir / "cache" / "katana_v15_distill_minilm_onnx"
+        assert calls[1][1] == tmp_dir / "cache" / "katana_v15_large"

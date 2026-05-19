@@ -18,6 +18,7 @@ def _middleware_by_name(chain):
 
 def test_fast_cpu_profile_uses_cpu_first_scabbard_without_redundant_ml_gates(monkeypatch, tmp_path):
     monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+    monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
     monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
 
     chain = create_default_chain({"profile": "fast_cpu"})

@@ -99,10 +99,15 @@ class TestScabbardConfig:
         assert cfg.model_version == "katana_v15"
         assert cfg.katana_v11_path.endswith("training/checkpoints/katana_v15/onnx")
 
-    def test_katana_v15_large_factory_alias_supports_gpu_device(self):
+    def test_katana_v15_large_factory_alias_supports_gpu_device(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+
         cfg = ScabbardConfig.katana_v15_large(backend="torch", device="cuda")
+
         assert cfg.model_version == "katana_v15"
-        assert cfg.katana_v11_path.endswith("training/checkpoints/katana_v15/best")
+        assert cfg.katana_v11_path.startswith(str(tmp_path / "artifacts"))
+        assert "training/checkpoints" not in cfg.katana_v11_path
         assert cfg.katana_v11_backend == "torch"
         assert cfg.katana_v11_device == "cuda"
 
@@ -121,6 +126,7 @@ class TestScabbardConfig:
 
     def test_katana_v15_minilm_factory_uses_artifact_cache(self, monkeypatch, tmp_path):
         monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+        monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
         monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
         monkeypatch.setenv("KATANA_HF_REPO_ID", "local/minilm")
         monkeypatch.setenv("KATANA_HF_REVISION", "unit-test")

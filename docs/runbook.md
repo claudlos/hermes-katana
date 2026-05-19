@@ -3,7 +3,7 @@
 Day-2 operations guide for operators managing HermesKatana deployments.
 
 Optional ML artifacts are stored outside GitHub. Use `katana artifacts status`,
-`katana artifacts download`, `katana doctor`, and `katana status` to verify
+`katana artifacts setup`, `katana doctor`, and `katana status` to verify
 artifact, Scabbard, and semantic-backend readiness before running live eval
 sweeps or depending on ML-backed enforcement. See `docs/artifacts.md`.
 
