@@ -59,6 +59,7 @@ __all__ = [
     "KatanaBehavioralMiddleware",
     "KatanaPolicyMiddleware",
     "KatanaAuditMiddleware",
+    "collect_chain_diagnostics",
     "create_default_chain",
 ]
 
@@ -167,6 +168,63 @@ def _resolve_chain_config(config: dict[str, Any] | None) -> dict[str, Any]:
     resolved.update(caller_config)
     resolved["profile"] = profile
     return resolved
+
+
+def collect_chain_diagnostics(chain: Any) -> dict[str, Any]:
+    """Collect a lightweight readiness report for a Katana middleware chain."""
+    profile = getattr(chain, "active_profile", None) or getattr(chain, "profile", "unknown")
+    active: list[str] = []
+    inactive: list[str] = []
+    degraded: list[str] = []
+    ml: dict[str, Any] = {
+        "scabbard_backend": None,
+        "scabbard_device": None,
+        "model_version": None,
+    }
+
+    middleware_by_name: dict[str, Any] = {}
+    try:
+        middleware = chain.list_middleware()
+    except Exception:  # noqa: BLE001
+        middleware = []
+        degraded.append("middleware_chain")
+
+    for mw in middleware:
+        middleware_by_name[mw.name] = mw
+        if mw.enabled:
+            active.append(mw.name)
+        else:
+            inactive.append(mw.name)
+
+    scabbard = middleware_by_name.get("katana.scabbard")
+    scabbard_cfg = getattr(scabbard, "_config", None)
+    if scabbard_cfg is not None:
+        backend = getattr(scabbard_cfg, "katana_v11_backend", None)
+        device = getattr(scabbard_cfg, "katana_v11_device", None)
+        ml["scabbard_backend"] = backend
+        ml["scabbard_device"] = "cpu" if backend in {"onnx", "onnx_int8"} and not device else device
+        ml["model_version"] = getattr(scabbard_cfg, "model_version", None)
+
+    try:
+        from hermes_katana.scanner import _OPTIONAL_IMPORT_ERRORS
+    except Exception as exc:  # noqa: BLE001
+        unavailable_optional = {"scanner_module": f"{exc.__class__.__name__}: {exc}"}
+        degraded.append("katana.scan")
+    else:
+        unavailable_optional = {name: str(error) for name, error in _OPTIONAL_IMPORT_ERRORS.items()}
+        if unavailable_optional and "katana.scan" in active:
+            degraded.append("katana.scan")
+
+    return {
+        "active_profile": profile,
+        "scanners": {
+            "active": active,
+            "inactive": inactive,
+            "degraded": sorted(set(degraded)),
+        },
+        "ml": ml,
+        "unavailable_optional_scanners": unavailable_optional,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -666,6 +724,34 @@ class KatanaScanMiddleware(KatanaMiddleware):
         self._enforce_output_findings = enforce_output_findings
         self._route_aware = route_aware
 
+    @staticmethod
+    def _scabbard_route_for_arg(ctx: CallContext, arg_name: str) -> Any | None:
+        """Reuse the route decision already produced by KatanaScabbardMiddleware."""
+        from hermes_katana.scabbard.routing import RouteKind, ScabbardRouteDecision
+
+        route_rows: list[dict[str, Any]] = []
+        routes = ctx.extras.get("scabbard_routes")
+        if isinstance(routes, list):
+            route_rows.extend(row for row in routes if isinstance(row, dict))
+        skipped = ctx.extras.get("scabbard_skipped_args")
+        if isinstance(skipped, dict):
+            route_rows.extend(row for row in skipped.values() if isinstance(row, dict))
+
+        for row in route_rows:
+            if row.get("arg") != arg_name:
+                continue
+            kind_value = row.get("kind", RouteKind.UNKNOWN.value)
+            try:
+                kind = RouteKind(kind_value)
+            except ValueError:
+                kind = RouteKind.UNKNOWN
+            return ScabbardRouteDecision(
+                bool(row.get("scan", False)),
+                str(row.get("reason", "scabbard_route_reused")),
+                kind,
+            )
+        return None
+
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         """Scan all string arguments for attacks.
 
@@ -683,7 +769,9 @@ class KatanaScanMiddleware(KatanaMiddleware):
             if not text:
                 continue
 
-            route = should_scabbard_scan_arg(ctx.tool_name, arg_name, arg_val, mode="balanced")
+            route = self._scabbard_route_for_arg(ctx, arg_name)
+            if route is None:
+                route = should_scabbard_scan_arg(ctx.tool_name, arg_name, arg_val, mode="balanced")
             if self._route_aware and route.kind in {
                 RouteKind.BOOLEAN,
                 RouteKind.CONTROL,
@@ -1512,6 +1600,8 @@ def create_default_chain(
 
     cfg = _resolve_chain_config(config)
     chain = MiddlewareChain()
+    chain.active_profile = cfg["profile"]
+    chain.resolved_config = dict(cfg)
 
     # 1. Taint tracking (highest priority)
     taint_mw = KatanaTaintMiddleware(
