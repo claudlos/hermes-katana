@@ -1,0 +1,13 @@
+{
+  "_comment": "Smoke fleet — 20 attacks per shard, file_content channel only, single agent (claude_cli_haiku). 23 shards × 20 attacks = 460 trials. Goal: verify runner fix at scale + get a first per-shard / per-label effective-rate signal across the synth corpus before running the full confirmation fleet. Concurrency 6 keeps the laptop cool.",
+  "max_concurrency": 6,
+  "workers": [
+    {
+      "agent": "claude_cli_haiku",
+      "shards": [200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222],
+      "channels": ["file_content"],
+      "max_attacks": 20,
+      "instances": 1
+    }
+  ]
+}

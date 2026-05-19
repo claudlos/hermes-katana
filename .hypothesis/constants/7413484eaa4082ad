@@ -1,4 +1,0 @@
-# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/vault/store.py
-# hypothesis_version: 6.151.10
-
-[b'hmac:', 384, '.config', '.flock', '.lock', '.rotation_journal', '.tmp', '.vault_', 'Removed key: %s', 'Stored key: %s', 'Vault unlocked', 'Vault was not locked', 'Windows', '_VaultFileLock', '_master_key', 'ascii', 'c', 'entries', 'hermes-katana', 'hermes-katana-vault', 'hmac', 'in_progress', 'master-key', 'new_key', 'no key in keyring', 'old_key', 'status', 'timestamp', 'utf-8', 'vault.json', 'version', 'w', 'win32']

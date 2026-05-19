@@ -39,9 +39,86 @@ Thumbs.db
 
 # Task/plan files
 .task-*.md
+.handoff-*.md
+.recon-*.md
 .plan-*.md
+HANDOFF.md
+HANDOFF-*.md
+.research-*.md
+.results-*.md
+.review-*.md
+REPORT.md
+V3-ACTION-PLAN.md
+V3-COVERAGE-REPORT.md
+.hermes/
 
 # Misc
 .tmp/
 *.lock
 .smux-board.json
+
+# Test artefacts (Workstream B — defensive testing expansion)
+tests/fuzz/_bypass_report.txt
+research/differential-*.json
+
+# Private security research — do not publish
+research/
+.hypothesis/
+tests/fuzz/_bypass_report.txt
+.task-*.md
+research/wild-attacks-2026-04-05/sources/
+honeypot/
+.env
+.env.*
+auth.json
+docker/**/auth.json
+
+# Vast.ai ephemeral
+training/.vastai_*
+
+# Large model / data artifacts — mirrored to T7 SSD / Drive, not Git
+training/checkpoints/
+training/models/
+training/data/
+training/data_v*/
+training/data_v5_1/
+training/data_v5_1_public/
+training/data_v6/
+training/data_v7/
+training/data_v8/
+training/models/deberta_v3_small_katana_v8*/
+training/models/zvec_v8*/
+training/models/v8*/
+training/models/attack_centroids_128d_v8*.json
+training/models/attack_centroids_128d_v8*.npz
+training/pkgs/
+
+# Eval outputs (generated). Benchmark definitions under evals/benchmarks/
+# (build.py, LEADERBOARD.md, locked test.jsonl) stay tracked.
+results/
+
+# Stray archives (checkpoint backups)
+training/*.tar
+training/*.zip
+training/checkpoints/*.tar
+training/checkpoints/*.zip
+
+# Model/artifact blobs belong on Hugging Face, not GitHub
+*.onnx
+*.safetensors
+*.pt
+*.pth
+*.pkl
+*.joblib
+artifact-cache/
+
+# Proving Ground runtime outputs/corpora
+sessions/
+batch/
+shards/
+synthdata/incoming/
+synthdata/checkpoints/
+*.db
+*.sqlite
+*.sqlite3
+*.log

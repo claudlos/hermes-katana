@@ -1,0 +1,40 @@
+{
+  "_comment": "SMOKE fleet — undefended only. 1 shard × 1 channel × 3 free agents × 5 attacks = 15 trials. Runs in ~10-15 minutes. This is the FIRST thing you run on any new box (mini-PC, qwen35 desktop, fresh main-box clone) before launching real waves. It verifies the pipeline end-to-end: supervisor launches workers, workers produce trial JSONLs, scoring fields populate, watchdog doesn't false-fire.",
+  "_target": "1 shard (400, fresh recovery) × 1 channel × 3 agents × 5 attacks = 15 trials.",
+  "_walltime_estimate": "10-15 min on free-budget agents.",
+  "_what_to_check_after": [
+    "results/agent_shard_runs/shard_400_<agent>.jsonl exists for each agent",
+    "each .jsonl has 5 rows (or shard size if smaller) with effective scoring",
+    "no quota-watchdog 'aborting shard' messages in supervisor.log",
+    "no agents stuck at WEAK / BROKEN in subsequent fleet_preflight",
+    "trial rows have tool_call_count > 0 for hermes drivers (catches the 2026-05-01 -Q regression)"
+  ],
+  "_pair_note": "NO katana-paired agents in this spec. Defended runs are deferred until the Katana pipeline is frozen — see task #13 in TaskList. Running paired data against a moving target produces invalid headline numbers.",
+  "max_concurrency": 3,
+  "workers": [
+    {
+      "_note": "Free Nous-OAuth agent — StepFun Step-3.5 Flash. (MiMo went paid 2026-05-01, this replaced it.) MoE, fast, healthy preflight history.",
+      "agent": "hermes_nous_step_flash",
+      "shards": [400],
+      "channels": ["file_content"],
+      "max_attacks": 5,
+      "instances": 1
+    },
+    {
+      "_note": "Cross-provider sanity — different auth path (MiniMax key, not Nous OAuth).",
+      "agent": "hermes_minimax_m2_7",
+      "shards": [400],
+      "channels": ["file_content"],
+      "max_attacks": 5,
+      "instances": 1
+    },
+    {
+      "_note": "Cross-provider #2 — strongest historical effective rate. If this returns 0% effective, attack injection is broken.",
+      "agent": "hermes_nous_qwen3_coder_plus",
+      "shards": [400],
+      "channels": ["file_content"],
+      "max_attacks": 5,
+      "instances": 1
+    }
+  ]
+}

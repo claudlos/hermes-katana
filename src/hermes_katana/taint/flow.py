@@ -24,7 +24,7 @@ from enum import Enum, auto, unique
 from typing import Any, Optional, Sequence
 
 from hermes_katana.taint.labels import TaintLabel, TrustLevel
-from hermes_katana.taint.value import TaintedValue, collect_sources
+from hermes_katana.taint.value import TaintedStr, TaintedValue, collect_sources
 
 logger = logging.getLogger(__name__)
 
@@ -318,10 +318,11 @@ class FlowAnalyzer:
         List of :class:`FlowRule` to enforce.  If ``None``, uses
         :func:`default_rules`.
     default_decision:
-        Fallback when no rule matches.  Defaults to ``ALLOW`` (permissive).
+        Fallback when no rule matches.  Defaults to ``ASK_USER`` (fail-closed).
     strict_mode:
-        If ``True``, the default decision becomes ``ASK_USER`` instead of
-        ``ALLOW`` for extra caution.
+        If ``True``, the default decision is forced to ``ASK_USER`` regardless
+        of *default_decision*, guaranteeing fail-closed behaviour even if the
+        caller passes a more permissive default.
     """
 
     def __init__(
@@ -367,7 +368,7 @@ class FlowAnalyzer:
 
     def analyze(
         self,
-        value: TaintedValue[Any],
+        value: TaintedValue[Any] | TaintedStr,
         tool_name: str,
         args: Optional[dict[str, Any]] = None,
     ) -> FlowAnalysis:
@@ -456,7 +457,7 @@ class FlowAnalyzer:
 
     def check(
         self,
-        value: TaintedValue[Any],
+        value: TaintedValue[Any] | TaintedStr,
         tool_name: str,
         args: Optional[dict[str, Any]] = None,
     ) -> FlowDecision:

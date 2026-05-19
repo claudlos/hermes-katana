@@ -30,7 +30,6 @@ import hashlib
 import json
 import logging
 import os
-import platform
 import shutil
 import threading
 from datetime import datetime, timezone
@@ -39,6 +38,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from pydantic import BaseModel, Field
+from hermes_katana._files import AdvisoryFileLock
 
 logger = logging.getLogger(__name__)
 
@@ -50,72 +50,6 @@ _DEFAULT_MAX_SIZE = 10 * 1024 * 1024
 
 # Maximum number of rotated files to keep
 _DEFAULT_MAX_ROTATIONS = 10
-
-
-# ---------------------------------------------------------------------------
-# Cross-platform file locking
-# ---------------------------------------------------------------------------
-
-
-class _FileLock:
-    """Cross-platform advisory file lock.
-
-    Uses fcntl on Unix/macOS and msvcrt on Windows.
-    Supports context manager protocol.
-    """
-
-    def __init__(self, path: Path) -> None:
-        self._lock_path = path.with_suffix(path.suffix + ".lock")
-        self._fp: Any = None
-
-    def acquire(self) -> None:
-        """Acquire the file lock."""
-        self._fp = open(self._lock_path, "w")
-        try:
-            if platform.system() == "Windows":
-                import msvcrt
-
-                msvcrt.locking(self._fp.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX)
-        except (OSError, BlockingIOError):
-            # If non-blocking lock fails, try blocking
-            try:
-                if platform.system() != "Windows":
-                    import fcntl
-
-                    fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX)
-            except Exception:
-                pass
-
-    def release(self) -> None:
-        """Release the file lock."""
-        if self._fp is not None:
-            try:
-                if platform.system() == "Windows":
-                    import msvcrt
-
-                    msvcrt.locking(self._fp.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(self._fp.fileno(), fcntl.LOCK_UN)
-            except (OSError, BlockingIOError):
-                pass
-            try:
-                self._fp.close()
-            except Exception:
-                pass
-            self._fp = None
-
-    def __enter__(self) -> "_FileLock":
-        self.acquire()
-        return self
-
-    def __exit__(self, *args: Any) -> None:
-        self.release()
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +239,7 @@ class AuditTrail:
         self._path = path or _default_audit_path()
         self._max_size = max_size
         self._max_rotations = max_rotations
-        self._file_lock = _FileLock(self._path)
+        self._file_lock = AdvisoryFileLock(self._path)
         self._rlock = threading.RLock()
 
         # O(1) last-hash cache — this is the key improvement over aegis

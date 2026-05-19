@@ -14,6 +14,7 @@ from hermes_katana.taint.value import (
     TaintedList,
     TaintedStr,
     TaintedValue,
+    taint_aware_fstring,
 )
 from hermes_katana.taint.flow import (
     CRITICAL_SINKS,
@@ -353,3 +354,71 @@ class TestFnmatchGlob:
         )
         assert rule.matches_tool("terminal")
         assert not rule.matches_tool("terminal2")
+
+
+# ---------------------------------------------------------------------------
+# F-string laundering — known limitation + taint_aware_fstring mitigation
+# ---------------------------------------------------------------------------
+
+
+class TestFStringLaundering:
+    """Document and test the f-string taint laundering limitation.
+
+    CPython's BUILD_STRING opcode (used when an f-string has surrounding
+    literal text) assembles parts via an internal C-level join that bypasses
+    Python's __add__ / __format__ overrides.  The result is a plain str, not
+    a TaintedStr.  Only a bare `f"{tainted}"` (single expression, no adjacent
+    literals) calls __format__ and preserves the TaintedStr type.
+    """
+
+    def test_bare_fstring_preserves_type(self):
+        """f"{tainted}" with NO surrounding text preserves TaintedStr type."""
+        t = TaintedStr("evil", sources=_src())
+        result = f"{t}"
+        assert isinstance(result, TaintedStr), "Bare f-string should preserve TaintedStr (calls __format__ only)"
+        assert _has_label(result.sources)
+
+    def test_fstring_with_surrounding_literals_launders_taint(self):
+        """f"prefix {tainted} suffix" — taint IS laundered (CPython BUILD_STRING).
+
+        This test documents the known limitation.  The result is a plain str
+        and taint is lost.  Use taint_aware_fstring() instead.
+        """
+        t = TaintedStr("evil", sources=_src())
+        result = f"Context: {t}"
+        # BUILD_STRING produces a plain str — TaintedStr type is lost
+        assert not isinstance(result, TaintedStr), (
+            "f-string with surrounding literals should launder taint (this test documents the known limitation)"
+        )
+
+    def test_taint_aware_fstring_positional(self):
+        """taint_aware_fstring() preserves taint with positional placeholders."""
+        t = TaintedStr("evil", sources=_src())
+        result = taint_aware_fstring("Context: {}", t)
+        assert isinstance(result, TaintedStr)
+        assert _has_label(result.sources)
+        assert result.value == "Context: evil"
+
+    def test_taint_aware_fstring_keyword(self):
+        """taint_aware_fstring() preserves taint with keyword placeholders."""
+        t = TaintedStr("injected", sources=_src(TaintLabel.MCP))
+        result = taint_aware_fstring("Hello {name}!", name=t)
+        assert isinstance(result, TaintedStr)
+        assert _has_label(result.sources, TaintLabel.MCP)
+        assert result.value == "Hello injected!"
+
+    def test_taint_aware_fstring_merges_multiple_sources(self):
+        """taint_aware_fstring() merges taint from multiple tainted args."""
+        t1 = TaintedStr("web", sources=_src(TaintLabel.WEB_CONTENT))
+        t2 = TaintedStr("mcp", sources=_src(TaintLabel.MCP))
+        result = taint_aware_fstring("{} and {}", t1, t2)
+        assert isinstance(result, TaintedStr)
+        assert _has_label(result.sources, TaintLabel.WEB_CONTENT)
+        assert _has_label(result.sources, TaintLabel.MCP)
+        assert result.value == "web and mcp"
+
+    def test_taint_aware_fstring_plain_args_pass_through(self):
+        """taint_aware_fstring() with plain (non-tainted) args produces clean output."""
+        result = taint_aware_fstring("Hello {}!", "world")
+        assert result.value == "Hello world!"
+        assert not result.sources  # no taint sources

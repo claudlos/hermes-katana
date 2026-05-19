@@ -1,4 +1,0 @@
-# file: /usr/lib/python3/dist-packages/dbus/types.py
-# hypothesis_version: 6.151.10
-
-['Array', 'Boolean', 'Byte', 'ByteArray', 'Dictionary', 'Double', 'Int16', 'Int32', 'Int64', 'ObjectPath', 'Signature', 'String', 'Struct', 'UInt16', 'UInt32', 'UInt64', 'UnixFd']

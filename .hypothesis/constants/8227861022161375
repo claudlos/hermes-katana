@@ -1,4 +1,0 @@
-# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/scanner/allowlist.py
-# hypothesis_version: 6.151.10
-
-['*', '*auth*', '*command*', '*config*', '*credential*', '*env*', '*injection*', '*integrat*', '*migrat*', '*notif*', '*secret*', '*sql*', '1.0', '```[\\s\\S]*?```', 'active_rules', 'builtin-code-review', 'builtin-keys-config', 'builtin-keys-env', 'builtin-sql-in-db', 'builtin-sql-orm', 'builtin-vault-keys', 'category', 'category_pattern', 'created_at', 'database*', 'enabled', 'expired_rules', 'expires_at', 'full_text', 'hit_count', 'id', 'in_code_block', 'in_documentation', 'matched_text', 'pattern', 'read_file', 'reason', 'search_files', 'suppressions', 'terminal', 'tool_pattern', 'top_rules', 'total_hits', 'total_rules', 'utf-8', 'value', 'vault*', 'version']

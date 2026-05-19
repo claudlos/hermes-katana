@@ -14,6 +14,7 @@ Core types
 - :class:`Reader` — access-control principal
 - :class:`TaintedValue` — generic taint wrapper for any Python value
 - :class:`TaintedStr` — string with character-level taint tracking
+- :class:`TaintedBytes` — bytes with taint tracking across common codecs
 - :class:`TaintedList` — list with per-item taint
 - :class:`TaintedDict` — dict with per-key taint
 - :class:`TaintTracker` — central registry and flow-control engine
@@ -34,6 +35,11 @@ Quick start
 
 """
 
+from hermes_katana.taint.codecs import (
+    codec_hooks_installed,
+    install_codec_hooks,
+    uninstall_codec_hooks,
+)
 from hermes_katana.taint.flow import (
     FlowAnalysis,
     FlowAnalyzer,
@@ -56,12 +62,8 @@ from hermes_katana.taint.value import (
     TaintedStr,
     TaintedValue,
     collect_sources,
+    taint_aware_fstring,
     unwrap,
-)
-from hermes_katana.taint.codecs import (
-    codec_hooks_installed,
-    install_codec_hooks,
-    uninstall_codec_hooks,
 )
 
 # Public alias — FlowAnalyzer *is* the policy engine
@@ -87,6 +89,7 @@ __all__ = [
     "CharTaint",
     "unwrap",
     "collect_sources",
+    "taint_aware_fstring",
     # Tracker
     "TaintTracker",
     "TrackerStats",

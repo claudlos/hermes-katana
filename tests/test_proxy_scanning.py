@@ -270,14 +270,24 @@ class TestWebSocketScanning:
 class TestOversizedBodyScanning:
     """GAP 3.5: Oversized bodies get first N bytes scanned."""
 
-    def test_oversized_request_body_scans_prefix(self):
+    def test_oversized_request_body_scans_prefix_then_blocks_in_strict_mode(self):
         addon = _make_addon(max_body_scan_size=100)
         big_body = b"A" * 500
         flow = MockFlow(request=MockRequest(body=big_body))
         addon.request(flow)
-        # Should still pass (content is benign) but stat should track it
+        assert addon._stats.get("requests_oversized", 0) == 1
+        assert addon._stats.get("requests_blocked_oversized", 0) == 1
+        assert flow.response is not None
+        assert flow.response.status_code == 413
+
+    def test_oversized_request_body_scans_prefix_then_passes_in_permissive_mode(self):
+        addon = _make_addon(max_body_scan_size=100, mode="permissive")
+        big_body = b"A" * 500
+        flow = MockFlow(request=MockRequest(body=big_body))
+        addon.request(flow)
         assert addon._stats.get("requests_oversized", 0) == 1
         assert addon._stats["requests_passed"] > 0
+        assert flow.response is None
 
     def test_oversized_response_body_scans_prefix(self):
         addon = _make_addon(max_body_scan_size=100)

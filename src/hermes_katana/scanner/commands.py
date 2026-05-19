@@ -149,6 +149,12 @@ class CommandCategory(str, Enum):
     INFORMATION_GATHERING = "information_gathering"
     """Reconnaissance and information gathering."""
 
+    LATERAL_MOVEMENT = "lateral_movement"
+    """Techniques for moving between hosts/systems."""
+
+    PERSISTENCE = "persistence"
+    """Establishing persistent access or backdoors."""
+
 
 @dataclass(frozen=True, slots=True)
 class CommandFinding:
@@ -531,6 +537,78 @@ _cp(
     "Cgroup/proc-based container escape technique.",
 )
 
+_cp(
+    "iptables_flush",
+    r"\b(?:iptables|ip6tables|nft)\b.*\s(?:-F|--flush|-X)\b",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Firewall flush/disable - removes all network filtering rules, exposing services.",
+)
+
+_cp(
+    "firewall_cmd_flush",
+    r"\bfirewall-cmd\s+--(?:flush-all|reload|panic)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.HIGH,
+    "Firewalld flush or panic mode - disables network filtering.",
+)
+
+_cp(
+    "sysrq_trigger",
+    r"/proc/sysrq-trigger",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "SysRq trigger access - can crash/reboot host from container.",
+)
+
+_cp(
+    "sysrq_echo",
+    r"\becho\s+[bco]\s*>.*sysrq",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "SysRq command injection - forces host reboot (b), crash (c), or poweroff (o).",
+)
+
+_cp(
+    "nsenter_cmd_substitution",
+    r"\bnsenter\s+(?:-[a-zA-Z]*t|--target)\s+\$\(",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "nsenter with dynamic PID target via command substitution - container escape.",
+)
+
+_cp(
+    "docker_sock_curl",
+    r"(?:--unix-socket|socket=)\s*/var/run/docker\.sock",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Docker socket accessed via HTTP (curl/requests) - full host Docker control.",
+)
+
+_cp(
+    "k8s_api_access",
+    r"\bkubernetes\.default\.svc\b",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Kubernetes API server access from within cluster - potential lateral movement.",
+)
+
+_cp(
+    "k8s_service_token",
+    r"/var/run/secrets/kubernetes\.io/serviceaccount/token",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Kubernetes service account token access - credential theft for cluster access.",
+)
+
+_cp(
+    "k8s_kubelet_api",
+    r"(?:curl|wget).*10250\b",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Kubelet API direct access - can exec into pods and access node resources.",
+)
+
 # ============================
 # PRIVILEGE ESCALATION
 # ============================
@@ -581,6 +659,30 @@ _cp(
     CommandCategory.PRIVILEGE_ESCALATION,
     CommandSeverity.HIGH,
     "LD_PRELOAD injection - can hijack library loading for privesc.",
+)
+
+_cp(
+    "ld_audit",
+    r"\bLD_AUDIT\s*=\s*\S+",
+    CommandCategory.PRIVILEGE_ESCALATION,
+    CommandSeverity.HIGH,
+    "LD_AUDIT injection - audit library loading hijack for privesc.",
+)
+
+_cp(
+    "suid_discovery",
+    r"\bfind\s+\S+\s+.*-perm\s+-(?:4000|2000|u=s|g=s)",
+    CommandCategory.PRIVILEGE_ESCALATION,
+    CommandSeverity.HIGH,
+    "SUID/SGID binary discovery - reconnaissance for privilege escalation via GTFOBins.",
+)
+
+_cp(
+    "suid_binary_exploit",
+    r"(?:/usr/bin/)?(?:find|vim|vi|nmap|awk|perl|python|less|more|man|git)\b.*(?:-exec|!/bin/|-c\s.*system|BEGIN\s*\{system)",
+    CommandCategory.PRIVILEGE_ESCALATION,
+    CommandSeverity.CRITICAL,
+    "SUID binary exploitation pattern - GTFOBins privilege escalation.",
 )
 
 _cp(
@@ -655,6 +757,30 @@ _cp(
     "Base64 encoding piped to network tool - encoded data exfiltration.",
 )
 
+_cp(
+    "tar_ssh_exfil",
+    r"\btar\s+\S+\s+.*\|\s*(?:ssh|scp)\s+",
+    CommandCategory.DATA_STAGING,
+    CommandSeverity.CRITICAL,
+    "Archive creation piped to SSH - data exfiltration over encrypted channel.",
+)
+
+_cp(
+    "tar_nc_exfil",
+    r"\btar\s+\S+\s+.*\|\s*(?:nc|ncat|netcat)\s+",
+    CommandCategory.DATA_STAGING,
+    CommandSeverity.CRITICAL,
+    "Archive creation piped to netcat - raw data exfiltration.",
+)
+
+_cp(
+    "find_tar_exfil",
+    r"\bfind\s+.*\|\s*tar\s+",
+    CommandCategory.DATA_STAGING,
+    CommandSeverity.HIGH,
+    "Find results piped to tar - selective file exfiltration staging.",
+)
+
 # ============================
 # REVERSE SHELL
 # ============================
@@ -697,6 +823,22 @@ _cp(
     CommandCategory.REVERSE_SHELL,
     CommandSeverity.CRITICAL,
     "Named pipe with netcat - reverse shell technique.",
+)
+
+_cp(
+    "ruby_reverse_shell",
+    r"\bruby\s+.*-rsocket.*(?:TCPSocket|TCPServer|connect)",
+    CommandCategory.REVERSE_SHELL,
+    CommandSeverity.CRITICAL,
+    "Ruby reverse shell via socket library - remote access backdoor.",
+)
+
+_cp(
+    "powershell_reverse_shell",
+    r"\b(?:powershell|pwsh)\s+.*(?:IEX|Invoke-Expression|DownloadString|Net\.WebClient|TCPClient)",
+    CommandCategory.REVERSE_SHELL,
+    CommandSeverity.CRITICAL,
+    "PowerShell reverse shell or download-execute cradle.",
 )
 
 # ============================
@@ -873,6 +1015,282 @@ _cp(
 )
 
 # ============================
+# CONTAINER ESCAPE (extended)
+# ============================
+
+_cp(
+    "docker_api_create_container",
+    r"(?:curl|wget|http)\s+.*(?:containers/create|exec/\w+/start|images/create)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Docker API container creation/exec via HTTP - host takeover via Docker socket.",
+)
+
+_cp(
+    "mount_host_filesystem",
+    r"\bmount\b.*(?:/dev/(?:sd|hd|nvme|vd|xvd)\w+|/dev/mapper/|--bind\s+/(?:etc|root|home|var))\s+",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Mounting host filesystem device or directory - container escape via mount.",
+)
+
+_cp(
+    "chroot_escape",
+    r"\bchroot\s+/(?:host|mnt|proc/\d+/root|sys)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Chroot to host filesystem path - container breakout via chroot.",
+)
+
+_cp(
+    "kubectl_exec_pod",
+    r"\bkubectl\s+(?:exec|run|create|apply|attach)\b.*(?:--\s*(?:bash|sh|/bin)|--command|--image\b.*--restart=Never)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "kubectl exec/run with shell - lateral movement within Kubernetes cluster.",
+)
+
+_cp(
+    "k8s_secret_access",
+    r"\bkubectl\s+(?:get|describe)\s+(?:secrets?|configmaps?)\b",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.HIGH,
+    "Kubernetes secret/configmap access - credential theft from cluster.",
+)
+
+_cp(
+    "k8s_pod_escape_hostpid",
+    r"\bkubectl\s+.*(?:hostPID|hostNetwork|hostIPC)\s*:\s*true",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Kubernetes pod spec with host namespace access - container escape.",
+)
+
+_cp(
+    "containerd_ctr_exec",
+    r"\b(?:ctr|crictl|nerdctl)\s+.*(?:exec|run)\b.*(?:--privileged|--net-host|--pid-host|--mount\s+type=bind)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "containerd/crictl privileged container exec - container escape.",
+)
+
+_cp(
+    "proc_pid1_root",
+    r"/proc/1/root/",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Access PID 1 root filesystem via /proc - direct host filesystem access from container.",
+)
+
+# ============================
+# LATERAL MOVEMENT
+# ============================
+
+_cp(
+    "nmap_scan",
+    r"\bnmap\s+(?:.*-s[STPUACWMOLFN]|.*-p[\s-]|.*--script\b|.*-O\b|.*-A\b|.*-sV\b)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Nmap network scanning - reconnaissance for lateral movement.",
+)
+
+_cp(
+    "masscan_scan",
+    r"\bmasscan\s+.*(?:-p\s*\d|--rate\s*\d|--ports?\b)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Masscan high-speed port scanning - reconnaissance for lateral movement.",
+)
+
+_cp(
+    "internal_net_scan",
+    r"\b(?:ping|arping|fping)\s+(?:-[a-zA-Z]*c\s+\d+\s+)?(?:10\.\d|172\.(?:1[6-9]|2\d|3[01])\.\d|192\.168\.\d)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.MEDIUM,
+    "Internal network host discovery - lateral movement recon.",
+)
+
+_cp(
+    "ssh_key_reuse",
+    r"\bssh\s+(?:.*-i\s+(?:/tmp|/dev/shm|/var/tmp)\S+|.*-o\s+StrictHostKeyChecking=no\b.*-o\s+UserKnownHostsFile=/dev/null)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "SSH with stolen key or security checks disabled - lateral movement.",
+)
+
+_cp(
+    "pass_the_hash",
+    r"\b(?:pth-\w+|evil-winrm|wmiexec|smbexec|psexec|atexec|dcomexec)\b",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.CRITICAL,
+    "Pass-the-hash or remote execution toolkit - lateral movement.",
+)
+
+_cp(
+    "impacket_tools",
+    r"\b(?:impacket-\w+|secretsdump|ntlmrelayx|responder|msfconsole|meterpreter)\b",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.CRITICAL,
+    "Impacket/Metasploit toolkit - offensive lateral movement tool.",
+)
+
+_cp(
+    "crackmapexec_lateral",
+    r"\b(?:crackmapexec|cme|netexec|nxc)\s+(?:smb|ssh|winrm|ldap|mssql)\b",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.CRITICAL,
+    "CrackMapExec/NetExec lateral movement tool.",
+)
+
+_cp(
+    "ansible_shell_injection",
+    r"\bansible\b.*(?:-m\s+(?:shell|command|raw)\s+-a|--extra-vars\b.*(?:;|&&|\||`)\b)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Ansible shell/command module abuse - remote execution across hosts.",
+)
+
+_cp(
+    "proxychains_tunnel",
+    r"\bproxychains\b.*(?:ssh|nmap|curl|wget|nc|netcat|crackmapexec)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Proxychains with offensive tool - pivoting through compromised hosts.",
+)
+
+_cp(
+    "chisel_tunnel",
+    r"\b(?:chisel|ligolo|revsocks)\s+(?:server|client)\b",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Chisel/Ligolo tunneling tool - pivot through network boundaries.",
+)
+
+# ============================
+# PERSISTENCE
+# ============================
+
+_cp(
+    "systemd_service_create",
+    r"(?:\bsystemctl\s+(?:enable|start)\s+\S+|/etc/systemd/system/\S+\.service|/usr/lib/systemd/system/\S+\.service)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Systemd service creation/enable - persistent backdoor.",
+)
+
+_cp(
+    "initd_script",
+    r"(?:/etc/init\.d/\S+|update-rc\.d\s+\S+\s+(?:defaults|enable)|chkconfig\s+\S+\s+on)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Init.d script creation/enable - persistent backdoor via legacy init.",
+)
+
+_cp(
+    "bashrc_profile_inject",
+    r"(?:>>?\s*(?:~/\.(?:bash(?:rc|_profile)|profile|zshrc|zprofile|zshenv)|/etc/(?:profile|bash\.bashrc|environment))\b|(?:echo|printf|cat)\s+.*>>?\s*\S*(?:\.bashrc|\.bash_profile|\.profile|\.zshrc))",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Shell profile modification - persistence via login/shell startup.",
+)
+
+_cp(
+    "authorized_keys_inject",
+    r"(?:>>?\s*\S*\.ssh/authorized_keys\b|ssh-(?:keygen|copy-id)\b.*(?:>>|tee\s+-a))",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "SSH authorized_keys modification - persistent SSH backdoor.",
+)
+
+_cp(
+    "kernel_module_load",
+    r"\b(?:insmod|modprobe)\s+\S+|/lib/modules/.*\.ko\b",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "Kernel module loading - rootkit/persistent kernel-level backdoor.",
+)
+
+_cp(
+    "udev_rules_inject",
+    r"/etc/udev/rules\.d/\S+\.rules",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Udev rule creation - persistence via device event triggers.",
+)
+
+_cp(
+    "xdg_autostart",
+    r"(?:~/.config/autostart/|/etc/xdg/autostart/)\S+\.desktop",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "XDG autostart entry - persistence via desktop login.",
+)
+
+_cp(
+    "git_hook_inject",
+    r"(?:>>?\s*\S*\.git/hooks/(?:pre-commit|post-commit|pre-push|post-receive|pre-receive|update)\b|chmod\s+\+x\s+\S*\.git/hooks/)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Git hook injection - persistence/code execution via repository hooks.",
+)
+
+_cp(
+    "ld_so_preload",
+    r"(?:>>?\s*/etc/ld\.so\.preload|/etc/ld\.so\.preload)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "/etc/ld.so.preload modification - system-wide library injection persistence.",
+)
+
+_cp(
+    "pam_module_inject",
+    r"/etc/pam\.d/\S+|/lib/(?:x86_64-linux-gnu/|aarch64-linux-gnu/)?security/pam_\S+\.so",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "PAM module creation/modification - authentication backdoor.",
+)
+
+_cp(
+    "webshell_deploy",
+    r"(?:(?:echo|printf|cat)\s+.*(?:<?php|eval\s*\(|exec\s*\(|system\s*\(|passthru|shell_exec)\s*.*>\s*(?:/var/www|/srv/www|/opt/lampp|public_html)|cp\s+.*\.php\s+(?:/var/www|/srv/www|public_html))",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "Webshell deployment - persistent web-based backdoor.",
+)
+
+_cp(
+    "timer_service_create",
+    r"(?:/etc/systemd/system/\S+\.timer|systemctl\s+enable\s+\S+\.timer)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Systemd timer creation - persistence via scheduled execution.",
+)
+
+_cp(
+    "xinetd_service",
+    r"/etc/xinetd\.d/\S+",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Xinetd service creation - persistence via network daemon.",
+)
+
+_cp(
+    "motd_inject",
+    r"(?:>>?\s*/etc/update-motd\.d/\S+|/etc/update-motd\.d/\S+)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "MOTD script injection - code execution on user login.",
+)
+
+_cp(
+    "rc_local_inject",
+    r"(?:>>?\s*/etc/rc\.local|chmod\s+\+x\s+/etc/rc\.local)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "rc.local modification - persistence via boot script.",
+)
+
+# ============================
 # PIPE CHAIN TO SHELL
 # ============================
 
@@ -894,6 +1312,14 @@ _cp(
     CommandCategory.PIPE_TO_SHELL,
     CommandSeverity.CRITICAL,
     "Process substitution feeding downloaded content to shell.",
+)
+
+_cp(
+    "bash_herestring_cmd_sub",
+    r"\b(?:bash|sh|zsh|dash|ksh)\s*<<<\s*\$\(",
+    CommandCategory.PIPE_TO_SHELL,
+    CommandSeverity.CRITICAL,
+    "Shell herestring feeding command-substitution output — hidden code execution via $(...) | shell.",
 )
 
 # ============================

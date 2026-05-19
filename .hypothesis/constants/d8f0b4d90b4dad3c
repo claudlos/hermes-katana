@@ -1,4 +1,0 @@
-# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/scanner/ensemble.py
-# hypothesis_version: 6.151.10
-
-[0.0, 0.001, 0.05, 0.06, 0.08, 0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.999, 1.0, 500, 3000, '?', '[.!?\\n]', 'always', 'balanced', 'can', 'char_length', 'char_wb', 'clf', 'code_hits', 'could', 'delimiter_hits', 'do', "don't", 'dont', 'exfil_hits', 'imperative_count', 'imperative_density', 'lbfgs', 'must', 'never', 'newline_ratio', 'please', 'polite_hits', 'question_ratio', 'rb', 'role_hits', 'shall', 'should', 'special_density', 'technical_hits', 'tfidf', 'upper_ratio', 'verb_start_ratio', 'wb', 'will', 'word_count', '{}[]<>|`~\\/']

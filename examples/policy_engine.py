@@ -8,15 +8,18 @@ Demonstrates:
 
 Run:  python3 examples/policy_engine.py
 """
-import sys, os
+
+import sys
+import os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from hermes_katana.policy import PolicyEngine
 
 # 1. Create engines with each preset
 print("=== Policy Engine Presets ===")
-paranoid   = PolicyEngine.with_defaults("paranoid")
-balanced   = PolicyEngine.with_defaults("balanced")
+paranoid = PolicyEngine.with_defaults("paranoid")
+balanced = PolicyEngine.with_defaults("balanced")
 permissive = PolicyEngine.with_defaults("permissive")
 print("  Created: paranoid, balanced, permissive")
 
@@ -34,7 +37,7 @@ for name, engine in [("paranoid", paranoid), ("balanced", balanced), ("permissiv
 # 3. A benign call should pass everywhere
 print("\n=== Benign Call (git status) ===")
 benign_args = {"command": "git status"}
-benign_ctx  = {"has_taint": False, "taint_level": 0.0, "labels": []}
+benign_ctx = {"has_taint": False, "taint_level": 0.0, "labels": []}
 
 for name, engine in [("paranoid", paranoid), ("balanced", balanced), ("permissive", permissive)]:
     result = engine.evaluate("terminal", benign_args, benign_ctx)

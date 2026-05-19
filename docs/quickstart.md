@@ -10,12 +10,12 @@ Get from zero to protected agent in under 5 minutes.
 pip install hermes-katana
 ```
 
-Or from source (with dev tools):
+Or from source with the full ML runtime used by the current classifier:
 
 ```bash
 git clone https://github.com/claudlos/hermes-katana.git
 cd hermes-katana
-pip install -e ".[dev]"
+pip install -e ".[ml,security]"
 ```
 
 **Expected output:**
@@ -55,6 +55,11 @@ All checks passed.
 > **Note:** `mitmdump` is only required if you plan to use the HTTPS proxy
 > feature.  Install it with `pip install mitmproxy>=10.0` or
 > `pip install hermes-katana[proxy]`.
+>
+> `katana doctor` and `katana status` also show ML runtime readiness,
+> including artifact discovery, Scabbard asset state, and semantic backend
+> readiness. Optional model artifacts are downloaded explicitly with
+> `katana artifacts download`; see [`docs/artifacts.md`](artifacts.md).
 
 ---
 

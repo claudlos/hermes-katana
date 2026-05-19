@@ -26,7 +26,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 __all__ = [
     "EnsembleClassifier",
@@ -490,7 +490,7 @@ class EnsembleClassifier:
 
         if self._trained and self._pipeline is not None:
             try:
-                ml_proba = self._pipeline.predict_proba([text])[0][1]
+                ml_proba = cast(float, self._pipeline.predict_proba([text])[0][1])
                 return (self._ml_weight * ml_proba) + (self._feature_weight * feature_score)
             except Exception:
                 logger.debug("ML prediction failed, using features only", exc_info=True)
@@ -511,17 +511,21 @@ class EnsembleClassifier:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with open(path, "wb") as f:
                     pickle.dump(self._pipeline, f, protocol=5)
+                from hermes_katana.ml_artifacts import artifact_sha256
+
+                path.with_suffix(path.suffix + ".sha256").write_text(artifact_sha256(path), encoding="utf-8")
                 logger.info("Ensemble model saved to %s", path)
             except Exception:
                 logger.warning("Failed to save ensemble model", exc_info=True)
         else:
             logger.warning("No trained pipeline to save")
 
-    def load(self, path: str | Path) -> None:
+    def load(self, path: str | Path, *, expected_sha256: str | None = None) -> None:
         """Load a previously saved model.
 
         Args:
             path: File path to the saved model.
+            expected_sha256: Optional trusted SHA-256 pin supplied by the caller.
         """
         path = Path(path)
         if not path.exists():
@@ -529,12 +533,19 @@ class EnsembleClassifier:
             return
 
         try:
-            import pickle
+            from hermes_katana.ml_artifacts import UnsafeArtifactError, safe_pickle_load
 
-            with open(path, "rb") as f:
-                self._pipeline = pickle.load(f)  # noqa: S301
+            # A colocated ``.sha256`` sidecar is useful provenance when we save
+            # local artifacts, but it is not a trust root: anyone able to swap a
+            # pickle can also swap the sidecar. Loading therefore still requires
+            # an operator trust opt-in or an explicit caller-supplied hash pin.
+            self._pipeline = safe_pickle_load(path, expected_sha256=expected_sha256)
             self._trained = True
             logger.info("Ensemble model loaded from %s", path)
+        except UnsafeArtifactError as exc:
+            logger.warning("Refusing to load untrusted ensemble model %s: %s", path, exc)
+            self._pipeline = None
+            self._trained = False
         except Exception:
             logger.warning("Failed to load ensemble model", exc_info=True)
             self._pipeline = None

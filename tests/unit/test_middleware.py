@@ -328,9 +328,19 @@ class TestCreateDefaultChain:
 
         chain = create_default_chain()
         names = {mw.name for mw in chain.list_middleware()}
-        # Should have at least taint, scan, policy, audit
+        # Core middleware
         assert "katana.taint" in names
+        assert "katana.scabbard" in names
+        assert "katana.protectai" in names
+        assert "katana.sentinel" in names
         assert "katana.scan" in names
+        # New scanners (mcp, multiturn, rag_injection)
+        assert "katana.mcp" in names
+        assert "katana.multiturn" in names
+        assert "katana.rag_injection" in names
+        # Structural, behavioral, policy, audit
+        assert "katana.structural" in names
+        assert "katana.behavioral" in names
         assert "katana.policy" in names
         assert "katana.audit" in names
 

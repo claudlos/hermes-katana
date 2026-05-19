@@ -14,9 +14,9 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from hermes_katana.config import load_config
 from hermes_katana.installer.installer import (
@@ -26,6 +26,7 @@ from hermes_katana.installer.installer import (
 from hermes_katana.middleware.integration import create_default_chain
 from hermes_katana.proxy import KatanaProxy, ProxyConfig
 from hermes_katana.proxy.config import ScanModes
+from hermes_katana.security_logging import log_security_event, summarize_tool_call
 
 __all__ = [
     "CheckoutRuntimeState",
@@ -37,6 +38,7 @@ __all__ = [
     "compose_runtime_env",
     "prepare_runtime_environment",
     "ensure_dispatcher_bootstrap",
+    "bootstrap_dispatcher_failsafe",
 ]
 
 logger = logging.getLogger(__name__)
@@ -63,7 +65,7 @@ class CheckoutRuntimeState:
     policy_preset: str
     policy_dir: Optional[Path]
     policy_source: str
-    scanner: dict[str, Any]
+    scanner: "ScannerRuntimeConfig"
     taint_enabled: bool
     audit_enabled: bool
     audit_log_allow: bool
@@ -82,6 +84,17 @@ class RuntimeBundle:
     proxy: Optional[KatanaProxy]
     audit_trail: Any
     vault: Any
+
+
+class ScannerRuntimeConfig(TypedDict):
+    """Normalized scanner settings loaded from checkout config."""
+
+    block_threshold: float
+    warn_threshold: float
+    check_injection: bool
+    check_secrets: bool
+    check_unicode: bool
+    check_content: bool
 
 
 def reset_runtime_cache() -> None:
@@ -144,7 +157,7 @@ def load_checkout_state(checkout_root: str | Path | None = None) -> Optional[Che
         policy_dir = None
         policy_source = f"preset {policy_preset}"
 
-    scanner = {
+    scanner: ScannerRuntimeConfig = {
         "block_threshold": float(scan_cfg.get("block_threshold", 0.7)),
         "warn_threshold": float(scan_cfg.get("warn_threshold", 0.4)),
         "check_injection": bool(scan_cfg.get("check_injection", True)),
@@ -262,6 +275,47 @@ def ensure_dispatcher_bootstrap(
     return runtime
 
 
+def bootstrap_dispatcher_failsafe(
+    dispatcher: Any,
+    *,
+    checkout_root: str | Path | None = None,
+) -> None:
+    """Bootstrap a dispatcher and record fail-closed state on it.
+
+    Sets the following attributes on ``dispatcher``:
+        - ``_katana_bootstrap_failed`` (bool) — True if bootstrap raised, OR if
+          a checkout was discovered but no chain could be attached.
+        - ``_katana_bootstrap_error`` (str|None) — human-readable failure reason.
+        - ``_katana_checkout_discovered`` (bool) — True if a ``.katana/`` checkout
+          config was found upward from cwd or via ``KATANA_CHECKOUT_ROOT``.
+
+    The dispatch hook reads these to decide whether to refuse a tool call when
+    Katana looks broken (vs. simply not configured).
+    """
+    discovered: Optional[Path] = None
+    try:
+        discovered = discover_checkout_root(checkout_root if isinstance(checkout_root, (str, Path)) else None)
+    except Exception:
+        discovered = None
+
+    dispatcher._katana_checkout_discovered = discovered is not None
+
+    try:
+        runtime = ensure_dispatcher_bootstrap(dispatcher, checkout_root=checkout_root)
+    except Exception as exc:
+        dispatcher._katana_bootstrap_failed = True
+        dispatcher._katana_bootstrap_error = f"{type(exc).__name__}: {exc}"
+        return
+
+    if runtime is None and discovered is not None:
+        dispatcher._katana_bootstrap_failed = True
+        dispatcher._katana_bootstrap_error = f"checkout discovered at {discovered} but runtime bundle is None"
+        return
+
+    dispatcher._katana_bootstrap_failed = False
+    dispatcher._katana_bootstrap_error = None
+
+
 def _resolve_checkout_path(checkout_root: Path, raw_path: Any) -> Optional[Path]:
     """Resolve a path from checkout-local config, enforcing containment."""
     if raw_path in (None, ""):
@@ -287,8 +341,23 @@ def _resolve_checkout_path(checkout_root: Path, raw_path: Any) -> Optional[Path]
 
 def _build_runtime_bundle(state: CheckoutRuntimeState) -> RuntimeBundle:
     """Create concrete runtime objects for one checkout state."""
+    from hermes_katana.cli._support import enforce_hermetic_ml_readiness
     from hermes_katana.audit import AuditTrail
     from hermes_katana.policy import PolicyEngine
+
+    try:
+        enforce_hermetic_ml_readiness()
+    except Exception as exc:
+        log_security_event(
+            logger,
+            logging.WARNING,
+            "bootstrap_runtime_blocked",
+            checkout_root=str(state.checkout_root),
+            policy_source=state.policy_source,
+            reason=str(exc) or exc.__class__.__name__,
+            fail_closed=True,
+        )
+        raise
 
     vault = _open_vault()
     audit_trail = AuditTrail(path=state.audit_path) if state.audit_path is not None else None
@@ -316,6 +385,14 @@ def _build_runtime_bundle(state: CheckoutRuntimeState) -> RuntimeBundle:
             "scan.check_unicode": state.scanner["check_unicode"],
             "scan.check_content": state.scanner["check_content"],
             "scan.vault_values": _collect_vault_values(vault),
+            "mcp.enabled": True,
+            "mcp.block_on_critical": True,
+            "multiturn.enabled": True,
+            "multiturn.block_threshold": 0.75,
+            "multiturn.warn_threshold": 0.45,
+            "rag_injection.enabled": True,
+            "rag_injection.block_threshold": 0.90,
+            "rag_injection.warn_threshold": 0.60,
             "policy.engine": policy_engine,
             "policy.preset": state.policy_preset,
             "audit.enabled": state.audit_enabled,
@@ -414,10 +491,18 @@ def _build_default_escalator(dispatcher: Any):
 
         auto_approve = os.environ.get("KATANA_AUTO_APPROVE_ESCALATIONS", "0").lower() in _TRUTHY
         if auto_approve:
-            logger.warning(
-                "KATANA_AUTO_APPROVE_ESCALATIONS is set — auto-approving "
-                "escalation for tool '%s'. Disable this env var in production.",
-                getattr(ctx, "tool_name", "unknown"),
+            log_security_event(
+                logger,
+                logging.WARNING,
+                "escalation_auto_approved",
+                reason="KATANA_AUTO_APPROVE_ESCALATIONS is set",
+                production_safe=False,
+                **summarize_tool_call(
+                    getattr(ctx, "tool_name", "unknown"),
+                    getattr(ctx, "args", {}) or {},
+                    task_id=str(getattr(ctx, "task_id", "") or ""),
+                    call_id=str(getattr(ctx, "call_id", "") or ""),
+                ),
             )
         return auto_approve
 

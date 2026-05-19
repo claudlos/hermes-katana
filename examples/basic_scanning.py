@@ -8,7 +8,10 @@ Demonstrates the three main scanning functions:
 
 Run:  python3 examples/basic_scanning.py
 """
-import sys, os
+
+import sys
+import os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from hermes_katana.scanner import scan_input, scan_command, scan_output

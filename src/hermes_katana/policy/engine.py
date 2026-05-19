@@ -118,6 +118,8 @@ BENIGN_COMMANDS: set[str] = {
 }
 
 # Git subcommands that are read-only / safe
+# NOTE: "stash" is intentionally excluded — it writes to the stash ref and
+# modifies the working tree, making it a side-effecting operation.
 BENIGN_GIT_SUBCOMMANDS: set[str] = {
     "status",
     "log",
@@ -126,7 +128,6 @@ BENIGN_GIT_SUBCOMMANDS: set[str] = {
     "branch",
     "tag",
     "remote",
-    "stash",
     "describe",
     "shortlog",
     "reflog",
@@ -425,8 +426,9 @@ class PolicyEngine:
     policy whose *all* conditions are satisfied determines the result.
 
     If no policy matches, the engine returns a configurable default action
-    (``ALLOW`` by default — explicit-deny is recommended via catch-all
-    policies in the loaded policy set).
+    (``ALLOW`` when constructed directly; ``ESCALATE`` when loaded from a file
+    or directory — explicit catch-all policies in the loaded policy set are
+    always preferred over relying on this fallback).
 
     Thread safety: all mutations are protected by a reentrant lock so the
     engine can be shared across threads and updated via hot-reload.
@@ -516,7 +518,9 @@ class PolicyEngine:
             A new PolicyEngine with the file's policies loaded.
         """
         ps = load_policy_file(path)
-        engine = cls(policies=ps.policies)
+        # Default to ESCALATE (not ALLOW) so custom files without a catch-all
+        # don't silently permit every unmatched tool call.
+        engine = cls(policies=ps.policies, default_action=PolicyResult.ESCALATE)
         engine._policy_set_name = ps.name
         return engine
 
@@ -545,7 +549,9 @@ class PolicyEngine:
             all_policies.extend(ps.policies)
             name_parts.append(ps.name)
 
-        engine = cls(policies=all_policies)
+        # Default to ESCALATE (not ALLOW) so a directory without a catch-all
+        # doesn't silently permit every unmatched tool call.
+        engine = cls(policies=all_policies, default_action=PolicyResult.ESCALATE)
         engine._policy_set_name = "+".join(name_parts) if name_parts else "empty"
 
         if watch:
@@ -666,7 +672,8 @@ class PolicyEngine:
 
     def invalidate_cache(self) -> None:
         """Clear the evaluation cache (called on policy mutations)."""
-        self._eval_cache.clear()
+        with self._lock:
+            self._eval_cache.clear()
 
     def evaluate(
         self,
@@ -767,12 +774,13 @@ class PolicyEngine:
 
     def _cache_put(self, key: str, result: EvaluationResult) -> None:
         """Insert into cache, evicting oldest if over limit."""
-        if len(self._eval_cache) >= self._EVAL_CACHE_MAX:
-            # Evict ~25% of oldest entries
-            keys = list(self._eval_cache.keys())
-            for k in keys[: len(keys) // 4]:
-                self._eval_cache.pop(k, None)
-        self._eval_cache[key] = result
+        with self._lock:
+            if len(self._eval_cache) >= self._EVAL_CACHE_MAX:
+                # Evict ~25% of oldest entries
+                keys = list(self._eval_cache.keys())
+                for k in keys[: len(keys) // 4]:
+                    self._eval_cache.pop(k, None)
+            self._eval_cache[key] = result
 
     def evaluate_batch(
         self,

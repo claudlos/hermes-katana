@@ -150,6 +150,7 @@ class TestScanHermesConfig:
 
     def test_scan_none_no_default(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("hermes_katana.vault.migrate._safe_home", lambda: None)
         found = _scan_hermes_config(None)
         assert found == {}
 
@@ -290,11 +291,13 @@ class TestMigrateSecrets:
         assert result.migrated >= 1
         vault.set.assert_called()
 
-    def test_skip_existing_keys(self, tmp_path):
+    def test_skip_existing_keys(self, tmp_path, monkeypatch):
         env_file = tmp_path / ".env"
         env_file.write_text("MY_API_KEY=secret\n")
         vault = MagicMock()
         vault.list_keys.return_value = ["MY_API_KEY"]
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("hermes_katana.vault.migrate._safe_home", lambda: None)
         with patch.dict(os.environ, {}, clear=True):
             result = migrate_secrets(vault, dotenv_path=env_file)
         assert result.skipped >= 1

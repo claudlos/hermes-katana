@@ -149,14 +149,16 @@ class TestPolicyThreadSafety:
 
 
 # ---------------------------------------------------------------------------
-# GAP 4.4 — Middleware execution order (audit before policy)
+# GAP 4.4 — Middleware execution order (audit after policy for full context)
 # ---------------------------------------------------------------------------
 
 
 class TestMiddlewareExecutionOrder:
-    """Audit middleware must run before policy so denied calls are logged."""
+    """Audit middleware runs after policy to have full context.
+    Denied calls are still captured via on_short_circuit() regardless of order.
+    """
 
-    def test_audit_priority_higher_than_policy(self):
+    def test_audit_priority_lower_than_policy(self):
         from hermes_katana.middleware.integration import (
             KatanaAuditMiddleware,
             KatanaPolicyMiddleware,
@@ -164,8 +166,9 @@ class TestMiddlewareExecutionOrder:
 
         audit = KatanaAuditMiddleware()
         policy = KatanaPolicyMiddleware()
-        assert audit.priority > policy.priority, (
-            f"Audit priority ({audit.priority}) must be > policy priority ({policy.priority})"
+        assert audit.priority < policy.priority, (
+            f"Audit priority ({audit.priority}) must be < policy priority ({policy.priority}) "
+            "so audit has full policy context when logging"
         )
 
     def test_default_chain_order(self):
@@ -174,11 +177,12 @@ class TestMiddlewareExecutionOrder:
         chain = create_default_chain({"taint.enabled": False, "scan.enabled": False})
         mws = chain.list_middleware()
         names = [m.name for m in mws]
-        # Audit should come before policy in execution order (higher priority = earlier)
+        # Audit should come AFTER policy in execution order (lower priority = later)
+        # Denied calls are still captured via on_short_circuit()
         if "katana.audit" in names and "katana.policy" in names:
             audit_idx = names.index("katana.audit")
             policy_idx = names.index("katana.policy")
-            assert audit_idx < policy_idx, f"Audit should execute before policy. Order: {names}"
+            assert audit_idx > policy_idx, f"Audit should execute after policy. Order: {names}"
 
 
 # ---------------------------------------------------------------------------

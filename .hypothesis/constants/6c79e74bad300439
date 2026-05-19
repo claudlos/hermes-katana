@@ -1,4 +1,0 @@
-# file: /usr/lib/python3/dist-packages/gi/_error.py
-# hypothesis_version: 6.151.10
-
-['%s: %s (%d)', '.', 'pygi-error', 'unknown error']
