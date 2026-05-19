@@ -567,6 +567,8 @@ def _handle_katana_status(**kwargs: Any) -> str:
     # Middleware chain
     if _chain is not None:
         try:
+            from hermes_katana.middleware.integration import collect_chain_diagnostics
+
             mw_list = _chain.list_middleware()
             status["middleware"] = [
                 {
@@ -576,6 +578,7 @@ def _handle_katana_status(**kwargs: Any) -> str:
                 }
                 for m in mw_list
             ]
+            status["diagnostics"] = collect_chain_diagnostics(_chain)
         except Exception:
             status["middleware"] = "error reading chain"
 
