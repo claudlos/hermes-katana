@@ -191,12 +191,11 @@ def _initialize_runtime(config: dict[str, Any]) -> tuple:
     vault = _open_vault()
     audit_trail = _open_audit(config)
 
+    _katana_profile = config.get("katana_profile", config.get("profile"))
     chain_config = {
         "taint.enabled": config.get("taint_enabled", True),
         "taint.tracker": tracker,
         "scan.enabled": config.get("scan_enabled", True),
-        "scan.block_threshold": config.get("scan_block_threshold", 0.7),
-        "scan.warn_threshold": config.get("scan_warn_threshold", 0.4),
         "scan.check_injection": config.get("scan_check_injection", True),
         "scan.check_secrets": config.get("scan_check_secrets", True),
         "scan.check_unicode": config.get("scan_check_unicode", True),
@@ -211,11 +210,19 @@ def _initialize_runtime(config: dict[str, Any]) -> tuple:
         "rag_injection.block_threshold": config.get("rag_injection_block_threshold", 0.90),
         "rag_injection.warn_threshold": config.get("rag_injection_warn_threshold", 0.60),
         "policy.enabled": config.get("policy_enabled", True),
-        "policy.preset": config.get("policy_preset", "balanced"),
         "audit.enabled": config.get("audit_enabled", True),
         "audit.log_allow": config.get("audit_log_allow", True),
         "audit.trail": audit_trail,
     }
+    if _katana_profile is not None:
+        chain_config["profile"] = _katana_profile
+    for external_key, chain_key, default in (
+        ("scan_block_threshold", "scan.block_threshold", 0.7),
+        ("scan_warn_threshold", "scan.warn_threshold", 0.4),
+        ("policy_preset", "policy.preset", "balanced"),
+    ):
+        if external_key in config or _katana_profile is None:
+            chain_config[chain_key] = config.get(external_key, default)
 
     from hermes_katana.scabbard import ScabbardConfig
 
@@ -241,15 +248,22 @@ def _initialize_runtime(config: dict[str, Any]) -> tuple:
             backend=_scabbard_backend or "torch",
             device=_scabbard_device,
         )
-    else:
+    elif _katana_profile is None:
         scabbard_cfg = ScabbardConfig.runtime_default()
+    else:
+        scabbard_cfg = None
 
-    chain_config["scabbard.config"] = scabbard_cfg
-    chain_config["scabbard.profile"] = scabbard_cfg.profile
+    if scabbard_cfg is not None:
+        chain_config["scabbard.config"] = scabbard_cfg
+        chain_config["scabbard.profile"] = scabbard_cfg.profile
     chain_config["scabbard.enabled"] = config.get("scabbard_enabled", True)
-    chain_config["scabbard.route_mode"] = config.get("scabbard_route_mode", "balanced")
-    chain_config["scabbard.scan_outputs"] = config.get("scabbard_scan_outputs", True)
-    chain_config["scabbard.audit_routes"] = config.get("scabbard_audit_routes", True)
+    for external_key, chain_key, default in (
+        ("scabbard_route_mode", "scabbard.route_mode", "balanced"),
+        ("scabbard_scan_outputs", "scabbard.scan_outputs", True),
+        ("scabbard_audit_routes", "scabbard.audit_routes", True),
+    ):
+        if external_key in config or _katana_profile is None:
+            chain_config[chain_key] = config.get(external_key, default)
 
     chain = create_default_chain(chain_config)
     return chain, audit_trail, tracker, vault
