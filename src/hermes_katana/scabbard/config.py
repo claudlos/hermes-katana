@@ -38,7 +38,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from hermes_katana.artifacts import ArtifactNotFoundError, artifact_status, minilm_onnx_spec, resolve_minilm_onnx
+from hermes_katana.artifacts import (
+    ArtifactNotFoundError,
+    artifact_status,
+    minilm_onnx_spec,
+    resolve_minilm_onnx,
+    resolve_v15_large,
+    v15_large_spec,
+)
 
 # -----------------------------------------------------------------------
 # Default model paths (relative to project root)
@@ -130,9 +137,17 @@ def _model_version_for_checkpoint(checkpoint_path: Path) -> str:
 def _katana_v15_minilm_onnx_artifact_path() -> Path:
     """Return the configured MiniLM ONNX artifact path without downloading."""
     try:
-        return resolve_minilm_onnx(download=False)
+        return resolve_minilm_onnx(download=None)
     except ArtifactNotFoundError:
         return artifact_status(minilm_onnx_spec()).path
+
+
+def _katana_v15_large_artifact_path() -> Path:
+    """Return the configured large v15 artifact path without downloading."""
+    try:
+        return resolve_v15_large(download=None)
+    except ArtifactNotFoundError:
+        return artifact_status(v15_large_spec()).path
 
 
 def _module_available(module_name: str) -> bool:
@@ -517,14 +532,32 @@ class ScabbardConfig:
         This is a clearer alias for :meth:`katana_v15` when comparing the
         full-size DeBERTa runtime against distilled CPU students.
         """
-        return cls.katana_v15(
-            model_path=model_path,
-            default_origin=default_origin,
+        if backend == "onnx_int8" and not allow_unverified_int8:
+            raise ValueError(
+                "katana_v15 INT8 is not promoted: Colab parity was 54/100 "
+                "against torch. Use backend='torch' or backend='onnx', or pass "
+                "allow_unverified_int8=True only for quantization debugging."
+            )
+        if model_path is None:
+            if backend == "torch":
+                model_path = str(_katana_v15_large_artifact_path())
+            elif backend == "onnx":
+                model_path = str(_KATANA_V15_BEST.parent / "onnx")
+            elif backend == "onnx_int8":
+                model_path = str(_KATANA_V15_BEST.parent / "onnx_int8")
+        resolved_path = model_path or str(_KATANA_V15_BEST)
+        return cls(
+            profile="standard",
+            katana_v11_path=resolved_path,
+            katana_v11_default_origin=default_origin,
+            katana_v11_backend=backend,
+            katana_v11_device=device,
             allow_threshold=allow_threshold,
             block_threshold=block_threshold,
-            backend=backend,
-            device=device,
-            allow_unverified_int8=allow_unverified_int8,
+            model_version="katana_v15",
+            centroid_path=None,
+            tfidf_path=None,
+            fusion_model=None,
         )
 
     @classmethod

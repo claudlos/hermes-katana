@@ -1513,69 +1513,175 @@ def artifacts() -> None:
 
 
 @artifacts.command(name="status")
-@click.option("--repo-id", default=None, help="Hugging Face repo ID override.")
-@click.option("--revision", default=None, help="Hugging Face revision override.")
+@click.argument("model", required=False, default="minilm")
+@click.option("--all", "show_all", is_flag=True, help="Show every registered artifact.")
+@click.option("--repo-id", default=None, help="Hugging Face repo ID override for the selected model.")
+@click.option("--revision", default=None, help="Hugging Face revision override for the selected model.")
 @click.option("--target-dir", default=None, type=click.Path(), help="Local artifact directory override.")
-def artifacts_status(repo_id: str | None, revision: str | None, target_dir: str | None) -> None:
+def artifacts_status(
+    model: str,
+    show_all: bool,
+    repo_id: str | None,
+    revision: str | None,
+    target_dir: str | None,
+) -> None:
     """Show local artifact status without network access."""
-    from hermes_katana.artifacts import artifact_status, minilm_onnx_spec
+    from hermes_katana.artifacts import ArtifactError, artifact_spec, artifact_specs, artifact_status
 
-    spec = minilm_onnx_spec(repo_id=repo_id, revision=revision)
-    status = artifact_status(spec, target_dir)
+    if show_all and (repo_id or revision):
+        raise click.ClickException("--repo-id and --revision can only be used when checking one model")
+    try:
+        specs = artifact_specs() if show_all else (artifact_spec(model, repo_id=repo_id, revision=revision),)
+    except ArtifactError as exc:
+        raise click.ClickException(str(exc)) from exc
+
     table = Table(title="Katana Artifacts", box=box.ROUNDED)
     table.add_column("Artifact", style="bold")
     table.add_column("Status")
+    table.add_column("Size")
+    table.add_column("Role")
     table.add_column("Repo")
     table.add_column("Revision")
     table.add_column("Path")
-    table.add_row(
-        spec.name,
-        "[green]present[/green]" if status.present else f"[yellow]missing {len(status.missing_files)} file(s)[/yellow]",
-        spec.repo_id,
-        spec.revision,
-        str(status.path),
-    )
+    statuses = [artifact_status(spec, target_dir) for spec in specs]
+    for status in statuses:
+        spec = status.spec
+        table.add_row(
+            spec.name,
+            "[green]present[/green]"
+            if status.present
+            else f"[yellow]missing {len(status.missing_files)} file(s)[/yellow]",
+            spec.size_label or "-",
+            spec.role or "-",
+            spec.repo_id,
+            spec.revision,
+            str(status.path),
+        )
     console.print(table)
-    if status.missing_files:
-        console.print("Missing files:")
+    for status in statuses:
+        if not status.missing_files:
+            continue
+        console.print(f"Missing files for {status.spec.name}:")
         for missing in status.missing_files:
             console.print(f"  - {missing}")
 
 
 @artifacts.command(name="path")
-@click.option("--repo-id", default=None, help="Hugging Face repo ID override.")
-@click.option("--revision", default=None, help="Hugging Face revision override.")
+@click.argument("model", required=False, default="minilm")
+@click.option("--repo-id", default=None, help="Hugging Face repo ID override for the selected model.")
+@click.option("--revision", default=None, help="Hugging Face revision override for the selected model.")
 @click.option("--target-dir", default=None, type=click.Path(), help="Local artifact directory override.")
-def artifacts_path(repo_id: str | None, revision: str | None, target_dir: str | None) -> None:
-    """Print a valid local MiniLM ONNX artifact directory."""
-    from hermes_katana.artifacts import ArtifactError, resolve_minilm_onnx
+def artifacts_path(model: str, repo_id: str | None, revision: str | None, target_dir: str | None) -> None:
+    """Print a valid local artifact directory."""
+    from hermes_katana.artifacts import ArtifactError, artifact_spec, resolve_artifact
 
     try:
-        console.print(
-            str(resolve_minilm_onnx(repo_id=repo_id, revision=revision, target_dir=target_dir, download=False))
-        )
+        spec = artifact_spec(model, repo_id=repo_id, revision=revision)
+        console.print(str(resolve_artifact(spec, target_dir=target_dir, download=False)))
     except ArtifactError as exc:
         err_console.print(f"[red]{exc}[/red]")
         raise SystemExit(EXIT_ERROR)
 
 
 @artifacts.command(name="download")
-@click.option("--repo-id", default=None, help="Hugging Face repo ID override.")
-@click.option("--revision", default=None, help="Hugging Face revision override.")
+@click.argument("model", required=False, default="minilm")
+@click.option("--repo-id", default=None, help="Hugging Face repo ID override for the selected model.")
+@click.option("--revision", default=None, help="Hugging Face revision override for the selected model.")
 @click.option("--target-dir", default=None, type=click.Path(), help="Local artifact directory override.")
 @click.option("--force", is_flag=True, help="Force re-download when using huggingface_hub.")
-def artifacts_download(repo_id: str | None, revision: str | None, target_dir: str | None, force: bool) -> None:
+def artifacts_download(
+    model: str,
+    repo_id: str | None,
+    revision: str | None,
+    target_dir: str | None,
+    force: bool,
+) -> None:
     """Download optional model artifacts from Hugging Face."""
-    from hermes_katana.artifacts import ArtifactError, download_artifact, minilm_onnx_spec
+    from hermes_katana.artifacts import ArtifactError, artifact_spec, download_artifact
 
-    spec = minilm_onnx_spec(repo_id=repo_id, revision=revision)
     try:
+        spec = artifact_spec(model, repo_id=repo_id, revision=revision)
         status = download_artifact(spec, target_dir, force=force)
     except ArtifactError as exc:
         err_console.print(f"[red]Artifact download failed:[/red] {exc}")
         raise SystemExit(EXIT_ERROR)
     console.print(f"[green]Downloaded {spec.name}[/green]")
     console.print(str(status.path))
+
+
+@artifacts.command(name="setup")
+@click.option("--yes", "-y", is_flag=True, help="Accept default setup choices without prompting.")
+@click.option("--small", is_flag=True, help="Download the default fast CPU model.")
+@click.option("--large", is_flag=True, help="Download the optional large local model.")
+@click.option("--all", "all_models", is_flag=True, help="Download every registered model.")
+@click.option("--no-large", is_flag=True, help="Skip optional large models.")
+@click.option("--target-dir", default=None, type=click.Path(), help="Local artifact directory or cache root.")
+@click.option("--force", is_flag=True, help="Force re-download when using huggingface_hub.")
+def artifacts_setup(
+    yes: bool,
+    small: bool,
+    large: bool,
+    all_models: bool,
+    no_large: bool,
+    target_dir: str | None,
+    force: bool,
+) -> None:
+    """Prompt for optional model downloads and prepare the local artifact cache."""
+    from hermes_katana.artifacts import ArtifactError, artifact_specs, artifact_status, download_artifact
+
+    if all_models and no_large:
+        raise click.ClickException("--all and --no-large cannot be used together")
+
+    specs = artifact_specs()
+    by_alias = {spec.aliases[0]: spec for spec in specs if spec.aliases}
+    selected = []
+
+    if all_models:
+        selected = list(specs)
+    elif small or large:
+        if small:
+            selected.append(by_alias["minilm"])
+        if large and not no_large:
+            selected.append(by_alias["large"])
+    elif yes:
+        selected = [spec for spec in specs if spec.interactive_default]
+    elif not sys.stdin.isatty():
+        raise click.ClickException("Non-interactive setup requires --yes, --small, --large, or --all")
+    else:
+        console.print("[bold]Katana artifact setup[/bold]\n")
+        for spec in specs:
+            if no_large and spec.requires_confirmation:
+                continue
+            status = artifact_status(spec)
+            if status.present and not force:
+                console.print(f"[green]Present[/green] {spec.name}: {status.path}")
+                continue
+            default = spec.interactive_default and not spec.requires_confirmation
+            prompt = f"Download {spec.display_name or spec.name} ({spec.size_label or 'unknown size'}, {spec.role})?"
+            if click.confirm(prompt, default=default):
+                selected.append(spec)
+
+    if no_large:
+        selected = [spec for spec in selected if not spec.requires_confirmation]
+
+    if not selected:
+        console.print("No artifact downloads selected.")
+        return
+
+    target_root = Path(target_dir).expanduser().resolve() if target_dir else None
+    multiple = len(selected) > 1
+    for spec in selected:
+        spec_target = target_root / spec.name if target_root is not None and multiple else target_root
+        status = artifact_status(spec, spec_target)
+        if status.present and not force:
+            console.print(f"[green]Present[/green] {spec.name}: {status.path}")
+            continue
+        try:
+            downloaded = download_artifact(spec, spec_target, force=force)
+        except ArtifactError as exc:
+            err_console.print(f"[red]Artifact download failed for {spec.name}:[/red] {exc}")
+            raise SystemExit(EXIT_ERROR)
+        console.print(f"[green]Downloaded[/green] {spec.name}: {downloaded.path}")
 
 
 # ---------------------------------------------------------------------------

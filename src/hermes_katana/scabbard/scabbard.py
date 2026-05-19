@@ -170,7 +170,7 @@ class ScabbardClassifier:
                 else:
                     logger.info(
                         "Skipping zvec embedder; artifacts are not present. "
-                        "Run `katana artifacts download` or pass ScabbardConfig.minimal()."
+                        "Run `katana artifacts setup` or pass ScabbardConfig.minimal()."
                     )
 
             if self.config.centroid_path:
