@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
 from hermes_katana import hermes_plugin
+from hermes_katana.artifacts import (
+    ARTIFACT_MANIFEST,
+    MINILM_ONNX_REQUIRED_FILES,
+    V15_LARGE_REQUIRED_FILES,
+    artifact_path,
+    minilm_onnx_spec,
+    v15_large_spec,
+)
 from hermes_katana.exceptions import EscalationRequired, KatanaSecurityError
 from hermes_katana.middleware.chain import CallContext, DispatchDecision
 
@@ -37,6 +47,20 @@ class MockPluginContext:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+def _write_artifact(path: Path, files: tuple[str, ...]) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    for name in files:
+        if name != ARTIFACT_MANIFEST:
+            (path / name).write_text("x")
+    manifest = {
+        "schema_version": 1,
+        "files": {
+            name: {"sha256": hashlib.sha256(b"x").hexdigest(), "size": 1} for name in files if name != ARTIFACT_MANIFEST
+        },
+    }
+    (path / ARTIFACT_MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -191,6 +215,7 @@ class TestPluginSetup:
     def test_initialize_runtime_supports_named_scabbard_model_profiles(
         self,
         monkeypatch,
+        tmp_path,
         profile,
         expected_version,
         expected_backend,
@@ -204,6 +229,11 @@ class TestPluginSetup:
         monkeypatch.setattr(hermes_plugin, "_collect_vault_values", lambda _vault: set())
         monkeypatch.setattr(integration_mod, "create_default_chain", lambda cfg: captured.setdefault("config", cfg))
         monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
+        monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+        monkeypatch.delenv("KATANA_V15_LARGE_DIR", raising=False)
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+        _write_artifact(artifact_path(minilm_onnx_spec()), MINILM_ONNX_REQUIRED_FILES)
+        _write_artifact(artifact_path(v15_large_spec()), V15_LARGE_REQUIRED_FILES)
 
         cfg = {"audit_enabled": False, "scabbard_profile": profile}
         if "v15" in profile and "minilm" not in profile:

@@ -61,8 +61,9 @@ V3-COVERAGE-REPORT.md
 tests/fuzz/_bypass_report.txt
 research/differential-*.json
 
-# Private security research — do not publish
-research/
+# Private security research — do not publish. Keep this anchored so package
+# modules such as src/hermes_katana/proving_ground/research/ remain trackable.
+/research/
 .hypothesis/
 tests/fuzz/_bypass_report.txt
 .task-*.md

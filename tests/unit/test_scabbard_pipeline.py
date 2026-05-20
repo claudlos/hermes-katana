@@ -2,20 +2,43 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 
-from hermes_katana.artifacts import MINILM_ONNX_REQUIRED_FILES, artifact_path, minilm_onnx_spec
+from hermes_katana.artifacts import (
+    ARTIFACT_MANIFEST,
+    MINILM_ONNX_REQUIRED_FILES,
+    V15_LARGE_REQUIRED_FILES,
+    artifact_path,
+    minilm_onnx_spec,
+    v15_large_spec,
+)
 from hermes_katana.scabbard.pipeline import ScabbardConfig, ScabbardClassifier
 from hermes_katana.scabbard.fusion import Decision
 
 
-def _write_minilm_artifact(path):
+def _write_artifact(path, files):
     path.mkdir(parents=True, exist_ok=True)
-    for name in MINILM_ONNX_REQUIRED_FILES:
-        (path / name).write_text("x")
+    for name in files:
+        if name != ARTIFACT_MANIFEST:
+            (path / name).write_text("x")
+    manifest = {
+        "schema_version": 1,
+        "files": {
+            name: {"sha256": hashlib.sha256(b"x").hexdigest(), "size": 1} for name in files if name != ARTIFACT_MANIFEST
+        },
+    }
+    (path / ARTIFACT_MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def _write_minilm_artifact(path):
+    _write_artifact(path, MINILM_ONNX_REQUIRED_FILES)
 
 
 # =============================================================================
@@ -102,6 +125,8 @@ class TestScabbardConfig:
     def test_katana_v15_large_factory_alias_supports_gpu_device(self, monkeypatch, tmp_path):
         monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
         monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+        artifact_dir = artifact_path(v15_large_spec())
+        _write_artifact(artifact_dir, V15_LARGE_REQUIRED_FILES)
 
         cfg = ScabbardConfig.katana_v15_large(backend="torch", device="cuda")
 
@@ -178,6 +203,88 @@ class TestScabbardConfig:
         """
         cfg = ScabbardConfig.katana_v11()
         assert cfg.block_threshold == 0.7
+
+
+def test_katana_v11_onnx_backend_uses_onnxruntime_without_torch(monkeypatch, tmp_path):
+    from hermes_katana.scabbard import embedder as embedder_mod
+    from hermes_katana.scabbard.embedder import KatanaV11Classifier
+
+    model_dir = tmp_path / "onnx-model"
+    model_dir.mkdir()
+    (model_dir / "model.onnx").write_bytes(b"onnx")
+
+    class FakeLogging:
+        @staticmethod
+        def get_verbosity():
+            return 20
+
+        @staticmethod
+        def set_verbosity_error():
+            return None
+
+        @staticmethod
+        def set_verbosity(_level):
+            return None
+
+    class FakeTokenizer:
+        def __call__(self, texts, *, return_tensors, truncation, max_length, padding):
+            assert texts == ["[ORIGIN=user_input] hello"]
+            assert return_tensors == "np"
+            assert truncation is True
+            assert max_length == 256
+            assert padding is True
+            return {
+                "input_ids": np.array([[1, 2, 3]], dtype=np.int64),
+                "attention_mask": np.array([[1, 1, 1]], dtype=np.int64),
+                "token_type_ids": np.array([[0, 0, 0]], dtype=np.int64),
+            }
+
+    class FakeAutoTokenizer:
+        @staticmethod
+        def from_pretrained(_path):
+            return FakeTokenizer()
+
+    class FakeInput:
+        def __init__(self, name):
+            self.name = name
+
+    class FakeSession:
+        def __init__(self, path, *, sess_options, providers):
+            assert path == str(model_dir / "model.onnx")
+            assert sess_options.graph_optimization_level == "all"
+            assert providers == ["CPUExecutionProvider"]
+
+        @staticmethod
+        def get_inputs():
+            return [FakeInput("input_ids"), FakeInput("attention_mask")]
+
+        @staticmethod
+        def run(_outputs, inputs):
+            assert set(inputs) == {"input_ids", "attention_mask"}
+            logits = [[3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
+            return [np.array(logits, dtype=np.float32)]
+
+    class FakeSessionOptions:
+        graph_optimization_level = None
+
+    fake_transformers = SimpleNamespace(
+        AutoTokenizer=FakeAutoTokenizer,
+        utils=SimpleNamespace(logging=FakeLogging),
+    )
+    fake_onnxruntime = SimpleNamespace(
+        SessionOptions=FakeSessionOptions,
+        GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL="all"),
+        InferenceSession=FakeSession,
+    )
+
+    monkeypatch.setattr(embedder_mod, "_transformers", lambda: fake_transformers)
+    monkeypatch.setattr(embedder_mod, "_torch", lambda: pytest.fail("torch should not load for ONNX"))
+    monkeypatch.setitem(__import__("sys").modules, "onnxruntime", fake_onnxruntime)
+
+    clf = KatanaV11Classifier(str(model_dir), backend="onnx")
+    scores = clf.classify("hello")
+
+    assert scores["clean"] > 0.7
 
 
 # =============================================================================

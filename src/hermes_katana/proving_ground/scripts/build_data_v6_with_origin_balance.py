@@ -40,7 +40,7 @@ into eval). The origin-routing benchmark stays at
 Reproducible (deterministic with ``--seed 42``).
 
 NOTE: this script builds the dataset only. A v12 retrain on data_v6 needs to
-be run separately (Colab A100, ~50-60 min) — see HANDOFF-DATA-V6.md.
+be run separately on suitable GPU hardware.
 """
 
 from __future__ import annotations

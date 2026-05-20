@@ -5,10 +5,11 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 DRY_RUN=0
 SKIP_FULL_TESTS=0
 ALLOW_MISSING_GITLEAKS=0
+WITH_ARTIFACT_DOWNLOADS=0
 
 usage() {
   cat <<'EOF'
-Usage: scripts/release_gate.sh [--dry-run] [--skip-full-tests] [--allow-missing-gitleaks]
+Usage: scripts/release_gate.sh [--dry-run] [--skip-full-tests] [--with-artifact-downloads] [--allow-missing-gitleaks]
 
 Runs the V3 release gate:
   1. Ruff lint/format checks
@@ -22,6 +23,7 @@ Runs the V3 release gate:
 Options:
   --dry-run                 Print commands without executing them.
   --skip-full-tests         Skip the full pytest suite.
+  --with-artifact-downloads Download and verify the default small HF artifact.
   --allow-missing-gitleaks  Do not fail locally when gitleaks is not installed.
   -h, --help                Show this help.
 EOF
@@ -34,6 +36,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-full-tests)
       SKIP_FULL_TESTS=1
+      ;;
+    --with-artifact-downloads)
+      WITH_ARTIFACT_DOWNLOADS=1
       ;;
     --allow-missing-gitleaks)
       ALLOW_MISSING_GITLEAKS=1
@@ -94,7 +99,16 @@ run_cmd "scripts/verify_scanner_change.sh --skip-lint" scripts/verify_scanner_ch
 run_cmd "mkdir -p ${DIST_DIR}" mkdir -p "${DIST_DIR}"
 run_cmd "python3 -m build --outdir ${DIST_DIR}" "${PYTHON_BIN}" -m build --outdir "${DIST_DIR}"
 run_shell "python3 -m twine check ${DIST_DIR}/*" "'${PYTHON_BIN}' -m twine check '${DIST_DIR}'/*"
-run_shell "katana artifacts status" "PYTHONPATH=src '${PYTHON_BIN}' -m hermes_katana.cli.main artifacts status"
+run_shell "katana artifacts status --all" "PYTHONPATH=src '${PYTHON_BIN}' -m hermes_katana.cli.main artifacts status --all"
+
+if [[ "${WITH_ARTIFACT_DOWNLOADS}" -eq 1 ]]; then
+  ARTIFACT_SMOKE_DIR="${ARTIFACT_SMOKE_DIR:-${ROOT_DIR}/.pytest_tmp/artifact-smoke/${RUN_ID}}"
+  run_cmd "mkdir -p ${ARTIFACT_SMOKE_DIR}" mkdir -p "${ARTIFACT_SMOKE_DIR}"
+  run_shell "katana artifacts setup --yes --target-dir ${ARTIFACT_SMOKE_DIR} --force" \
+    "PYTHONPATH=src '${PYTHON_BIN}' -m hermes_katana.cli.main artifacts setup --yes --target-dir '${ARTIFACT_SMOKE_DIR}' --force"
+  run_shell "katana artifacts status minilm --target-dir ${ARTIFACT_SMOKE_DIR}" \
+    "PYTHONPATH=src '${PYTHON_BIN}' -m hermes_katana.cli.main artifacts status minilm --target-dir '${ARTIFACT_SMOKE_DIR}'"
+fi
 
 if command -v gitleaks >/dev/null 2>&1; then
   run_cmd "gitleaks detect --source . --redact --no-banner --config .gitleaks.toml" \

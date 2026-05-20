@@ -18,14 +18,40 @@ import threading
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
+import importlib
 import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal
 
-import torch
-from torch import nn
-from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
+
+class _LazyModuleProxy:
+    def __init__(self, module_name: str, attr_name: str | None = None) -> None:
+        self.module_name = module_name
+        self.attr_name = attr_name
+
+    def _target(self) -> Any:
+        module = importlib.import_module(self.module_name)
+        return getattr(module, self.attr_name) if self.attr_name else module
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._target(), name)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._target()(*args, **kwargs)
+
+
+torch = _LazyModuleProxy("torch")
+AutoModel = _LazyModuleProxy("transformers", "AutoModel")
+AutoModelForSequenceClassification = _LazyModuleProxy("transformers", "AutoModelForSequenceClassification")
+AutoTokenizer = _LazyModuleProxy("transformers", "AutoTokenizer")
+
+
+def _torch() -> Any:
+    try:
+        return importlib.import_module("torch")
+    except ImportError as exc:
+        raise ImportError("torch is required for the DeBERTa PyTorch backend. Install `hermes-katana[ml]`.") from exc
 
 
 def _load_tokenizer(path: str) -> Any:
@@ -184,26 +210,29 @@ def _resolve_threshold(model_dir: Path) -> float:
 
 
 def _probability_from_logits(logit: Any) -> float:
-    values = torch.as_tensor(logit, dtype=torch.float32).reshape(-1)
+    torch_mod = _torch()
+    values = torch_mod.as_tensor(logit, dtype=torch_mod.float32).reshape(-1)
     if values.numel() == 1:
-        return float(torch.sigmoid(values[0]).item())
+        return float(torch_mod.sigmoid(values[0]).item())
     if values.numel() == 2:
-        return float(torch.softmax(values, dim=0)[1].item())
+        return float(torch_mod.softmax(values, dim=0)[1].item())
     raise ValueError(f"Unsupported ONNX logit shape with {values.numel()} values")
 
 
-def _load_torch(path: Path, *, map_location: str | torch.device = "cpu") -> Any:
+def _load_torch(path: Path, *, map_location: Any = "cpu") -> Any:
+    torch_mod = _torch()
     try:
-        return torch.load(path, map_location=map_location, weights_only=True)
+        return torch_mod.load(path, map_location=map_location, weights_only=True)
     except TypeError:
-        return torch.load(path, map_location=map_location)
+        return torch_mod.load(path, map_location=map_location)
 
 
-class _BinaryDeBERTaRuntime(nn.Module):
+class _BinaryDeBERTaRuntime:
     """Runtime wrapper for the local binary head saved by training/train_deberta_binary.py."""
 
     def __init__(self, checkpoint_dir: Path) -> None:
-        super().__init__()
+        torch_mod = _torch()
+        nn = torch_mod.nn
         self.backbone = AutoModel.from_pretrained(str(checkpoint_dir))
         hidden_size = int(self.backbone.config.hidden_size)
         dropout_prob = float(getattr(self.backbone.config, "hidden_dropout_prob", 0.1))
@@ -214,7 +243,22 @@ class _BinaryDeBERTaRuntime(nn.Module):
         classifier_state = head_state["classifier"] if isinstance(head_state, dict) else head_state
         self.classifier.load_state_dict(classifier_state)
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> Any:
+    def to(self, device: Any) -> "_BinaryDeBERTaRuntime":
+        self.backbone.to(device)
+        self.dropout.to(device)
+        self.classifier.to(device)
+        return self
+
+    def eval(self) -> "_BinaryDeBERTaRuntime":
+        self.backbone.eval()
+        self.dropout.eval()
+        self.classifier.eval()
+        return self
+
+    def __call__(self, input_ids: Any, attention_mask: Any) -> Any:
+        return self.forward(input_ids=input_ids, attention_mask=attention_mask)
+
+    def forward(self, input_ids: Any, attention_mask: Any) -> Any:
         out = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         hidden = out.last_hidden_state
         mask = attention_mask.unsqueeze(-1).to(hidden.dtype)
@@ -263,7 +307,7 @@ class _LazyDeBERTa:
 
     model: Any | Literal["onnx"] | None = None
     tokenizer: Any | None = None
-    device: torch.device | None = None
+    device: Any | None = None
     ort_session: Any | None = None
     model_dir: Path | None = None
     threshold: float = DEFAULT_THRESHOLD
@@ -284,7 +328,7 @@ class _LazyDeBERTa:
 
             from hermes_katana.scabbard.embedder import _resolve_default_device
 
-            cls.device = torch.device(_resolve_default_device())
+            cls.device = _torch().device(_resolve_default_device())
             cls.model_dir = model_dir
             cls.threshold = _resolve_threshold(model_dir)
 

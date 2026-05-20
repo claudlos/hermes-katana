@@ -7,6 +7,10 @@ Optional ML artifacts are stored outside GitHub. Use `katana artifacts status`,
 artifact, Scabbard, and semantic-backend readiness before running live eval
 sweeps or depending on ML-backed enforcement. See `docs/artifacts.md`.
 
+Minimal deployments can use `pip install hermes-katana` and the rule-based
+scanner/policy/vault/audit stack. The default ML-backed CPU profile requires
+`pip install "hermes-katana[fast-cpu]"` plus `katana artifacts setup --yes`.
+
 ---
 
 ## Table of Contents
@@ -53,6 +57,8 @@ sweeps or depending on ML-backed enforcement. See `docs/artifacts.md`.
 | Start proxy | `katana proxy start` |
 | Stop proxy | `katana proxy stop` |
 | Proxy status | `katana proxy status` |
+| Artifact status | `katana artifacts status --all` |
+| Download default CPU artifact | `katana artifacts setup --yes` |
 
 ---
 

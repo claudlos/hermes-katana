@@ -39,12 +39,10 @@ from pathlib import Path
 from typing import Optional
 
 from hermes_katana.artifacts import (
-    ArtifactNotFoundError,
     artifact_status,
     minilm_onnx_spec,
     resolve_minilm_onnx,
     resolve_v15_large,
-    v15_large_spec,
 )
 
 # -----------------------------------------------------------------------
@@ -135,19 +133,13 @@ def _model_version_for_checkpoint(checkpoint_path: Path) -> str:
 
 
 def _katana_v15_minilm_onnx_artifact_path() -> Path:
-    """Return the configured MiniLM ONNX artifact path without downloading."""
-    try:
-        return resolve_minilm_onnx(download=None)
-    except ArtifactNotFoundError:
-        return artifact_status(minilm_onnx_spec()).path
+    """Return a verified MiniLM ONNX artifact path, downloading only if opted in."""
+    return resolve_minilm_onnx(download=None)
 
 
 def _katana_v15_large_artifact_path() -> Path:
-    """Return the configured large v15 artifact path without downloading."""
-    try:
-        return resolve_v15_large(download=None)
-    except ArtifactNotFoundError:
-        return artifact_status(v15_large_spec()).path
+    """Return a verified large v15 artifact path, downloading only if opted in."""
+    return resolve_v15_large(download=None)
 
 
 def _module_available(module_name: str) -> bool:
@@ -203,7 +195,7 @@ class ScabbardConfig:
     katana_v11_path: Optional[str] = None
     katana_v11_default_origin: str = "user_input"
     # Backend: "torch" | "onnx" | "onnx_int8". ONNX backends are CPU-only and
-    # require optimum[onnxruntime] installed.
+    # require onnxruntime installed.
     katana_v11_backend: str = "torch"
     # Optional device for torch backends ("cuda" or "cpu"). None means auto.
     # ONNX backends ignore this and run on CPU in the current runtime.

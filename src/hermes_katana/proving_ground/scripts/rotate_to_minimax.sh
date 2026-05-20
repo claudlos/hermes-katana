@@ -15,8 +15,12 @@
 # Safe to call multiple times — if already on minimax, it's a no-op.
 
 set -u
-ROOT=/home/carlos/Documents/Code/katana-proving-ground
-VENV=$ROOT/.venv/bin/python
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${KATANA_PROVING_GROUND_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
+VENV="${KATANA_PROVING_GROUND_PYTHON:-$ROOT/.venv/bin/python}"
+if [ ! -x "$VENV" ]; then
+    VENV="$(command -v python3 || command -v python)"
+fi
 SPEC=$ROOT/scripts/fleet_v11.json
 LOG=/tmp/fleet/rotation.log
 STATE=/tmp/fleet/rotation.state

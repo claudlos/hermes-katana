@@ -18,8 +18,6 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from openai import AsyncOpenAI
-
 from .workspace import WorkspaceTools, ToolCall, TOOL_DEFINITIONS
 from .behavioral_tracker import BehavioralTracker, Phase
 from .honeypot import Honeypot, HoneypotConfig, HoneypotChannel
@@ -405,6 +403,14 @@ class SessionRunner:
         tools = WorkspaceTools(str(self.workspace_root))
 
         # Set up LLM client
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise RuntimeError(
+                "The Proving Ground OpenAI runner requires the optional `proving-ground` extra. "
+                "Install with `pip install 'hermes-katana[proving-ground]'`."
+            ) from exc
+
         client = AsyncOpenAI(base_url=config.base_url, api_key=config.api_key, timeout=60.0)
 
         # Start tracking

@@ -5,6 +5,12 @@ HermesKatana keeps code in GitHub and large model/dataset artifacts outside the 
 Optional ML artifacts can be downloaded from Hugging Face when you explicitly ask for them. Runtime code does not
 download models unless you opt in with `KATANA_ARTIFACT_AUTO_DOWNLOAD=1`.
 
+Install the lightweight ML runtime before downloading the default CPU artifact:
+
+```bash
+pip install "hermes-katana[fast-cpu]"
+```
+
 ## Registered model artifacts
 
 The default CPU deployment artifact is the distilled MiniLM ONNX Scabbard model. The optional large model is intended
@@ -15,8 +21,29 @@ for local high-accuracy experiments and is never selected by default.
 | `minilm`, `small` | `katana_v15_distill_minilm_onnx` | `claudlos/hermes-katana-v15-distill-minilm-onnx` | yes |
 | `large`, `v15_large` | `katana_v15_large` | `claudlos/hermes-katana-v15-large` | no |
 
-Each Hugging Face repo should include an `artifact_manifest.json` with sha256s, file sizes, source commit, training/eval
-summary, model role, and license notes.
+Each Hugging Face repo must include an `artifact_manifest.json`. Katana treats the manifest as part of the artifact and
+refuses to mark the artifact ready when required files are missing, hashes do not match, sizes do not match, or the
+manifest contains unsafe paths.
+
+Minimal manifest shape:
+
+```json
+{
+  "artifact": "katana_v15_distill_minilm_onnx",
+  "version": "3.0.0",
+  "source_commit": "<training-or-export-commit>",
+  "license": "MIT",
+  "files": {
+    "model.onnx": {
+      "sha256": "<64-hex-sha256>",
+      "size": 123456
+    }
+  }
+}
+```
+
+The `files` value may also be a list of objects with `path`, `sha256`, and optional `size` or `size_bytes`. Every
+required model/tokenizer file must be listed.
 
 ## Check status
 
@@ -61,8 +88,10 @@ Override the repo or revision:
 katana artifacts download \
   minilm \
   --repo-id claudlos/hermes-katana-v15-distill-minilm-onnx \
-  --revision main
+  --revision v3.0.0
 ```
+
+Use a release tag or commit SHA for reproducible deployments. `main` is acceptable only for development smoke tests.
 
 ## Offline/local deployment
 

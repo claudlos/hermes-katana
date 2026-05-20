@@ -711,13 +711,25 @@ class KatanaV11Classifier:
             self._model.eval()
         else:
             try:
-                from optimum.onnxruntime import ORTModelForSequenceClassification
+                import onnxruntime
             except ImportError as exc:
                 raise ImportError(
-                    "optimum[onnxruntime] is required for ONNX backends. "
-                    "Install with: pip install 'optimum[onnxruntime]>=1.19.0'"
+                    "onnxruntime is required for ONNX backends. Install with: pip install 'hermes-katana[fast-cpu]'"
                 ) from exc
-            self._model = ORTModelForSequenceClassification.from_pretrained(str(self.model_path))
+            onnx_path = self.model_path if self.model_path.suffix == ".onnx" else self.model_path / "model.onnx"
+            if not onnx_path.is_file():
+                candidates = sorted(self.model_path.glob("*.onnx")) if self.model_path.is_dir() else []
+                if candidates:
+                    onnx_path = candidates[0]
+                else:
+                    raise FileNotFoundError(f"ONNX model file not found under {self.model_path}")
+            sess_opts = onnxruntime.SessionOptions()
+            sess_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+            self._model = onnxruntime.InferenceSession(
+                str(onnx_path),
+                sess_options=sess_opts,
+                providers=["CPUExecutionProvider"],
+            )
         return self._model, self._tokenizer
 
     # ------------------------------------------------------------------
@@ -770,25 +782,31 @@ class KatanaV11Classifier:
 
         prefixed = [self._origin_prefix(origins[i]) + (texts[i] or "") for i in range(len(texts))]
 
-        torch = _torch()
         model, tokenizer = self._ensure_loaded()
-        enc = tokenizer(
-            prefixed,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.max_length,
-            padding=True,
-        )
         if self.backend == "torch":
+            torch = _torch()
+            enc = tokenizer(
+                prefixed,
+                return_tensors="pt",
+                truncation=True,
+                max_length=self.max_length,
+                padding=True,
+            )
             enc = {k: v.to(self._device) for k, v in enc.items()}
             with torch.no_grad():
                 logits = model(**enc).logits  # (N, num_labels)
             probs = torch.softmax(logits, dim=-1).cpu().numpy()
         else:
-            # ORT prefers numpy ndarray inputs; pt tensors work too but doing
-            # the conversion explicitly avoids an extra copy.
-            np_enc = {k: v.numpy() for k, v in enc.items()}
-            logits = model(**np_enc).logits  # numpy array
+            enc = tokenizer(
+                prefixed,
+                return_tensors="np",
+                truncation=True,
+                max_length=self.max_length,
+                padding=True,
+            )
+            input_names = {inp.name for inp in model.get_inputs()}
+            np_enc = {k: v for k, v in enc.items() if k in input_names}
+            logits = model.run(None, np_enc)[0]
             # numerically stable softmax
             shifted = logits - logits.max(axis=-1, keepdims=True)
             exp = _np().exp(shifted)

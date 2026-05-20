@@ -10,12 +10,20 @@ Get from zero to protected agent in under 5 minutes.
 pip install hermes-katana
 ```
 
-Or from source with the full ML runtime used by the current classifier:
+The base install is the smallest path and does not download model artifacts. To
+enable the default fast CPU ML profile:
+
+```bash
+pip install "hermes-katana[fast-cpu]"
+katana artifacts setup --yes
+```
+
+For source installs:
 
 ```bash
 git clone https://github.com/claudlos/hermes-katana.git
 cd hermes-katana
-pip install -e ".[ml,security]"
+pip install -e ".[dev,security,fast-cpu]"
 ```
 
 **Expected output:**

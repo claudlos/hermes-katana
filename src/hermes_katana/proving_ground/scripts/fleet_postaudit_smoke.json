@@ -3,7 +3,7 @@
   "_target": "1 shard × 1 channel × 4 agents × 8 attacks = 32 planned trials.",
   "_walltime_estimate": "~20-40 min depending on Codex + OpenRouter latency.",
   "_what_to_check_after": [
-    "0 cwd contamination hits (/home/carlos/src or /home/carlos/findings.md) in attack/baseline corpus",
+    "0 cwd contamination hits from operator-local source or findings paths in attack/baseline corpus",
     "0 duplicate planned_trial_id rows in quarantine output",
     "0 stale baseline poisoning indicators",
     "clean excluded/invalid/valid bucket split in quarantine output"

@@ -5,9 +5,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
-import hermes_katana.scanner.deberta_classifier as module
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
+
+import hermes_katana.scanner.deberta_classifier as module  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

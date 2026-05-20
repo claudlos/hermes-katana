@@ -1715,7 +1715,7 @@ AGENT_DRIVERS: dict[str, AgentDriver] = {
 
 
 # ----------------------------------------------------------------------------
-# Katana-defended twins (Thread 1 of HANDOFF_PHASE3)
+# Katana-defended twins
 # ----------------------------------------------------------------------------
 # Register `<agent>_katana` twins for each agent that sits in a required-cell
 # combo of H-20260423-scanner-in-harness-protects (claude × cli_coding_agent,

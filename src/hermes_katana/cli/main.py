@@ -1546,11 +1546,18 @@ def artifacts_status(
     statuses = [artifact_status(spec, target_dir) for spec in specs]
     for status in statuses:
         spec = status.spec
+        if status.present:
+            status_text = "[green]present[/green]"
+        else:
+            problems = []
+            if status.missing_files:
+                problems.append(f"missing {len(status.missing_files)} file(s)")
+            if status.errors:
+                problems.append(f"invalid {len(status.errors)} issue(s)")
+            status_text = f"[yellow]{', '.join(problems) or 'unavailable'}[/yellow]"
         table.add_row(
             spec.name,
-            "[green]present[/green]"
-            if status.present
-            else f"[yellow]missing {len(status.missing_files)} file(s)[/yellow]",
+            status_text,
             spec.size_label or "-",
             spec.role or "-",
             spec.repo_id,
@@ -1564,6 +1571,12 @@ def artifacts_status(
         console.print(f"Missing files for {status.spec.name}:")
         for missing in status.missing_files:
             console.print(f"  - {missing}")
+    for status in statuses:
+        if not status.errors:
+            continue
+        console.print(f"Artifact verification errors for {status.spec.name}:")
+        for error in status.errors:
+            console.print(f"  - {error}")
 
 
 @artifacts.command(name="path")

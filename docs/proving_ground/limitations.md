@@ -138,4 +138,5 @@ These come up in review and are worth disambiguating:
 
 ## Issue tracking
 
-The remaining work is itemized as steps 4-10 in [`HANDOFF-DEBERTA-COLAB-20260506.md`](HANDOFF-DEBERTA-COLAB-20260506.md) and the public-release plan. If you find a limitation not listed here, please open an issue or PR.
+If you find a limitation not listed here, open an issue or PR with the dataset,
+runner configuration, and metric definition needed to reproduce it.

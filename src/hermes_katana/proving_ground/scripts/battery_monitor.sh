@@ -16,7 +16,8 @@ shopt -s nullglob
 # Safe to run manually any time: `scripts/battery_monitor.sh`
 
 set -u
-ROOT="/home/carlos/Documents/Code/katana-proving-ground"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${KATANA_PROVING_GROUND_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
 cd "$ROOT" || exit 1
 
 LOG=/tmp/battery_monitor.log

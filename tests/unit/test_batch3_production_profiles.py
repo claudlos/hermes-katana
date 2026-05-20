@@ -2,14 +2,34 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
+from hermes_katana.artifacts import ARTIFACT_MANIFEST, MINILM_ONNX_REQUIRED_FILES, artifact_path, minilm_onnx_spec
 from hermes_katana import hermes_plugin
+from hermes_katana.artifacts import ArtifactNotFoundError
 from hermes_katana.middleware.chain import CallContext, DispatchDecision
 from hermes_katana.middleware.integration import KatanaScanMiddleware
 from hermes_katana.middleware.integration import create_default_chain
+
+
+def _write_minilm_artifact(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    for name in MINILM_ONNX_REQUIRED_FILES:
+        if name != ARTIFACT_MANIFEST:
+            (path / name).write_text("x")
+    manifest = {
+        "schema_version": 1,
+        "files": {
+            name: {"sha256": hashlib.sha256(b"x").hexdigest(), "size": 1}
+            for name in MINILM_ONNX_REQUIRED_FILES
+            if name != ARTIFACT_MANIFEST
+        },
+    }
+    (path / ARTIFACT_MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def _middleware_by_name(chain):
@@ -20,6 +40,7 @@ def test_fast_cpu_profile_uses_cpu_first_scabbard_without_redundant_ml_gates(mon
     monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
     monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
     monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+    _write_minilm_artifact(artifact_path(minilm_onnx_spec()))
 
     chain = create_default_chain({"profile": "fast_cpu"})
 
@@ -37,6 +58,15 @@ def test_fast_cpu_profile_uses_cpu_first_scabbard_without_redundant_ml_gates(mon
     assert "training/checkpoints" not in scabbard._config.katana_v11_path
     assert scabbard._config.protectai_enabled is False
     assert scabbard._config.model_version == "katana_v15_distill_minilm"
+
+
+def test_fast_cpu_profile_requires_verified_minilm_artifact(monkeypatch, tmp_path):
+    monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+    monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
+    monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+
+    with pytest.raises(ArtifactNotFoundError, match="Katana v15 MiniLM ONNX artifact is missing"):
+        create_default_chain({"profile": "fast_cpu"})
 
 
 def test_balanced_profile_keeps_scabbard_primary_and_disables_overlapping_ml_by_default():
@@ -64,7 +94,11 @@ def test_paranoid_profile_enables_overlapping_ml_gates_and_fails_closed_outputs(
     assert middleware["katana.scan"]._route_aware is False
 
 
-def test_profile_defaults_are_applied_before_explicit_overrides():
+def test_profile_defaults_are_applied_before_explicit_overrides(monkeypatch, tmp_path):
+    monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+    monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+    _write_minilm_artifact(artifact_path(minilm_onnx_spec()))
+
     chain = create_default_chain({"profile": "fast_cpu", "protectai.enabled": True, "scabbard.route_mode": "strict"})
 
     middleware = _middleware_by_name(chain)
@@ -92,7 +126,11 @@ def test_unknown_production_profile_fails_closed():
         create_default_chain({"profile": "turbo_unsafe"})
 
 
-def test_katana_status_includes_readiness_diagnostics_for_fast_cpu():
+def test_katana_status_includes_readiness_diagnostics_for_fast_cpu(monkeypatch, tmp_path):
+    monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+    monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+    _write_minilm_artifact(artifact_path(minilm_onnx_spec()))
+
     class Context:
         config = {"katana_profile": "fast_cpu", "audit_enabled": False}
 
@@ -163,7 +201,11 @@ def test_scan_middleware_reuses_scabbard_routes_without_recalculating(monkeypatc
     assert calls == ["Summarize this document."]
 
 
-def test_fast_cpu_latency_metadata_excludes_disabled_heavy_ml_gates():
+def test_fast_cpu_latency_metadata_excludes_disabled_heavy_ml_gates(monkeypatch, tmp_path):
+    monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+    monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+    _write_minilm_artifact(artifact_path(minilm_onnx_spec()))
+
     chain = create_default_chain({"profile": "fast_cpu"})
 
     ctx = chain.execute("read_file", {"path": "/tmp/example.txt", "limit": 10})

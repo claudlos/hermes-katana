@@ -18,7 +18,7 @@ If any of those isn't true, fix it before continuing.
 ## Step 1 — clone the project code
 
 ```bash
-cd ~/Documents/Code   # or wherever you want it
+cd /path/to/workspace
 # rsync from the main box, or:
 git clone <katana-proving-ground-remote> katana-proving-ground
 git clone <hermes-katana-remote>          hermes-katana
