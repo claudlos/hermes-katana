@@ -1,8 +1,8 @@
 # Katana Proving Ground
 
-Empirical attack-effectiveness testing for LLM agents and APIs. The proving ground samples candidate prompt-injection attacks, replays them against real models in seeded workspaces, and admits only those that produce measurable behavioral drift across multiple targets. The output corpus is what trains the [Katana](../hermes-katana) classifier.
+Empirical attack-effectiveness testing for LLM agents and APIs. The proving ground samples candidate prompt-injection attacks, replays them against real models in seeded workspaces, and admits only those that produce measurable behavioral drift across multiple targets. The output corpus informs the [Katana](../../README.md) classifier and scanner gates.
 
-> **Status:** active research code, public-release polish in progress. The 10-step plan tracking that polish lives in [`HANDOFF-DEBERTA-COLAB-20260506.md`](HANDOFF-DEBERTA-COLAB-20260506.md) and the consolidated findings in [`FINDINGS_CONSOLIDATED.md`](FINDINGS_CONSOLIDATED.md).
+> **Status:** active research code. It is optional, installed through the `proving-ground` extra, and not required for the base Katana runtime.
 
 ## What it does
 
@@ -75,7 +75,7 @@ Each channel injects attack text into a structurally distinct slot. The forced-r
 | `tool_output` | `triage_log` | the contents of `recent_output.log` |
 | `data_row` | `csv_summarize` | one row of `data/customers.csv` |
 
-Live data shows a clear hierarchy of vulnerability: **`code_comment` is +75% odds vs `file_content`; `tool_output` ~9× harder; `data_row` ~1000× harder.** See `FINDINGS_CONSOLIDATED.md` and `BATTERY_RESULTS.md` for the full breakdown.
+Live data has shown a clear hierarchy of vulnerability across channels. Treat `code_comment` and `file_content` as the first defense priorities, then verify any new channel claims with preregistered runs and confidence intervals.
 
 ## Confirmed empirical findings
 
@@ -88,13 +88,13 @@ These are conclusions backed by preregistered hypotheses with statistical power:
 
 ## What this is not
 
-- Not a benchmark — it produces benchmarks. The headline `confirmed_only_v1` benchmark lives at [`hermes-katana/evals/benchmarks/confirmed_only_v1/`](../hermes-katana/evals/benchmarks/confirmed_only_v1/).
-- Not a defense. The proving ground *measures* attack effectiveness; the [`hermes-katana`](../hermes-katana) scanner is the runtime defense it informs.
+- Not a benchmark — it produces benchmarks. The headline `confirmed_only_v1` benchmark lives at [`evals/benchmarks/confirmed_only_v1/`](../../evals/benchmarks/confirmed_only_v1/).
+- Not a defense. The proving ground *measures* attack effectiveness; the [Hermes Katana](../../README.md) scanner is the runtime defense it informs.
 - Not a CTF. Sandbox sessions test agent behavior under adversarial input; success/failure is a *signal* about the model+harness, not a winnable challenge.
 
 ## Reproducibility
 
-See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for seed handling, dependency lock, hardware requirements, and how to rebuild the v5.1 corpus from scratch.
+See [`reproducibility.md`](reproducibility.md) for seed handling, dependency notes, hardware requirements, and historical corpus rebuild notes.
 
 ## Configuration
 
@@ -119,12 +119,11 @@ Provider API keys are read from environment variables (never `config.yaml`); pin
 
 ## Further reading
 
-- [`FACTORY.md`](FACTORY.md) — methodology bible
-- [`FINDINGS_CONSOLIDATED.md`](FINDINGS_CONSOLIDATED.md) — current findings
-- [`BATTERY_PLAN.md`](BATTERY_PLAN.md) / [`BATTERY_RESULTS.md`](BATTERY_RESULTS.md) — fleet-run state
-- [`HANDOFF-DEBERTA-COLAB-20260506.md`](HANDOFF-DEBERTA-COLAB-20260506.md) — latest training pipeline handoff
-- [`MINI_AGENT_GUIDE.md`](MINI_AGENT_GUIDE.md) — the Mini agent driver wiring
+- [`factory.md`](factory.md) — methodology and promotion workflow
+- [`limitations.md`](limitations.md) — current known limits and interpretation risks
+- [`fleet_runbook.md`](fleet_runbook.md) — fleet-scale operations
+- [`mini-agent-guide.md`](mini-agent-guide.md) — parallel agent driver wiring
 
 ## License
 
-MIT — see `LICENSE`. The corpus this harness produces is dual-licensed; see the [hermes-katana data card](../hermes-katana/training/data_v5_1_public/README.md).
+MIT — see [`LICENSE`](../../LICENSE). Large corpora and trained model artifacts are not bundled in this repository; publish them with their own data cards and license notes.

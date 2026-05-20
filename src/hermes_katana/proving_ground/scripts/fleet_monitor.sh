@@ -16,12 +16,16 @@
 #  5. Append a one-line status (done/queued/rate/temp) to /tmp/fleet_monitor.log.
 #
 # Usage from cron (every 30 min):
-#   */30 * * * * /home/user/Documents/Code/katana-proving-ground/scripts/fleet_monitor.sh
+#   */30 * * * * KATANA_PROVING_GROUND_ROOT=/path/to/proving-ground /path/to/fleet_monitor.sh
 
 set -u
 
-ROOT=/home/user/Documents/Code/katana-proving-ground
-VENV=$ROOT/.venv/bin/python
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${KATANA_PROVING_GROUND_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
+VENV="${KATANA_PROVING_GROUND_PYTHON:-$ROOT/.venv/bin/python}"
+if [ ! -x "$VENV" ]; then
+    VENV="$(command -v python3 || command -v python)"
+fi
 PID_FILE=/tmp/fleet/fleet.pid
 SUP_LOG=/tmp/fleet/supervisor.log
 WD_LOG=/tmp/cpu_watchdog.log

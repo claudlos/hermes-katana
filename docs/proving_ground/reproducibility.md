@@ -25,7 +25,7 @@ T4 (16 GB) **does not fit** v3-large at the default `batch_size=4 grad_accum=4 m
 
 ## Dependency lock
 
-The exact training-time pin is in [`hermes-katana/training/requirements-training.lock`](../hermes-katana/training/requirements-training.lock). Key versions:
+The historical training-time environment used these key versions:
 
 ```
 torch==2.11.0
@@ -87,7 +87,7 @@ python training/train_katana.py --config training/configs/katana_v11.yaml --stri
 
 Add `--strict-determinism` for paper-quality reproducibility (~5–10% slower; cudnn deterministic; no nondeterministic algorithms allowed).
 
-The Colab cells in [`HANDOFF-DEBERTA-COLAB-20260506.md`](HANDOFF-DEBERTA-COLAB-20260506.md) are the same recipe with Drive-mount and tarball-extract scaffolding for users who don't have local A100/L4 access.
+For hosted notebook runs, use the same commands with mounted artifact and dataset directories. Keep generated checkpoints outside the Git repository and publish release artifacts through the artifact registry.
 
 Expected outputs:
 

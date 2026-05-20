@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
 from hermes_katana.artifacts import (
+    ARTIFACT_MANIFEST,
     MINILM_ONNX_REQUIRED_FILES,
     V15_LARGE_REQUIRED_FILES,
     ArtifactNotFoundError,
@@ -22,8 +25,15 @@ from hermes_katana.artifacts import (
 
 def _write_artifact(path: Path, files: tuple[str, ...] = MINILM_ONNX_REQUIRED_FILES) -> None:
     path.mkdir(parents=True, exist_ok=True)
+    payload_files = tuple(name for name in files if name != ARTIFACT_MANIFEST)
     for name in files:
-        (path / name).write_text("x")
+        if name != ARTIFACT_MANIFEST:
+            (path / name).write_text("x")
+    manifest = {
+        "schema_version": 1,
+        "files": {name: {"sha256": hashlib.sha256(b"x").hexdigest(), "size": 1} for name in payload_files},
+    }
+    (path / ARTIFACT_MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def test_artifact_status_reports_missing(tmp_path, monkeypatch):
@@ -41,6 +51,20 @@ def test_resolve_minilm_uses_explicit_local_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("KATANA_MINILM_ONNX_DIR", str(artifact_dir))
 
     assert resolve_minilm_onnx(download=False) == artifact_dir.resolve()
+
+
+def test_artifact_status_rejects_manifest_hash_mismatch(tmp_path, monkeypatch):
+    artifact_dir = tmp_path / "onnx"
+    _write_artifact(artifact_dir)
+    manifest = json.loads((artifact_dir / ARTIFACT_MANIFEST).read_text(encoding="utf-8"))
+    manifest["files"]["model.onnx"]["sha256"] = "0" * 64
+    (artifact_dir / ARTIFACT_MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setenv("KATANA_MINILM_ONNX_DIR", str(artifact_dir))
+
+    status = artifact_status(minilm_onnx_spec())
+
+    assert not status.present
+    assert "model.onnx: sha256 mismatch" in status.errors
 
 
 def test_registry_lists_small_and_large_models():

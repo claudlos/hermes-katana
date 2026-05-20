@@ -414,6 +414,9 @@ def detect_semantic(
             )
         )
 
+    if _BACKEND_STATUS["backend"] == "minilm_fallback":
+        return findings
+
     # Vector search
     q_emb = _encode_text(text)
     collection = _Lazy.collection

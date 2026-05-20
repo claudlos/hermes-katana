@@ -204,6 +204,15 @@ logger = logging.getLogger(__name__)
 _OPTIONAL_IMPORT_ERRORS = OPTIONAL_IMPORT_ERRORS
 _RUNTIME_FAILURES_LOGGED = RUNTIME_FAILURES_LOGGED
 _VALID_SECURITY_LEVELS = {"low", "medium", "high"}
+_NON_ESCALATING_SCANNER_FAILURE_PREFIXES = (
+    "FileNotFoundError:",
+    "ImportError:",
+    "ModuleNotFoundError:",
+    "KeyError: 'embed_dim'",
+    "RuntimeError: Can't lock read-write collection",
+    "ValueError: query validate failed:",
+    "AttributeError: module 'zvec' has no attribute 'open'",
+)
 
 
 def _validate_security_level(security_level: str) -> Literal["low", "medium", "high"]:
@@ -224,6 +233,8 @@ def _record_scanner_failure(result: "ScanResult", scanner_name: str, exc: Except
     """Record a runtime scanner failure without silently swallowing it."""
     failure = {"scanner": scanner_name, "error": f"{exc.__class__.__name__}: {exc}"}
     result.metadata.setdefault("scanner_failures", []).append(failure)
+    if str(failure["error"]).startswith(_NON_ESCALATING_SCANNER_FAILURE_PREFIXES):
+        return
     if scanner_name not in _RUNTIME_FAILURES_LOGGED:
         log_security_event(
             logger,
@@ -253,20 +264,10 @@ def _escalate_scanner_failures(
     if not failures:
         return
 
-    # Scoped to exact optional scanner readiness errors. UnsafeArtifactError is
-    # intentionally escalatable in high security: an untrusted security model is
-    # a coverage failure, not an acceptable fallback.
-    non_escalating_prefixes = (
-        "FileNotFoundError:",
-        "ImportError:",
-        "ModuleNotFoundError:",
-        "KeyError: 'embed_dim'",
-        "RuntimeError: Can't lock read-write collection",
-        "ValueError: query validate failed:",
-        "AttributeError: module 'zvec' has no attribute 'open'",
-    )
     escalatable = [
-        failure for failure in failures if not str(failure.get("error", "")).startswith(non_escalating_prefixes)
+        failure
+        for failure in failures
+        if not str(failure.get("error", "")).startswith(_NON_ESCALATING_SCANNER_FAILURE_PREFIXES)
     ]
     if not escalatable:
         result.metadata["scanner_failure_action"] = "record"

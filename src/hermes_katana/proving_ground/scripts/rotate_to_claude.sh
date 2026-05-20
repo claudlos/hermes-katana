@@ -4,8 +4,12 @@
 # back into the fleet spec and drop the auto-added minimax worker.
 
 set -u
-ROOT=/home/user/Documents/Code/katana-proving-ground
-VENV=$ROOT/.venv/bin/python
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${KATANA_PROVING_GROUND_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
+VENV="${KATANA_PROVING_GROUND_PYTHON:-$ROOT/.venv/bin/python}"
+if [ ! -x "$VENV" ]; then
+    VENV="$(command -v python3 || command -v python)"
+fi
 SPEC=$ROOT/scripts/fleet_v11.json
 LOG=/tmp/fleet/rotation.log
 STATE=/tmp/fleet/rotation.state

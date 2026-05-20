@@ -77,8 +77,11 @@ class SemanticZvecScanner(BaseScanner):
 
     def _find_model_path(self) -> str:
         """Auto-detect model path."""
+        configured = os.environ.get("KATANA_ZVEC_MODEL_DIR")
+        if configured and os.path.exists(os.path.expanduser(configured)):
+            return os.path.expanduser(configured)
         candidates = [
-            os.path.expanduser("~/Documents/Code/hermes-katana/katana_results/zvec_quantized"),
+            os.path.expanduser("~/.cache/hermes-katana/artifacts/zvec_quantized"),
             os.path.expanduser("~/katana_results/zvec_quantized"),
             "/content/drive/MyDrive/katana_results/zvec_quantized",
         ]

@@ -7,15 +7,21 @@ resolution explicit and offline-safe: nothing downloads unless the caller asks.
 from __future__ import annotations
 
 import os
+import hashlib
+import hmac
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
+from pathlib import PurePosixPath
+from typing import Any
 
 DEFAULT_ARTIFACT_MODEL = "minilm"
 DEFAULT_MINILM_ONNX_REPO = "claudlos/hermes-katana-v15-distill-minilm-onnx"
 DEFAULT_V15_LARGE_REPO = "claudlos/hermes-katana-v15-large"
-DEFAULT_REVISION = "main"
+DEFAULT_REVISION = "v3.0.0"
+ARTIFACT_MANIFEST = "artifact_manifest.json"
 
 MINILM_ONNX_REQUIRED_FILES = (
     "model.onnx",
@@ -25,9 +31,10 @@ MINILM_ONNX_REQUIRED_FILES = (
     "special_tokens_map.json",
     "added_tokens.json",
     "vocab.txt",
+    ARTIFACT_MANIFEST,
 )
 
-MINILM_ONNX_ALLOW_PATTERNS = (*MINILM_ONNX_REQUIRED_FILES, "README.md", "artifact_manifest.json")
+MINILM_ONNX_ALLOW_PATTERNS = (*MINILM_ONNX_REQUIRED_FILES, "README.md")
 
 V15_LARGE_REQUIRED_FILES = (
     "model.safetensors",
@@ -36,9 +43,10 @@ V15_LARGE_REQUIRED_FILES = (
     "tokenizer_config.json",
     "special_tokens_map.json",
     "added_tokens.json",
+    ARTIFACT_MANIFEST,
 )
 
-V15_LARGE_ALLOW_PATTERNS = (*V15_LARGE_REQUIRED_FILES, "README.md", "artifact_manifest.json")
+V15_LARGE_ALLOW_PATTERNS = (*V15_LARGE_REQUIRED_FILES, "README.md")
 
 
 class ArtifactError(RuntimeError):
@@ -84,6 +92,8 @@ class ArtifactStatus:
     present: bool
     missing_files: tuple[str, ...]
     source: str
+    errors: tuple[str, ...] = ()
+    verified_files: tuple[str, ...] = ()
 
 
 def _truthy(value: str | None) -> bool:
@@ -204,13 +214,118 @@ def artifact_status(
     spec = _coerce_spec(spec)
     path = artifact_path(spec, target_dir)
     missing = tuple(rel for rel in spec.required_files if not (path / rel).is_file())
+    errors, verified = _verify_artifact_manifest(path, spec)
     if spec.path_env_var and os.environ.get(spec.path_env_var):
         source = spec.path_env_var
     elif target_dir:
         source = "target-dir"
     else:
         source = "cache"
-    return ArtifactStatus(spec=spec, path=path, present=not missing, missing_files=missing, source=source)
+    return ArtifactStatus(
+        spec=spec,
+        path=path,
+        present=not missing and not errors,
+        missing_files=missing,
+        source=source,
+        errors=errors,
+        verified_files=verified,
+    )
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _safe_manifest_path(rel: str) -> bool:
+    if not rel or rel.startswith("/") or "\\" in rel:
+        return False
+    return ".." not in PurePosixPath(rel).parts
+
+
+def _manifest_file_entries(payload: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], tuple[str, ...]]:
+    raw_files = payload.get("files", payload.get("artifacts"))
+    errors: list[str] = []
+    entries: dict[str, dict[str, Any]] = {}
+    if isinstance(raw_files, dict):
+        for rel, meta in raw_files.items():
+            rel_str = str(rel)
+            if not _safe_manifest_path(rel_str):
+                errors.append(f"manifest contains unsafe path {rel_str!r}")
+                continue
+            entries[rel_str] = meta if isinstance(meta, dict) else {}
+    elif isinstance(raw_files, list):
+        for raw in raw_files:
+            if not isinstance(raw, dict):
+                errors.append("manifest files entries must be objects")
+                continue
+            rel = raw.get("path") or raw.get("file") or raw.get("name")
+            if not isinstance(rel, str) or not _safe_manifest_path(rel):
+                errors.append(f"manifest contains unsafe or missing path {rel!r}")
+                continue
+            entries[rel] = raw
+    else:
+        errors.append("artifact_manifest.json must contain a files mapping or list")
+    return entries, tuple(errors)
+
+
+def _verify_artifact_manifest(path: Path, spec: ArtifactSpec) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    manifest_path = path / ARTIFACT_MANIFEST
+    if not manifest_path.is_file():
+        return (), ()
+
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return (f"{ARTIFACT_MANIFEST}: failed to parse manifest: {exc}",), ()
+    if not isinstance(payload, dict):
+        return (f"{ARTIFACT_MANIFEST}: manifest root must be an object",), ()
+
+    errors: list[str] = []
+    artifact_name = payload.get("artifact") or payload.get("name")
+    if isinstance(artifact_name, str):
+        valid_names = {spec.name, *spec.aliases}
+        if artifact_name not in valid_names:
+            errors.append(f"{ARTIFACT_MANIFEST}: artifact name {artifact_name!r} does not match {spec.name!r}")
+
+    entries, entry_errors = _manifest_file_entries(payload)
+    errors.extend(entry_errors)
+    verified: list[str] = []
+
+    for rel in spec.required_files:
+        if rel == ARTIFACT_MANIFEST:
+            continue
+        file_path = path / rel
+        if not file_path.is_file():
+            continue
+        entry = entries.get(rel)
+        if not entry:
+            errors.append(f"{ARTIFACT_MANIFEST}: missing file entry for {rel}")
+            continue
+        expected_sha = entry.get("sha256")
+        if not isinstance(expected_sha, str) or not expected_sha.strip():
+            errors.append(f"{ARTIFACT_MANIFEST}: missing sha256 for {rel}")
+            continue
+        actual_sha = _file_sha256(file_path)
+        if not hmac.compare_digest(actual_sha.lower(), expected_sha.strip().lower()):
+            errors.append(f"{rel}: sha256 mismatch")
+            continue
+        expected_size = entry.get("size", entry.get("size_bytes"))
+        if expected_size is not None:
+            try:
+                expected_size_int = int(expected_size)
+            except (TypeError, ValueError):
+                errors.append(f"{ARTIFACT_MANIFEST}: invalid size for {rel}")
+                continue
+            if file_path.stat().st_size != expected_size_int:
+                errors.append(f"{rel}: size mismatch")
+                continue
+        verified.append(rel)
+
+    return tuple(errors), tuple(verified)
 
 
 def _coerce_spec(spec: ArtifactSpec | str | None) -> ArtifactSpec:
@@ -244,7 +359,8 @@ def _download_with_hf_cli(spec: ArtifactSpec, target: Path) -> Path:
     hf = shutil.which("hf")
     if not hf:
         raise ArtifactDownloadError(
-            "Install `huggingface_hub` (`pip install hermes-katana[hf]`) or the modern `hf` CLI."
+            "Install `huggingface_hub` (`pip install hermes-katana[fast-cpu]` or `pip install hermes-katana[hf]`) "
+            "or the modern `hf` CLI."
         )
 
     cmd = [
@@ -289,7 +405,12 @@ def download_artifact(
 
     status = artifact_status(spec, target)
     if not status.present:
-        raise ArtifactDownloadError(f"Downloaded artifact is incomplete; missing: {', '.join(status.missing_files)}")
+        details = []
+        if status.missing_files:
+            details.append(f"missing: {', '.join(status.missing_files)}")
+        if status.errors:
+            details.append(f"errors: {'; '.join(status.errors)}")
+        raise ArtifactDownloadError(f"Downloaded artifact is incomplete or unverified; {'; '.join(details)}")
     return status
 
 
