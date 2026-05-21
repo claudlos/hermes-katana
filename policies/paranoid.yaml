@@ -251,14 +251,14 @@ policies:
     enabled: true
     tags: [catchall]
 
-  # Rule 14: Allow clean calls to non-sensitive tools
+  # Rule 14: Deny clean calls to unknown tools in paranoid mode
   - name: paranoid_catchall_clean
     description: >
-      Allow completely clean (untainted) calls to any tool.
-      This is the lowest-priority fallback for benign operations.
+      Deny completely clean calls to unknown tools.
+      This is the lowest-priority fallback for fail-closed operation.
     tool_pattern: "*"
     conditions: []
-    action: allow
+    action: deny
     priority: 1
     enabled: true
     tags: [catchall]

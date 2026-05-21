@@ -799,7 +799,7 @@ def scan(ctx: click.Context, text: str) -> None:
     """Scan input text for injections, secrets, and dangerous content."""
     from hermes_katana.scanner import scan_input, ScanVerdict
 
-    result = scan_input(text)
+    result = scan_input(text, check_commands=True)
     _display_scan_result(console, result, f"Input: {text[:60]}{'...' if len(text) > 60 else ''}")
 
     if result.verdict == ScanVerdict.BLOCK:
@@ -1152,10 +1152,10 @@ def audit_verify() -> None:
 @audit.command("clear")
 @click.confirmation_option(prompt="Are you sure you want to clear the audit trail?")
 def audit_clear() -> None:
-    """Clear the audit trail."""
+    """Record an audit clear marker."""
     try:
         _open_audit_trail().clear()
-        console.print("\n   [green]Audit trail cleared.[/green]\n")
+        console.print("\n   [green]Audit clear marker recorded. History preserved.[/green]\n")
     except ImportError:
         console.print("\n   [yellow]Audit module not available.[/yellow]\n")
     except Exception as exc:

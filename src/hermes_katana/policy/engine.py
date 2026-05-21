@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
 
-from hermes_katana.taint import Source, TaintedStr
+from hermes_katana.taint import Source, TaintedBytes, TaintedStr, TaintedValue
 
 from .defaults import BUILTIN_POLICY_SETS
 from .models import (
@@ -426,7 +426,7 @@ class PolicyEngine:
     policy whose *all* conditions are satisfied determines the result.
 
     If no policy matches, the engine returns a configurable default action
-    (``ALLOW`` when constructed directly; ``ESCALATE`` when loaded from a file
+    (``DENY`` when constructed directly; ``ESCALATE`` when loaded from a file
     or directory — explicit catch-all policies in the loaded policy set are
     always preferred over relying on this fallback).
 
@@ -453,7 +453,7 @@ class PolicyEngine:
         self,
         policies: Sequence[Policy] | None = None,
         *,
-        default_action: PolicyResult = PolicyResult.ALLOW,
+        default_action: PolicyResult = PolicyResult.DENY,
     ):
         """
         Args:
@@ -574,6 +574,11 @@ class PolicyEngine:
         This function canonicalizes:
           * ``TaintedStr``    -> ("tainted_str", content, sorted_label_ids,
                                   sorted_source_fingerprints)
+          * ``TaintedBytes``  -> ("tainted_bytes", bytes, sorted_label_ids,
+                                  sorted_source_fingerprints)
+          * ``TaintedValue``  -> ("tainted_value", wrapped value fingerprint,
+                                  sorted_label_ids, sorted_source_fingerprints,
+                                  sorted_reader_fingerprints)
           * ``Source``         -> ("source", label, origin, trust_level)
                                   (timestamp INTENTIONALLY omitted; including
                                    it would make cache misses the norm and
@@ -596,6 +601,38 @@ class PolicyEngine:
                 )
             )
             return ("tainted_str", str.__str__(obj), label_names, source_fps)
+        if isinstance(obj, TaintedBytes):
+            label_names = tuple(sorted(getattr(lab, "name", repr(lab)) for lab in obj.labels))
+            source_fps = tuple(
+                sorted(
+                    (repr(PolicyEngine._canonical_taint_fingerprint(s)) for s in (getattr(obj, "sources", None) or ()))
+                )
+            )
+            reader_fps = tuple(
+                sorted(
+                    (repr(PolicyEngine._canonical_taint_fingerprint(r)) for r in (getattr(obj, "readers", None) or ()))
+                )
+            )
+            return ("tainted_bytes", bytes(obj), label_names, source_fps, reader_fps)
+        if isinstance(obj, TaintedValue):
+            label_names = tuple(sorted(getattr(lab, "name", repr(lab)) for lab in obj.labels))
+            source_fps = tuple(
+                sorted(
+                    (repr(PolicyEngine._canonical_taint_fingerprint(s)) for s in (getattr(obj, "sources", None) or ()))
+                )
+            )
+            reader_fps = tuple(
+                sorted(
+                    (repr(PolicyEngine._canonical_taint_fingerprint(r)) for r in (getattr(obj, "readers", None) or ()))
+                )
+            )
+            return (
+                "tainted_value",
+                PolicyEngine._canonical_taint_fingerprint(obj.value),
+                label_names,
+                source_fps,
+                reader_fps,
+            )
         if isinstance(obj, Source):
             return (
                 "source",

@@ -555,6 +555,7 @@ def scan_input(
     check_content_harm: bool = True,
     check_prompt_leak: bool = True,
     check_structural: bool = False,
+    check_commands: bool = False,
     security_level: Literal["low", "medium", "high"] = "high",
 ) -> ScanResult:
     """Scan user input for attacks.
@@ -570,6 +571,7 @@ def scan_input(
         check_secrets: Whether to check for secrets (default: True).
         check_unicode: Whether to check for Unicode attacks (default: True).
         check_content: Whether to check for content attacks (default: False).
+        check_commands: Whether to also run dangerous-command checks.
 
     Returns:
         ScanResult with findings and verdict.
@@ -635,6 +637,13 @@ def scan_input(
             sev_map = {"critical": 0.95, "high": 0.8, "medium": 0.5, "low": 0.3}
             max_sev = max(sev_map.get(f.severity.value, 0.3) for f in result.secret_findings)
             risk_scores.append(max_sev)
+
+    # Optional command detection for CLI/manual scans where users often paste
+    # shell snippets into the generic scanner.
+    if check_commands:
+        result.command_findings = detect_dangerous_command(scan_text)
+        if result.command_findings:
+            risk_scores.append(command_risk_score(scan_text))
 
     # Content detection (optional for input)
     if check_content:

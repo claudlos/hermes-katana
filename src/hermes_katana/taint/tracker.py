@@ -30,6 +30,8 @@ from hermes_katana.taint.value import (
     TaintedList,
     TaintedStr,
     TaintedValue,
+    _merge_readers_from,
+    _merge_sources_from,
 )
 
 logger = logging.getLogger(__name__)
@@ -223,7 +225,7 @@ class TaintTracker:
             The tainted wrapper (or a specialised subclass for str/list/dict).
         """
         sources = frozenset({source})
-        rdr = readers or frozenset()
+        rdr = frozenset(readers or ())
         tv = self._wrap_value(value, sources, rdr)
 
         with self._mutex:
@@ -246,8 +248,8 @@ class TaintTracker:
         readers: Optional[frozenset[Reader]] = None,
     ) -> TaintedStr | TaintedValue[T]:
         """Register a value with multiple sources at once."""
-        rdr = readers or frozenset()
-        tv = self._wrap_value(value, sources, rdr)
+        rdr = frozenset(readers or ())
+        tv = self._wrap_value(value, frozenset(sources or ()), rdr)
 
         with self._mutex:
             self._registry[id(tv)] = tv
@@ -281,19 +283,15 @@ class TaintTracker:
         TaintedValue[T]
             A new tainted wrapper with merged metadata.
         """
-        all_sources: set[Source] = set()
-        all_readers: set[Reader] = set()
         deps: list[TrackedValue] = []
 
         for inp in inputs:
-            all_sources.update(inp.sources)
-            all_readers.update(inp.readers)
             deps.append(inp)
 
         tv = self._wrap_value(
             result,
-            frozenset(all_sources),
-            frozenset(all_readers),
+            _merge_sources_from(*inputs),
+            _merge_readers_from(*inputs),
             dependencies=tuple(deps),
         )
 

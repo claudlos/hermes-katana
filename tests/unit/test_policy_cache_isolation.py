@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 
 from hermes_katana.policy.engine import PolicyEngine
-from hermes_katana.taint import Source, TaintedStr
+from hermes_katana.taint import Source, TaintedStr, TaintedValue
 
 
 class TestCacheKeyTaintAwareness:
@@ -274,6 +274,18 @@ class TestEvaluateEndToEndCacheIsolation:
             f"leaking into the fingerprint, defeating caching. "
             f"Baseline was {baseline}."
         )
+
+    def test_tainted_value_fingerprint_does_not_use_truncated_repr(self):
+        safe = TaintedValue("A" * 100, sources=frozenset({Source.web("https://safe.example")}))
+        attack = TaintedValue(
+            "A" * 57 + "; rm -rf /",
+            sources=frozenset({Source.web("https://evil.example")}),
+        )
+
+        k_safe = PolicyEngine._make_cache_key("terminal", {"command": safe}, {})
+        k_attack = PolicyEngine._make_cache_key("terminal", {"command": attack}, {})
+
+        assert k_safe != k_attack
 
 
 if __name__ == "__main__":

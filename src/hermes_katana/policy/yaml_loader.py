@@ -71,6 +71,7 @@ _VALID_OPERATORS = {
     "matches_pattern",
     "argument_matches",
     "taint_level_gte",
+    "taint_level_lte",
     "has_label",
 }
 _REQUIRED_POLICY_FIELDS = {"name", "tool_pattern"}

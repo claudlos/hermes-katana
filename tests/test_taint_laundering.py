@@ -7,8 +7,9 @@ import logging
 
 import pytest
 
-from hermes_katana.taint.labels import Source, TaintLabel, TrustLevel
+from hermes_katana.taint.labels import Reader, Source, TaintLabel, TrustLevel
 from hermes_katana.taint.value import (
+    CharTaint,
     TaintedBytes,
     TaintedDict,
     TaintedList,
@@ -169,6 +170,93 @@ class TestEncode:
         assert isinstance(result, TaintedBytes)
         assert bytes(result) == b"caf\xe9"
         assert _has_label(result.sources)
+
+
+class TestAuditReportedLaunderingVectors:
+    def test_common_str_methods_preserve_taint(self):
+        t = TaintedStr("PAYLOAD\nNEXT", sources=_src())
+        operations = [
+            lambda: t.casefold(),
+            lambda: t.title(),
+            lambda: t.capitalize(),
+            lambda: t.swapcase(),
+            lambda: t.expandtabs(),
+            lambda: t.ljust(20),
+            lambda: t.rjust(20),
+            lambda: t.center(20),
+            lambda: t.zfill(20),
+            lambda: t.lstrip(),
+            lambda: t.rstrip(),
+            lambda: t.translate(str.maketrans({"P": "p"})),
+            lambda: t.removeprefix("PAY"),
+            lambda: t.removesuffix("NEXT"),
+            lambda: t * 2,
+            lambda: 2 * t,
+        ]
+
+        for op in operations:
+            result = op()
+            assert isinstance(result, TaintedStr)
+            assert _has_label(result.sources)
+
+        for result in [t.splitlines(), t.rsplit("A"), t.partition("A"), t.rpartition("A")]:
+            assert all(isinstance(part, TaintedStr) for part in result)
+
+    def test_common_bytes_methods_preserve_taint(self):
+        b = TaintedBytes(b"abc", sources=_src())
+        operations = [
+            lambda: b * 2,
+            lambda: 2 * b,
+            lambda: b.replace(b"a", b"z"),
+            lambda: b.center(6),
+            lambda: b.ljust(6),
+            lambda: b.rjust(6),
+            lambda: b.zfill(6),
+            lambda: b.translate(bytes.maketrans(b"a", b"z")),
+            lambda: b.upper(),
+            lambda: b.lower(),
+            lambda: b.removeprefix(b"a"),
+            lambda: b.removesuffix(b"c"),
+        ]
+
+        for op in operations:
+            result = op()
+            assert isinstance(result, TaintedBytes)
+            assert _has_label(result.sources)
+
+        assert all(isinstance(part, TaintedBytes) and _has_label(part.sources) for part in b.split(b"b"))
+        assert isinstance(b.hex(), TaintedStr)
+        assert _has_label(b.hex().sources)
+
+    def test_sources_are_defensively_copied(self):
+        srcs = set(_src())
+        t = TaintedStr("hi", sources=srcs)
+        srcs.add(Source.mcp("later"))
+        assert len(t.sources) == 1
+
+        bsrcs = set(_src())
+        b = TaintedBytes(b"hi", sources=bsrcs)
+        bsrcs.add(Source.mcp("later"))
+        assert len(b.sources) == 1
+
+    def test_partial_char_taint_survives_rebuild_methods(self):
+        src = next(iter(_src()))
+        char_taint = CharTaint(_map={1: frozenset({src})}, _default=frozenset())
+        t = TaintedStr("ab", sources=frozenset(), char_taint=char_taint)
+
+        for result in [t.replace("a", "A"), TaintedStr("{}").format(t), TaintedStr(",").join([t])]:
+            assert isinstance(result, TaintedStr)
+            assert src in result.char_taint.all_sources()
+
+    def test_reader_merge_intersects_restrictions(self):
+        r_terminal = Reader("terminal", frozenset({TaintLabel.USER}))
+        r_display = Reader("display", frozenset({TaintLabel.WEB_CONTENT}))
+        left = TaintedStr("a", sources=frozenset({Source.user()}), readers=frozenset({r_terminal}))
+        right = TaintedStr("b", sources=frozenset({Source.web("example")}), readers=frozenset({r_display}))
+
+        merged = left + right
+        assert merged.readers
+        assert {r.identity for r in merged.readers} == {"__katana_no_readers__"}
 
 
 # ---------------------------------------------------------------------------

@@ -82,6 +82,11 @@ class TaintedValue(Generic[T]):
     dependencies: tuple[TaintedValue[Any] | TaintedStr, ...] = field(default_factory=tuple)
     created_at: float = field(default_factory=time.time)
 
+    def __post_init__(self) -> None:
+        self.sources = _freeze_sources(self.sources)
+        self.readers = _freeze_readers(self.readers)
+        self.dependencies = tuple(self.dependencies or ())
+
     # -- Introspection --------------------------------------------------------
 
     @property
@@ -115,17 +120,13 @@ class TaintedValue(Generic[T]):
         The new value records ``self`` and *extra_deps* as dependencies so
         the provenance chain remains intact.
         """
-        all_sources = set(self.sources)
-        all_readers = set(self.readers)
         deps: list[TaintedValue[Any] | TaintedStr] = [self]
         for dep in extra_deps:
-            all_sources.update(dep.sources)
-            all_readers.update(dep.readers)
             deps.append(dep)
         return TaintedValue(
             value=new_value,
-            sources=frozenset(all_sources),
-            readers=frozenset(all_readers),
+            sources=_merge_sources_from(self, *extra_deps),
+            readers=_merge_readers_from(self, *extra_deps),
             dependencies=tuple(deps),
         )
 
@@ -134,17 +135,13 @@ class TaintedValue(Generic[T]):
 
         The underlying *value* is unchanged — only metadata is merged.
         """
-        all_sources = set(self.sources)
-        all_readers = set(self.readers)
         deps: list[TaintedValue[Any] | TaintedStr] = list(self.dependencies)
         for other in others:
-            all_sources.update(other.sources)
-            all_readers.update(other.readers)
             deps.append(other)
         return TaintedValue(
             value=self.value,
-            sources=frozenset(all_sources),
-            readers=frozenset(all_readers),
+            sources=_merge_sources_from(self, *others),
+            readers=_merge_readers_from(self, *others),
             dependencies=tuple(deps),
             created_at=self.created_at,
         )
@@ -271,6 +268,72 @@ def _raw(s: object) -> str:
     return str(s)
 
 
+_NO_READERS = frozenset({Reader("__katana_no_readers__", frozenset())})
+
+
+def _freeze_sources(sources: Iterable[Source] | None) -> frozenset[Source]:
+    """Copy source metadata into an immutable set."""
+    return frozenset(sources or ())
+
+
+def _freeze_readers(readers: Iterable[Reader] | None) -> frozenset[Reader]:
+    """Copy reader metadata into an immutable set."""
+    return frozenset(readers or ())
+
+
+def _reader_intersection(left: frozenset[Reader], right: frozenset[Reader]) -> frozenset[Reader]:
+    """Merge reader restrictions using CaMeL-style intersection semantics.
+
+    Empty reader sets represent public/unrestricted input values. When both
+    sides are restricted and disjoint, keep a private sentinel instead of
+    returning an empty set, because an empty set already means public.
+    """
+    if not left:
+        return right
+    if not right:
+        return left
+    merged = left & right
+    return merged if merged else _NO_READERS
+
+
+def _merge_reader_sets(*sets_: frozenset[Reader]) -> frozenset[Reader]:
+    merged: frozenset[Reader] = frozenset()
+    for readers in sets_:
+        merged = _reader_intersection(merged, readers)
+    return merged
+
+
+def _is_tainted_value(value: Any) -> bool:
+    return isinstance(value, (TaintedStr, TaintedBytes, TaintedValue))
+
+
+def _effective_sources(value: Any) -> frozenset[Source]:
+    """Return all source metadata carried by a tainted value."""
+    sources = set(getattr(value, "sources", frozenset()) or ())
+    if isinstance(value, TaintedStr):
+        sources.update(value.char_taint.all_sources())
+    return frozenset(sources)
+
+
+def _merge_sources_from(*values: Any) -> frozenset[Source]:
+    result: set[Source] = set()
+    for value in values:
+        if _is_tainted_value(value):
+            result.update(_effective_sources(value))
+    return frozenset(result)
+
+
+def _merge_readers_from(*values: Any) -> frozenset[Reader]:
+    reader_sets = [
+        _freeze_readers(getattr(value, "readers", frozenset())) for value in values if _is_tainted_value(value)
+    ]
+    return _merge_reader_sets(*reader_sets)
+
+
+def _uniform_char_taint(length: int, *values: Any) -> CharTaint:
+    return CharTaint.uniform(length, _merge_sources_from(*values))
+
+
 class TaintedStr(str):
     """A tainted string with optional per-character source tracking.
 
@@ -329,6 +392,10 @@ class TaintedStr(str):
         # taint metadata in place. Guard against that: only overwrite
         # attributes when the caller actually passed non-default values OR
         # when attributes haven't been set yet.
+        sources = _freeze_sources(sources)
+        readers = _freeze_readers(readers)
+        dependencies = tuple(dependencies or ())
+
         already_initialized = hasattr(self, "sources")
         if not already_initialized or sources:
             self.sources = sources
@@ -377,35 +444,26 @@ class TaintedStr(str):
 
     def derive(self, new_value: Any, *extra_deps: Any) -> TaintedValue[Any]:
         """Create a new tainted value that inherits this string's metadata."""
-        all_sources = set(self.sources)
-        all_readers = set(self.readers)
         deps: list = [self]
         for dep in extra_deps:
-            if isinstance(dep, (TaintedStr, TaintedValue)):
-                all_sources.update(dep.sources)
-                all_readers.update(dep.readers)
             deps.append(dep)
         return TaintedValue(
             value=new_value,
-            sources=frozenset(all_sources),
-            readers=frozenset(all_readers),
+            sources=_merge_sources_from(self, *extra_deps),
+            readers=_merge_readers_from(self, *extra_deps),
             dependencies=tuple(deps),
         )
 
     def merge_metadata(self, *others: Any) -> TaintedStr:
         """Return a copy of ``self`` whose metadata is the union of all inputs."""
-        all_sources = set(self.sources)
-        all_readers = set(self.readers)
         deps: list = list(self.dependencies)
         for other in others:
             if isinstance(other, (TaintedStr, TaintedValue)):
-                all_sources.update(other.sources)
-                all_readers.update(other.readers)
                 deps.append(other)
         return TaintedStr(
             value=str.__str__(self),
-            sources=frozenset(all_sources),
-            readers=frozenset(all_readers),
+            sources=_merge_sources_from(self, *others),
+            readers=_merge_readers_from(self, *others),
             dependencies=tuple(deps),
             created_at=self.created_at,
             char_taint=self.char_taint,
@@ -433,10 +491,10 @@ class TaintedStr(str):
         raw = str.__format__(self, format_spec)
         return TaintedStr(
             value=raw,
-            sources=self.sources,
+            sources=_effective_sources(self),
             readers=self.readers,
             dependencies=(self,),
-            char_taint=CharTaint.uniform(len(raw), self.sources),
+            char_taint=CharTaint.uniform(len(raw), _effective_sources(self)),
         )
 
     def __bool__(self) -> bool:
@@ -470,10 +528,10 @@ class TaintedStr(str):
             raw = str.__mod__(fmt, str.__str__(self))
             return TaintedStr(
                 value=raw,
-                sources=self.sources,
+                sources=_effective_sources(self),
                 readers=self.readers,
                 dependencies=(self,),
-                char_taint=CharTaint.uniform(len(raw), self.sources),
+                char_taint=CharTaint.uniform(len(raw), _effective_sources(self)),
             )
         return NotImplemented
 
@@ -504,36 +562,25 @@ class TaintedStr(str):
         else:
             unwrapped = args
         raw = str.__mod__(str.__str__(self), unwrapped)
-        all_sources = set(self.sources)
-        if isinstance(args, tuple):
-            for a in args:
-                if isinstance(a, (TaintedStr, TaintedValue)):
-                    all_sources.update(a.sources)
-        elif isinstance(args, (TaintedStr, TaintedValue)):
-            all_sources.update(args.sources)
+        tainted_args = (
+            [a for a in args if isinstance(a, (TaintedStr, TaintedValue))] if isinstance(args, tuple) else [args]
+        )
+        all_sources = _merge_sources_from(self, *tainted_args)
         return TaintedStr(
             value=raw,
-            sources=frozenset(all_sources),
-            readers=self.readers,
+            sources=all_sources,
+            readers=_merge_readers_from(self, *tainted_args),
             dependencies=(self,),
-            char_taint=CharTaint.uniform(len(raw), frozenset(all_sources)),
+            char_taint=CharTaint.uniform(len(raw), all_sources),
         )
 
     # -- Merge helpers ------------------------------------------------------
 
     def _merge_sources(self, *others: Any) -> frozenset[Source]:
-        result = set(self.sources)
-        for o in others:
-            if isinstance(o, (TaintedStr, TaintedValue)):
-                result.update(o.sources)
-        return frozenset(result)
+        return _merge_sources_from(self, *others)
 
     def _merge_readers(self, *others: Any) -> frozenset[Reader]:
-        result = set(self.readers)
-        for o in others:
-            if isinstance(o, (TaintedStr, TaintedValue)):
-                result.update(o.readers)
-        return frozenset(result)
+        return _merge_readers_from(self, *others)
 
     def _merge_deps(self, *others: Any) -> tuple:
         deps: list = [self]
@@ -541,6 +588,18 @@ class TaintedStr(str):
             if isinstance(o, (TaintedStr, TaintedValue)):
                 deps.append(o)
         return tuple(deps)
+
+    def _wrap_transformed(self, raw: str, *, char_taint: CharTaint | None = None) -> TaintedStr:
+        sources = _effective_sources(self)
+        if char_taint is None:
+            char_taint = self.char_taint if len(raw) == len(self) else CharTaint.uniform(len(raw), sources)
+        return TaintedStr(
+            value=raw,
+            sources=sources,
+            readers=self.readers,
+            dependencies=(self,),
+            char_taint=char_taint,
+        )
 
     # -- String operations that propagate taint -----------------------------
 
@@ -563,7 +622,7 @@ class TaintedStr(str):
         new_ct = self.char_taint.concat(plain_ct, len(self_raw))
         return TaintedStr(
             value=new_val,
-            sources=self.sources,
+            sources=_effective_sources(self),
             readers=self.readers,
             dependencies=(self,),
             char_taint=new_ct,
@@ -577,7 +636,7 @@ class TaintedStr(str):
             new_ct = plain_ct.concat(self.char_taint, len(other))
             return TaintedStr(
                 value=other + self_raw,
-                sources=self.sources,
+                sources=_effective_sources(self),
                 readers=self.readers,
                 dependencies=(self,),
                 char_taint=new_ct,
@@ -626,23 +685,26 @@ class TaintedStr(str):
 
     def upper(self) -> TaintedStr:
         """Return uppercased copy with taint propagation."""
-        return TaintedStr(
-            value=str.upper(self),
-            sources=self.sources,
-            readers=self.readers,
-            dependencies=(self,),
-            char_taint=self.char_taint,
-        )
+        return self._wrap_transformed(str.upper(str.__str__(self)))
 
     def lower(self) -> TaintedStr:
         """Return lowercased copy with taint propagation."""
-        return TaintedStr(
-            value=str.lower(self),
-            sources=self.sources,
-            readers=self.readers,
-            dependencies=(self,),
-            char_taint=self.char_taint,
-        )
+        return self._wrap_transformed(str.lower(str.__str__(self)))
+
+    def casefold(self) -> TaintedStr:
+        return self._wrap_transformed(str.casefold(str.__str__(self)))
+
+    def title(self) -> TaintedStr:
+        return self._wrap_transformed(str.title(str.__str__(self)))
+
+    def capitalize(self) -> TaintedStr:
+        return self._wrap_transformed(str.capitalize(str.__str__(self)))
+
+    def swapcase(self) -> TaintedStr:
+        return self._wrap_transformed(str.swapcase(str.__str__(self)))
+
+    def expandtabs(self, tabsize: SupportsIndex = 8) -> TaintedStr:  # type: ignore[override]
+        return self._wrap_transformed(str.expandtabs(str.__str__(self), int(tabsize)))
 
     def strip(self, chars: Optional[str] = None) -> TaintedStr:
         """Return stripped copy with taint propagation."""
@@ -655,6 +717,31 @@ class TaintedStr(str):
         return TaintedStr(
             value=raw,
             sources=new_ct.all_sources() if raw else self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+            char_taint=new_ct,
+        )
+
+    def lstrip(self, chars: Optional[str] = None) -> TaintedStr:
+        self_raw = str.__str__(self)
+        raw = self_raw.lstrip(chars)
+        start = len(self_raw) - len(raw)
+        new_ct = self.char_taint.slice(start, len(self_raw))
+        return TaintedStr(
+            value=raw,
+            sources=new_ct.all_sources() if raw else _effective_sources(self),
+            readers=self.readers,
+            dependencies=(self,),
+            char_taint=new_ct,
+        )
+
+    def rstrip(self, chars: Optional[str] = None) -> TaintedStr:
+        self_raw = str.__str__(self)
+        raw = self_raw.rstrip(chars)
+        new_ct = self.char_taint.slice(0, len(raw))
+        return TaintedStr(
+            value=raw,
+            sources=new_ct.all_sources() if raw else _effective_sources(self),
             readers=self.readers,
             dependencies=(self,),
             char_taint=new_ct,
@@ -686,89 +773,175 @@ class TaintedStr(str):
             cursor = stop + (len(sep) if sep else 0)
         return result
 
+    def rsplit(self, sep: Optional[str] = None, maxsplit: SupportsIndex = -1) -> list[TaintedStr]:  # type: ignore[override]
+        raw_parts = str.__str__(self).rsplit(sep, int(maxsplit))
+        sources = _effective_sources(self)
+        return [
+            TaintedStr(
+                value=part,
+                sources=sources,
+                readers=self.readers,
+                dependencies=(self,),
+                char_taint=CharTaint.uniform(len(part), sources),
+            )
+            for part in raw_parts
+        ]
+
+    def splitlines(self, keepends: bool = False) -> list[TaintedStr]:  # type: ignore[override]
+        raw_parts = str.__str__(self).splitlines(keepends)
+        sources = _effective_sources(self)
+        return [
+            TaintedStr(
+                value=part,
+                sources=sources,
+                readers=self.readers,
+                dependencies=(self,),
+                char_taint=CharTaint.uniform(len(part), sources),
+            )
+            for part in raw_parts
+        ]
+
+    def partition(self, sep: str) -> tuple[TaintedStr, TaintedStr, TaintedStr]:  # type: ignore[override]
+        self_raw = str.__str__(self)
+        idx = self_raw.find(sep)
+        if idx < 0:
+            return (
+                self[:],
+                TaintedStr("", sources=frozenset(), readers=self.readers),
+                TaintedStr("", sources=frozenset(), readers=self.readers),
+            )
+        return (self[:idx], self[idx : idx + len(sep)], self[idx + len(sep) :])
+
+    def rpartition(self, sep: str) -> tuple[TaintedStr, TaintedStr, TaintedStr]:  # type: ignore[override]
+        self_raw = str.__str__(self)
+        idx = self_raw.rfind(sep)
+        if idx < 0:
+            return (
+                TaintedStr("", sources=frozenset(), readers=self.readers),
+                TaintedStr("", sources=frozenset(), readers=self.readers),
+                self[:],
+            )
+        return (self[:idx], self[idx : idx + len(sep)], self[idx + len(sep) :])
+
     def replace(self, old: str, new: str, count: SupportsIndex = -1) -> TaintedStr:  # type: ignore[override]
         """Replace with taint propagation."""
         self_raw = str.__str__(self)
         raw = self_raw.replace(old, new, int(count))
+        sources = _effective_sources(self)
         return TaintedStr(
             value=raw,
-            sources=self.sources,
+            sources=sources,
             readers=self.readers,
             dependencies=(self,),
-            char_taint=CharTaint.uniform(len(raw), self.sources),
+            char_taint=CharTaint.uniform(len(raw), sources),
         )
 
     def join(self, iterable: Iterable[str]) -> TaintedStr:  # type: ignore[override]
         """Join with taint propagation across all elements."""
         self_raw = str.__str__(self)
         parts: list[str] = []
-        all_sources: set[Source] = set(self.sources)
-        all_readers: set[Reader] = set(self.readers)
         all_deps: list = [self]
+        tainted_items: list[Any] = [self]
         for item in iterable:
             if isinstance(item, TaintedStr):
                 parts.append(str.__str__(item))
-                all_sources.update(item.sources)
-                all_readers.update(item.readers)
                 all_deps.append(item)
+                tainted_items.append(item)
             elif isinstance(item, TaintedValue):
                 parts.append(str(item.value))
-                all_sources.update(item.sources)
-                all_readers.update(item.readers)
                 all_deps.append(item)
+                tainted_items.append(item)
             else:
                 parts.append(item)
         raw = self_raw.join(parts)
+        all_sources = _merge_sources_from(*tainted_items)
         return TaintedStr(
             value=raw,
-            sources=frozenset(all_sources),
-            readers=frozenset(all_readers),
+            sources=all_sources,
+            readers=_merge_readers_from(*tainted_items),
             dependencies=tuple(all_deps),
-            char_taint=CharTaint.uniform(len(raw), frozenset(all_sources)),
+            char_taint=CharTaint.uniform(len(raw), all_sources),
         )
 
     def format(self, *args: Any, **kwargs: Any) -> TaintedStr:
         """Format with taint propagation through all arguments."""
         self_raw = str.__str__(self)
         unwrapped_args: list[Any] = []
-        all_sources: set[Source] = set(self.sources)
-        all_readers: set[Reader] = set(self.readers)
         all_deps: list = [self]
+        tainted_values: list[Any] = [self]
         for a in args:
             if isinstance(a, TaintedStr):
                 unwrapped_args.append(str.__str__(a))
-                all_sources.update(a.sources)
-                all_readers.update(a.readers)
                 all_deps.append(a)
+                tainted_values.append(a)
             elif isinstance(a, TaintedValue):
                 unwrapped_args.append(a.value)
-                all_sources.update(a.sources)
-                all_readers.update(a.readers)
                 all_deps.append(a)
+                tainted_values.append(a)
             else:
                 unwrapped_args.append(a)
         unwrapped_kwargs: dict[str, Any] = {}
         for k, v in kwargs.items():
             if isinstance(v, TaintedStr):
                 unwrapped_kwargs[k] = str.__str__(v)
-                all_sources.update(v.sources)
-                all_readers.update(v.readers)
                 all_deps.append(v)
+                tainted_values.append(v)
             elif isinstance(v, TaintedValue):
                 unwrapped_kwargs[k] = v.value
-                all_sources.update(v.sources)
-                all_readers.update(v.readers)
                 all_deps.append(v)
+                tainted_values.append(v)
             else:
                 unwrapped_kwargs[k] = v
         raw = self_raw.format(*unwrapped_args, **unwrapped_kwargs)
+        all_sources = _merge_sources_from(*tainted_values)
         return TaintedStr(
             value=raw,
-            sources=frozenset(all_sources),
-            readers=frozenset(all_readers),
+            sources=all_sources,
+            readers=_merge_readers_from(*tainted_values),
             dependencies=tuple(all_deps),
-            char_taint=CharTaint.uniform(len(raw), frozenset(all_sources)),
+            char_taint=CharTaint.uniform(len(raw), all_sources),
         )
+
+    def ljust(self, width: SupportsIndex, fillchar: str = " ") -> TaintedStr:  # type: ignore[override]
+        return self._wrap_transformed(str.ljust(str.__str__(self), int(width), fillchar))
+
+    def rjust(self, width: SupportsIndex, fillchar: str = " ") -> TaintedStr:  # type: ignore[override]
+        return self._wrap_transformed(str.rjust(str.__str__(self), int(width), fillchar))
+
+    def center(self, width: SupportsIndex, fillchar: str = " ") -> TaintedStr:  # type: ignore[override]
+        return self._wrap_transformed(str.center(str.__str__(self), int(width), fillchar))
+
+    def zfill(self, width: SupportsIndex) -> TaintedStr:  # type: ignore[override]
+        return self._wrap_transformed(str.zfill(str.__str__(self), int(width)))
+
+    def translate(self, table: Any) -> TaintedStr:  # type: ignore[override]
+        return self._wrap_transformed(str.translate(str.__str__(self), table))
+
+    def removeprefix(self, prefix: str) -> TaintedStr:  # type: ignore[override]
+        self_raw = str.__str__(self)
+        if self_raw.startswith(prefix):
+            return self[len(prefix) :]
+        return self[:]
+
+    def removesuffix(self, suffix: str) -> TaintedStr:  # type: ignore[override]
+        self_raw = str.__str__(self)
+        if suffix and self_raw.endswith(suffix):
+            return self[: -len(suffix)]
+        return self[:]
+
+    def __mul__(self, n: SupportsIndex) -> TaintedStr:
+        raw = str.__mul__(str.__str__(self), int(n))
+        sources = _effective_sources(self)
+        return TaintedStr(
+            value=raw,
+            sources=sources,
+            readers=self.readers,
+            dependencies=(self,),
+            char_taint=CharTaint.uniform(len(raw), sources),
+        )
+
+    def __rmul__(self, n: SupportsIndex) -> TaintedStr:
+        return self.__mul__(n)
 
     def startswith(
         self,
@@ -829,12 +1002,14 @@ class TaintedList(TaintedValue[list[T]]):
     ) -> None:
         super().__init__(
             value=list(value),
-            sources=sources,
-            readers=readers,
+            sources=_freeze_sources(sources),
+            readers=_freeze_readers(readers),
             dependencies=dependencies,
             created_at=created_at or time.time(),
         )
-        self._item_taint: dict[int, frozenset[Source]] = item_taint or {}
+        self._item_taint: dict[int, frozenset[Source]] = {
+            idx: _freeze_sources(srcs) for idx, srcs in (item_taint or {}).items()
+        }
 
     def get_item_sources(self, index: int) -> frozenset[Source]:
         """Return the taint sources for a specific list index."""
@@ -842,7 +1017,7 @@ class TaintedList(TaintedValue[list[T]]):
 
     def set_item_sources(self, index: int, sources: frozenset[Source]) -> None:
         """Override taint sources for a specific list index."""
-        self._item_taint[index] = sources
+        self._item_taint[index] = _freeze_sources(sources)
 
     # MutableSequence protocol ------------------------------------------------
 
@@ -868,7 +1043,7 @@ class TaintedList(TaintedValue[list[T]]):
     def __setitem__(self, index: Union[int, slice], value: Any) -> None:
         self.value[index] = value  # type: ignore[index]
         if isinstance(index, int) and isinstance(value, (TaintedStr, TaintedValue)):
-            self._item_taint[index] = value.sources
+            self._item_taint[index] = _effective_sources(value)
 
     def __delitem__(self, index: Union[int, slice]) -> None:
         del self.value[index]
@@ -879,13 +1054,13 @@ class TaintedList(TaintedValue[list[T]]):
     def insert(self, index: int, value: T) -> None:
         self.value.insert(index, value)
         if isinstance(value, (TaintedStr, TaintedValue)):
-            self._item_taint[index] = value.sources
+            self._item_taint[index] = _effective_sources(value)
 
     def append_tainted(self, value: T, sources: frozenset[Source]) -> None:
         """Append a value with explicit taint sources."""
         idx = len(self.value)
         self.value.append(value)
-        self._item_taint[idx] = sources
+        self._item_taint[idx] = _freeze_sources(sources)
 
     def all_sources(self) -> frozenset[Source]:
         """Union of container sources and all item-level sources."""
@@ -925,12 +1100,14 @@ class TaintedDict(TaintedValue[dict[K, V]]):
     ) -> None:
         super().__init__(
             value=dict(value),
-            sources=sources,
-            readers=readers,
+            sources=_freeze_sources(sources),
+            readers=_freeze_readers(readers),
             dependencies=dependencies,
             created_at=created_at or time.time(),
         )
-        self._key_taint: dict[K, frozenset[Source]] = key_taint or {}
+        self._key_taint: dict[K, frozenset[Source]] = {
+            key: _freeze_sources(srcs) for key, srcs in (key_taint or {}).items()
+        }
 
     def get_key_sources(self, key: K) -> frozenset[Source]:
         """Return the taint sources for a specific key."""
@@ -938,7 +1115,7 @@ class TaintedDict(TaintedValue[dict[K, V]]):
 
     def set_key_sources(self, key: K, sources: frozenset[Source]) -> None:
         """Override taint sources for a specific key."""
-        self._key_taint[key] = sources
+        self._key_taint[key] = _freeze_sources(sources)
 
     # MutableMapping protocol -------------------------------------------------
 
@@ -952,7 +1129,7 @@ class TaintedDict(TaintedValue[dict[K, V]]):
     def __setitem__(self, key: K, value: V) -> None:
         self.value[key] = value
         if isinstance(value, (TaintedStr, TaintedValue)):
-            self._key_taint[key] = value.sources
+            self._key_taint[key] = _effective_sources(value)
 
     def __delitem__(self, key: K) -> None:
         del self.value[key]
@@ -1026,6 +1203,9 @@ class TaintedBytes(bytes):
     ) -> None:
         # Same guard as TaintedStr: ``bytes(tainted_bytes)`` may re-invoke
         # __init__ on the same object with defaults, which would wipe taint.
+        sources = _freeze_sources(sources)
+        readers = _freeze_readers(readers)
+        dependencies = tuple(dependencies or ())
         already_initialized = hasattr(self, "sources")
         if not already_initialized or sources:
             self.sources = sources
@@ -1075,15 +1255,11 @@ class TaintedBytes(bytes):
 
     def _merge_with(self, *others: Any) -> tuple:
         """Merge metadata with other tainted values. Returns (sources, readers, deps)."""
-        all_sources = set(self.sources)
-        all_readers = set(self.readers)
         deps: list = [self]
         for o in others:
             if isinstance(o, (TaintedStr, TaintedBytes, TaintedValue)):
-                all_sources.update(o.sources)
-                all_readers.update(o.readers)
                 deps.append(o)
-        return frozenset(all_sources), frozenset(all_readers), tuple(deps)
+        return _merge_sources_from(self, *others), _merge_readers_from(self, *others), tuple(deps)
 
     # -- Propagating operations --------------------------------------------
 
@@ -1139,6 +1315,133 @@ class TaintedBytes(bytes):
             )
         # Single-byte int access returns plain int (no taint representation).
         return result
+
+    def __mul__(self, n: SupportsIndex) -> "TaintedBytes":
+        return TaintedBytes(
+            value=bytes.__mul__(bytes(self), int(n)),
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+        )
+
+    def __rmul__(self, n: SupportsIndex) -> "TaintedBytes":
+        return self.__mul__(n)
+
+    def __mod__(self, args: Any) -> "TaintedBytes":
+        if isinstance(args, tuple):
+            unwrapped = tuple(bytes(a) if isinstance(a, TaintedBytes) else a for a in args)
+            tainted_args = [a for a in args if isinstance(a, (TaintedBytes, TaintedValue))]
+        elif isinstance(args, TaintedBytes):
+            unwrapped = bytes(args)
+            tainted_args = [args]
+        else:
+            unwrapped = args
+            tainted_args = []
+        raw = bytes.__mod__(bytes(self), unwrapped)
+        sources, readers, deps = self._merge_with(*tainted_args)
+        return TaintedBytes(value=raw, sources=sources, readers=readers, dependencies=deps)
+
+    def replace(self, old: bytes, new: bytes, count: SupportsIndex = -1) -> "TaintedBytes":  # type: ignore[override]
+        return TaintedBytes(
+            value=bytes(self).replace(old, new, int(count)),
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+        )
+
+    def split(self, sep: bytes | None = None, maxsplit: SupportsIndex = -1) -> list["TaintedBytes"]:  # type: ignore[override]
+        return [
+            TaintedBytes(value=part, sources=self.sources, readers=self.readers, dependencies=(self,))
+            for part in bytes(self).split(sep, int(maxsplit))
+        ]
+
+    def join(self, iterable: Iterable[bytes]) -> "TaintedBytes":  # type: ignore[override]
+        parts: list[bytes] = []
+        tainted_values: list[Any] = [self]
+        for item in iterable:
+            if isinstance(item, (TaintedBytes, TaintedValue)):
+                parts.append(bytes(item) if isinstance(item, TaintedBytes) else bytes(item.value))
+                tainted_values.append(item)
+            else:
+                parts.append(bytes(item))
+        raw = bytes(self).join(parts)
+        sources, readers, deps = self._merge_with(*tainted_values[1:])
+        return TaintedBytes(value=raw, sources=sources, readers=readers, dependencies=deps)
+
+    def center(self, width: SupportsIndex, fillchar: bytes = b" ") -> "TaintedBytes":  # type: ignore[override]
+        return TaintedBytes(
+            value=bytes(self).center(int(width), fillchar),
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+        )
+
+    def ljust(self, width: SupportsIndex, fillchar: bytes = b" ") -> "TaintedBytes":  # type: ignore[override]
+        return TaintedBytes(
+            value=bytes(self).ljust(int(width), fillchar),
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+        )
+
+    def rjust(self, width: SupportsIndex, fillchar: bytes = b" ") -> "TaintedBytes":  # type: ignore[override]
+        return TaintedBytes(
+            value=bytes(self).rjust(int(width), fillchar),
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+        )
+
+    def zfill(self, width: SupportsIndex) -> "TaintedBytes":  # type: ignore[override]
+        return TaintedBytes(
+            value=bytes(self).zfill(int(width)),
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+        )
+
+    def translate(self, table: bytes | None, delete: bytes = b"") -> "TaintedBytes":  # type: ignore[override]
+        return TaintedBytes(
+            value=bytes(self).translate(table, delete),
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+        )
+
+    def hex(self, sep: str | bytes = "", bytes_per_sep: SupportsIndex = 1) -> TaintedStr:  # type: ignore[override]
+        if sep:
+            raw = bytes(self).hex(sep, int(bytes_per_sep))
+        else:
+            raw = bytes(self).hex()
+        return TaintedStr(
+            value=raw,
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+            char_taint=CharTaint.uniform(len(raw), self.sources),
+        )
+
+    def upper(self) -> "TaintedBytes":
+        return TaintedBytes(value=bytes(self).upper(), sources=self.sources, readers=self.readers, dependencies=(self,))
+
+    def lower(self) -> "TaintedBytes":
+        return TaintedBytes(value=bytes(self).lower(), sources=self.sources, readers=self.readers, dependencies=(self,))
+
+    def removeprefix(self, prefix: bytes) -> "TaintedBytes":  # type: ignore[override]
+        return TaintedBytes(
+            value=bytes(self).removeprefix(prefix),
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+        )
+
+    def removesuffix(self, suffix: bytes) -> "TaintedBytes":  # type: ignore[override]
+        return TaintedBytes(
+            value=bytes(self).removesuffix(suffix),
+            sources=self.sources,
+            readers=self.readers,
+            dependencies=(self,),
+        )
 
     def __repr__(self) -> str:
         labels = ", ".join(sorted(lbl.name for lbl in self.labels))
@@ -1260,19 +1563,16 @@ def taint_aware_fstring(template: str, *args: Any, **kwargs: Any) -> TaintedStr:
     TaintedStr
         The formatted string with all input taint sources merged in.
     """
-    all_sources: set[Source] = set()
-    all_readers: set[Reader] = set()
+    tainted_values: list[Any] = []
     deps: list = []
 
     def _collect(val: Any) -> Any:
         if isinstance(val, TaintedStr):
-            all_sources.update(val.sources)
-            all_readers.update(val.readers)
+            tainted_values.append(val)
             deps.append(val)
             return str.__str__(val)
         if isinstance(val, TaintedValue):
-            all_sources.update(val.sources)
-            all_readers.update(val.readers)
+            tainted_values.append(val)
             deps.append(val)
             return val.value
         return val
@@ -1280,11 +1580,11 @@ def taint_aware_fstring(template: str, *args: Any, **kwargs: Any) -> TaintedStr:
     unwrapped_args = [_collect(a) for a in args]
     unwrapped_kwargs = {k: _collect(v) for k, v in kwargs.items()}
     raw = template.format(*unwrapped_args, **unwrapped_kwargs)
-    sources = frozenset(all_sources)
+    sources = _merge_sources_from(*tainted_values)
     return TaintedStr(
         value=raw,
         sources=sources,
-        readers=frozenset(all_readers),
+        readers=_merge_readers_from(*tainted_values),
         dependencies=tuple(deps),
         char_taint=CharTaint.uniform(len(raw), sources),
     )
