@@ -7,9 +7,11 @@ Optional ML artifacts are stored outside GitHub. Use `katana artifacts status`,
 artifact, Scabbard, and semantic-backend readiness before running live eval
 sweeps or depending on ML-backed enforcement. See `docs/artifacts.md`.
 
-Minimal deployments can use `pip install hermes-katana` and the rule-based
-scanner/policy/vault/audit stack. The default ML-backed CPU profile requires
-`pip install "hermes-katana[fast-cpu]"` plus `katana artifacts setup --yes`.
+Minimal source deployments can use `pip install -e ".[security]"` and the
+rule-based scanner/policy/vault/audit stack. The default ML-backed CPU profile
+requires `pip install -e ".[fast-cpu]"` plus `katana artifacts setup --yes`.
+After a PyPI release is published, replace the editable source install with
+the matching `pip install hermes-katana[...]` command.
 
 ---
 

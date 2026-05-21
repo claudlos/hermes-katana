@@ -58,7 +58,6 @@ ml = [
     "onnxruntime>=1.17",
     "optimum[onnxruntime]>=1.20",
     "sentence-transformers>=3.0",
-    "zvec",
 ]
 security = ["bitarray>=2.8", "pyahocorasick>=2.0"]
 container = ["docker>=7.0"]

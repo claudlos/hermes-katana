@@ -7,23 +7,24 @@ Get from zero to protected agent in under 5 minutes.
 ## Step 1: Install
 
 ```bash
-pip install hermes-katana
+git clone https://github.com/claudlos/hermes-katana.git
+cd hermes-katana
+pip install -e ".[security]"
 ```
 
 The base install is the smallest path and does not download model artifacts. To
 enable the default fast CPU ML profile:
 
 ```bash
-pip install "hermes-katana[fast-cpu]"
+pip install -e ".[fast-cpu]"
 katana artifacts setup --yes
 ```
 
-For source installs:
+When a PyPI release exists, the equivalent install commands are:
 
 ```bash
-git clone https://github.com/claudlos/hermes-katana.git
-cd hermes-katana
-pip install -e ".[dev,security,fast-cpu]"
+pip install hermes-katana
+pip install "hermes-katana[fast-cpu]"
 ```
 
 **Expected output:**
@@ -42,27 +43,12 @@ katana doctor
 
 **Expected output:**
 
-```
-HermesKatana Doctor
-  Python .............. 3.12.3 OK
-  pydantic ............ 2.x    OK
-  cryptography ........ 43.x   OK
-  keyring ............. 25.x   OK
-  click ............... 8.x    OK
-  rich ................ 13.x   OK
-  pyyaml .............. 6.x    OK
-  mitmdump ............ 10.x   OK (optional -- needed for proxy)
-
-  Config path ......... ~/.hermes-katana/config.yaml
-  Vault path .......... ~/.config/hermes-katana/vault.json
-  Audit path .......... ~/.config/hermes-katana/audit/audit.jsonl
-
-All checks passed.
-```
+`katana doctor` prints a Rich status report. Exact optional-component status
+depends on installed extras, local model artifacts, and whether a Hermes target
+checkout has been installed.
 
 > **Note:** `mitmdump` is only required if you plan to use the HTTPS proxy
-> feature.  Install it with `pip install mitmproxy>=10.0` or
-> `pip install hermes-katana[proxy]`.
+> feature.  Install it with `pip install mitmproxy>=10.0` or the `proxy` extra.
 >
 > `katana doctor` and `katana status` also show ML runtime readiness,
 > including artifact discovery, Scabbard asset state, and semantic backend
@@ -249,7 +235,7 @@ is on `$PATH` (e.g. `~/.local/bin`).
 Install the proxy extra:
 
 ```bash
-pip install hermes-katana[proxy]
+pip install -e ".[proxy]"
 ```
 
 Or install mitmproxy separately: `pip install mitmproxy>=10.0`.
