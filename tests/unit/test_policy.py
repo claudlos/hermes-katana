@@ -213,9 +213,9 @@ class TestEnginePresetDefaults:
         engine = PolicyEngine.with_defaults("permissive")
         assert engine.default_action == PolicyResult.LOG_ONLY
 
-    def test_custom_engine_default_allow(self):
+    def test_custom_engine_default_deny(self):
         engine = PolicyEngine()
-        assert engine.default_action == PolicyResult.ALLOW
+        assert engine.default_action == PolicyResult.DENY
 
     def test_invalid_preset_raises(self):
         with pytest.raises(ValueError, match="Unknown preset"):

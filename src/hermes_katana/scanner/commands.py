@@ -213,10 +213,34 @@ def _cp(
 
 _cp(
     "rm_rf_root",
-    r"\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*)\s+(/|\$\{?HOME\}?|~|\.\.|/etc|/var|/usr|/boot|/sys|/proc|\*)",
+    r"\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*)\s+(?:/\*|/(?=(?:\s|$|[;&|)\]]|['\"]))|\$\{?HOME\}?|~|\.\.|/(?:etc|var|usr|boot|sys|proc)(?=/|\s|$|[;&|)\]]|['\"])|\*)",
     CommandCategory.FILESYSTEM_DESTRUCTION,
     CommandSeverity.CRITICAL,
     "Recursive force deletion of critical directory. Can destroy entire filesystem.",
+)
+
+_cp(
+    "rm_recursive_force_critical_path",
+    r"\brm\b(?=[^;&|]*(?:--recursive|-r|-R))(?=[^;&|]*(?:--force|-f))[^;&|]*\s(?:--\s+)?(?:/\*|/(?=(?:\s|$|[;&|)\]]|['\"]))|\$\{?HOME\}?|~|\.\.|/(?:etc|var|usr|boot|sys|proc)(?=/|\s|$|[;&|)\]]|['\"])|\*)",
+    CommandCategory.FILESYSTEM_DESTRUCTION,
+    CommandSeverity.CRITICAL,
+    "Recursive force deletion of a critical path using long or split options.",
+)
+
+_cp(
+    "rm_root_explicit",
+    r"\brm\b[^;&|]*\s(?:--\s+)?/(?=(?:\s|$|[;&|)\]]|['\"]))",
+    CommandCategory.FILESYSTEM_DESTRUCTION,
+    CommandSeverity.CRITICAL,
+    "Explicit attempt to remove filesystem root.",
+)
+
+_cp(
+    "rm_recursive_directory",
+    r"\brm\b(?=[^;&|]*(?:--recursive|-r|-R))[^;&|]*(?:/tmp/|/var/|/usr/|/etc/|/home/|~|\.\.)",
+    CommandCategory.FILESYSTEM_DESTRUCTION,
+    CommandSeverity.HIGH,
+    "Recursive deletion of a directory using long or split options.",
 )
 
 _cp(
@@ -930,6 +954,14 @@ _cp(
 )
 
 _cp(
+    "eval_base64_decode",
+    r"\b(?:eval|bash\s+-c|sh\s+-c)\b.*base64\s+(?:-d|--decode)",
+    CommandCategory.PIPE_TO_SHELL,
+    CommandSeverity.CRITICAL,
+    "Eval/bash wrapper decodes base64 content for execution.",
+)
+
+_cp(
     "xxd_hex_to_shell",
     r"xxd.*-r.*\|\s*(?:ba)?sh\b",
     CommandCategory.PIPE_TO_SHELL,
@@ -1352,7 +1384,10 @@ _cp(
 # ---------------------------------------------------------------------------
 
 _RE_BACKTICK = re.compile(r"`([^`]+)`")
+_RE_DOLLAR_PAREN = re.compile(r"\$\(([^()]*)\)")
+_RE_ANSI_C_QUOTE = re.compile(r"\$'((?:\\.|[^'])*)'")
 _RE_PATH_PREFIX = re.compile(r"(?:/usr)?(?:/local)?/s?bin/")
+_RE_VAR_ASSIGN = re.compile(r"(?:^|[;\s])([A-Za-z_][A-Za-z0-9_]*)=([^;\s|&]+)")
 
 
 def _strip_shell_quotes(cmd: str) -> str:
@@ -1374,6 +1409,52 @@ def _strip_shell_quotes(cmd: str) -> str:
     # Strip path prefixes so /usr/bin/wget -> wget, /bin/bash -> bash
     cmd = _RE_PATH_PREFIX.sub("", cmd)
     return cmd
+
+
+def _decode_ansi_c_quotes(cmd: str) -> str:
+    """Decode simple bash ANSI-C quoted strings like ``$'\\x72m'``."""
+
+    def repl(match: re.Match[str]) -> str:
+        body = match.group(1)
+        try:
+            return bytes(body, "utf-8").decode("unicode_escape")
+        except UnicodeDecodeError:
+            return body
+
+    return _RE_ANSI_C_QUOTE.sub(repl, cmd)
+
+
+def _expand_basic_shell_vars(cmd: str) -> str:
+    """Expand simple same-line shell variables used for scanner evasion."""
+    assignments = {name: value.strip("\"'") for name, value in _RE_VAR_ASSIGN.findall(cmd)}
+    assignments.setdefault("IFS", " ")
+
+    def repl(match: re.Match[str]) -> str:
+        braced, bare = match.group(1), match.group(2)
+        name = braced or bare
+        return assignments.get(name, match.group(0))
+
+    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)", repl, cmd)
+
+
+def _shell_evasion_variants(cmd: str) -> tuple[str, ...]:
+    """Return normalized variants for common shell-level evasions."""
+    variants: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        if value not in seen:
+            variants.append(value)
+            seen.add(value)
+
+    add(cmd)
+    decoded = _decode_ansi_c_quotes(cmd)
+    add(decoded)
+    expanded = _expand_basic_shell_vars(decoded)
+    add(expanded)
+    stripped = _strip_shell_quotes(expanded)
+    add(stripped)
+    return tuple(variants)
 
 
 # ---------------------------------------------------------------------------
@@ -1423,13 +1504,10 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
     if not cmd:
         return []
 
-    # Shell quote/backslash stripping to defeat string-splitting evasions
-    stripped = _strip_shell_quotes(cmd)
-
     findings: list[CommandFinding] = []
 
-    # Scan both original and quote-stripped versions
-    for variant in (cmd, stripped) if stripped != cmd else (cmd,):
+    # Scan original plus quote/variable/ANSI-C normalized variants.
+    for variant in _shell_evasion_variants(cmd):
         for name, pattern, category, severity, description in _COMMAND_PATTERNS:
             for match in pattern.finditer(variant):
                 findings.append(
@@ -1443,7 +1521,7 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
                     )
                 )
 
-    # Backtick substitution: extract and recursively scan backtick content
+    # Backtick substitution: extract and recursively scan backtick content.
     for bt_match in _RE_BACKTICK.finditer(cmd):
         content = bt_match.group(1)
         sub_findings = detect_dangerous_command(content)
@@ -1463,12 +1541,29 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
                 )
             )
 
-    # Replace backtick expressions with a dangerous placeholder so the
-    # surrounding command is checked in full, e.g. "rm -rf `echo /`" -> "rm -rf /"
-    if _RE_BACKTICK.search(cmd):
-        cmd_expanded = _RE_BACKTICK.sub("/", cmd)
-        expanded_stripped = _strip_shell_quotes(cmd_expanded)
-        for exp_variant in (cmd_expanded, expanded_stripped) if expanded_stripped != cmd_expanded else (cmd_expanded,):
+    # Dollar-parentheses command substitution: same execution semantics as
+    # backticks, but this is the common modern form.
+    for dp_match in _RE_DOLLAR_PAREN.finditer(cmd):
+        content = dp_match.group(1)
+        sub_findings = detect_dangerous_command(content)
+        findings.extend(sub_findings)
+        if not sub_findings and re.search(r"\b(?:curl|wget)\s+", content):
+            findings.append(
+                CommandFinding(
+                    pattern_name="dollar_paren_download_exec",
+                    severity=CommandSeverity.CRITICAL,
+                    matched_text=dp_match.group(),
+                    category=CommandCategory.PIPE_TO_SHELL,
+                    position=(dp_match.start(), dp_match.end()),
+                    description="Download command inside $() substitution - downloaded content is executed.",
+                )
+            )
+
+    # Replace command-substitution expressions with a dangerous placeholder so
+    # the surrounding command is checked in full, e.g. "rm -rf $(echo /)".
+    cmd_expanded = _RE_DOLLAR_PAREN.sub("/", _RE_BACKTICK.sub("/", cmd))
+    if cmd_expanded != cmd:
+        for exp_variant in _shell_evasion_variants(cmd_expanded):
             for name, pattern, category, severity, description in _COMMAND_PATTERNS:
                 for match in pattern.finditer(exp_variant):
                     findings.append(
