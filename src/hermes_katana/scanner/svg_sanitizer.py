@@ -14,6 +14,7 @@ Speed: Microseconds for typical SVG content.
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -90,7 +91,7 @@ _USE_EXTERNAL_RE = re.compile(
 
 # href/xlink:href containing a data URI with executable content
 _DATA_URI_EXEC_RE = re.compile(
-    r"""(?:href|src|action|xlink:href)\s*=\s*["']?\s*data\s*:\s*(?:text/html|application/(?:javascript|x-javascript|ecmascript)|text/javascript)""",
+    r"""(?:href|src|action|xlink:href)\s*=\s*["']?\s*data\s*:\s*(?:text/html|image/svg\+xml|application/(?:javascript|x-javascript|ecmascript)|text/javascript)""",
     re.IGNORECASE,
 )
 
@@ -103,6 +104,16 @@ _DATA_URI_BASE64_RE = re.compile(
 # javascript: URI scheme
 _JAVASCRIPT_URI_RE = re.compile(
     r"""(?:href|src|action|xlink:href)\s*=\s*["']?\s*javascript\s*:""",
+    re.IGNORECASE,
+)
+
+_CSS_JAVASCRIPT_URL_RE = re.compile(
+    r"""url\s*\(\s*["']?\s*javascript\s*:""",
+    re.IGNORECASE,
+)
+
+_EXTERNAL_RESOURCE_RE = re.compile(
+    r"""<\s*(?:svg:)?(?:image|a|script|iframe|embed|object)\b[^>]*(?:href|src|xlink:href)\s*=\s*["']\s*https?://[^"']+["']""",
     re.IGNORECASE,
 )
 
@@ -138,9 +149,10 @@ def scan_svg(text: str) -> list[SVGSanitizerFinding]:
         'script_injection'
     """
     findings: list[SVGSanitizerFinding] = []
+    scan_text = html.unescape(text)
 
     # 1. <script> tags inside SVG
-    for m in _SCRIPT_TAG_RE.finditer(text):
+    for m in _SCRIPT_TAG_RE.finditer(scan_text):
         findings.append(
             SVGSanitizerFinding(
                 category="script_injection",
@@ -152,7 +164,7 @@ def scan_svg(text: str) -> list[SVGSanitizerFinding]:
         )
 
     # 2. foreignObject element
-    for m in _FOREIGN_OBJECT_RE.finditer(text):
+    for m in _FOREIGN_OBJECT_RE.finditer(scan_text):
         findings.append(
             SVGSanitizerFinding(
                 category="foreign_object",
@@ -164,7 +176,7 @@ def scan_svg(text: str) -> list[SVGSanitizerFinding]:
         )
 
     # 3. Event handler attributes
-    for m in _EVENT_HANDLER_RE.finditer(text):
+    for m in _EVENT_HANDLER_RE.finditer(scan_text):
         findings.append(
             SVGSanitizerFinding(
                 category="event_handler",
@@ -176,7 +188,7 @@ def scan_svg(text: str) -> list[SVGSanitizerFinding]:
         )
 
     # 4. use element with external xlink/href
-    for m in _USE_EXTERNAL_RE.finditer(text):
+    for m in _USE_EXTERNAL_RE.finditer(scan_text):
         findings.append(
             SVGSanitizerFinding(
                 category="external_reference",
@@ -188,7 +200,7 @@ def scan_svg(text: str) -> list[SVGSanitizerFinding]:
         )
 
     # 5. data: URIs with executable MIME types
-    for m in _DATA_URI_EXEC_RE.finditer(text):
+    for m in _DATA_URI_EXEC_RE.finditer(scan_text):
         findings.append(
             SVGSanitizerFinding(
                 category="data_uri_executable",
@@ -200,22 +212,19 @@ def scan_svg(text: str) -> list[SVGSanitizerFinding]:
         )
 
     # 6. data: URIs with base64 encoding (potentially executable)
-    for m in _DATA_URI_BASE64_RE.finditer(text):
-        # Skip if already caught by executable MIME check
-        already_found = any(f.category == "data_uri_executable" and f.match in m.group(0) for f in findings)
-        if not already_found:
-            findings.append(
-                SVGSanitizerFinding(
-                    category="data_uri_base64",
-                    match=m.group(0)[:80],
-                    severity=SVGSanitizerSeverity.MEDIUM,
-                    description="Base64-encoded data URI — may contain executable content",
-                    confidence=0.75,
-                )
+    for m in _DATA_URI_BASE64_RE.finditer(scan_text):
+        findings.append(
+            SVGSanitizerFinding(
+                category="data_uri_base64",
+                match=m.group(0)[:80],
+                severity=SVGSanitizerSeverity.MEDIUM,
+                description="Base64-encoded data URI — may contain executable content",
+                confidence=0.75,
             )
+        )
 
     # 7. javascript: URI scheme
-    for m in _JAVASCRIPT_URI_RE.finditer(text):
+    for m in _JAVASCRIPT_URI_RE.finditer(scan_text):
         findings.append(
             SVGSanitizerFinding(
                 category="javascript_uri",
@@ -226,8 +235,32 @@ def scan_svg(text: str) -> list[SVGSanitizerFinding]:
             )
         )
 
-    # 8. animate/set targeting security-sensitive named attributes
-    for m in _ANIMATE_SECURITY_ATTR_RE.finditer(text):
+    # 8. CSS url(javascript:...) patterns
+    for m in _CSS_JAVASCRIPT_URL_RE.finditer(scan_text):
+        findings.append(
+            SVGSanitizerFinding(
+                category="css_javascript_url",
+                match=m.group(0)[:80],
+                severity=SVGSanitizerSeverity.CRITICAL,
+                description="CSS url(javascript:...) inside SVG can execute script",
+                confidence=0.95,
+            )
+        )
+
+    # 9. External executable/embed resource references
+    for m in _EXTERNAL_RESOURCE_RE.finditer(scan_text):
+        findings.append(
+            SVGSanitizerFinding(
+                category="external_resource",
+                match=m.group(0)[:80],
+                severity=SVGSanitizerSeverity.MEDIUM,
+                description="SVG element references an external resource",
+                confidence=0.78,
+            )
+        )
+
+    # 10. animate/set targeting security-sensitive named attributes
+    for m in _ANIMATE_SECURITY_ATTR_RE.finditer(scan_text):
         findings.append(
             SVGSanitizerFinding(
                 category="animate_security_attr",
@@ -238,8 +271,8 @@ def scan_svg(text: str) -> list[SVGSanitizerFinding]:
             )
         )
 
-    # 9. animate/set targeting on* event handler attributes
-    for m in _ANIMATE_EVENT_ATTR_RE.finditer(text):
+    # 11. animate/set targeting on* event handler attributes
+    for m in _ANIMATE_EVENT_ATTR_RE.finditer(scan_text):
         findings.append(
             SVGSanitizerFinding(
                 category="animate_event_handler",

@@ -538,18 +538,21 @@ def detect_image_injection(content: str) -> list[ImageInjectionFinding]:
     """
     findings = []
 
-    # Match data URI image patterns
+    # Match one data URI token at a time. Do not allow arbitrary whitespace in
+    # the base64 group because text like " and data:image/..." otherwise gets
+    # swallowed into the previous match.
     data_uri_pattern = re.compile(
-        r"data:image\/(\w+);base64,([A-Za-z0-9+/=\s]{20,})",
+        r"""data:image/([a-z0-9.+-]+)(?:;[a-z0-9.+-]+(?:=[^,;\s"'<>`]*)?)*;base64,([A-Za-z0-9+/]+={0,2})""",
         re.IGNORECASE,
     )
     for m in data_uri_pattern.finditer(content):
-        m.group(1).lower()
-        b64_data = re.sub(r"\s", "", m.group(2))
+        b64_data = m.group(2)
+        if len(b64_data) < 20:
+            continue
         try:
             import base64
 
-            img_bytes = base64.b64decode(b64_data + "==")
+            img_bytes = base64.b64decode(b64_data + "==", validate=False)
             findings.extend(detect_image_injection_bytes(img_bytes))
         except Exception:
             pass

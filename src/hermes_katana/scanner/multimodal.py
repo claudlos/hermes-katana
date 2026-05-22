@@ -741,6 +741,18 @@ def _check_url_param_loose(
 # 6. Data URI scanner
 # ---------------------------------------------------------------------------
 
+_DATA_URI_CANDIDATE_RE = re.compile(r"""data:[^\s"'<>`]+""", re.IGNORECASE)
+
+
+def _extract_data_uri_candidates(text: str) -> list[str]:
+    """Extract standalone data URI substrings from larger text."""
+    candidates: list[str] = []
+    for match in _DATA_URI_CANDIDATE_RE.finditer(text):
+        candidate = match.group(0).rstrip(".,;)]}")
+        if "," in candidate:
+            candidates.append(candidate)
+    return candidates
+
 
 def scan_data_uri(
     data_uri: str,
@@ -771,7 +783,9 @@ def scan_data_uri(
     if not data_uri or not isinstance(data_uri, str):
         return findings
 
-    # Scan the full URI string itself for injection patterns
+    # Scan the full string itself for injection patterns. This preserves the
+    # older behavior for "decode base64: ..." style inputs while also allowing
+    # larger text blobs to contain one or more embedded data URIs.
     findings.extend(
         _scan_text_for_injections(
             data_uri,
@@ -780,6 +794,21 @@ def scan_data_uri(
             MultimodalSeverity.HIGH,
         )
     )
+
+    candidates = _extract_data_uri_candidates(data_uri)
+    if not candidates and data_uri.strip().lower().startswith("data:"):
+        candidates = [data_uri.strip()]
+    if candidates:
+        for candidate in candidates:
+            findings.extend(_scan_single_data_uri(candidate))
+        return findings
+
+    return findings
+
+
+def _scan_single_data_uri(data_uri: str) -> list[MultimodalFinding]:
+    """Parse and scan one data URI candidate."""
+    findings: list[MultimodalFinding] = []
 
     # Parse and scan the media type / parameters
     try:
