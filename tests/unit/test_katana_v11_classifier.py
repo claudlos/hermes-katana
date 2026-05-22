@@ -87,9 +87,9 @@ def test_classify_clean_text_argmax_clean(classifier):
     NOTE: we do NOT assert ``scores["clean"] > 0.5``. The v1.0 model has
     measurable false-positive risk on mundane everyday prompts ("what's the
     weather?" can score ~0.49 clean / ~0.48 content_injection). That's a
-    real model property, not a test bug — see LIMITATIONS.md item on
-    content_injection / clean confusion. Argmax is the actual decision
-    criterion, so we test that.
+    real model property, not a test bug. Argmax is the actual decision
+    criterion, so we test that instead of pinning an arbitrary confidence
+    threshold.
     """
     scores = classifier.classify(
         "What's the weather forecast for tomorrow in San Francisco?",

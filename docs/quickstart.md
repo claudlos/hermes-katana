@@ -216,7 +216,7 @@ katana proxy stop
 - **Write custom policies** -- see the [Policy System](../README.md#policy-system) section
 - **Day-2 operations** -- see [docs/runbook.md](runbook.md)
 - **Full API reference** -- see [docs/API.md](API.md)
-- **Architecture deep dive** -- see [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+- **Architecture overview** -- see the [README architecture section](../README.md#architecture)
 
 ---
 
