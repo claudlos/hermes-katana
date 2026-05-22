@@ -50,6 +50,25 @@
         margin-top: 26px;
       }
 
+      .hermetic-line,
+      .footer-axiom {
+        color: var(--green);
+        font-weight: 950;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .hermetic-line {
+        margin: 0 0 24px;
+        font-size: clamp(1.1rem, 2.2vw, 1.7rem);
+      }
+
+      .footer-axiom {
+        width: min(1180px, calc(100% - 32px));
+        margin: 18px auto 0;
+        text-align: center;
+      }
+
       .review-strip {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -347,30 +366,14 @@
       <section class="internals-hero" aria-labelledby="internals-title">
         <div>
           <p class="eyebrow">Inner function map</p>
-          <h1 id="internals-title">How Hermes Katana works inside.</h1>
-          <p class="lede">
-            This page maps the repo from public install to runtime enforcement: where text enters,
-            how provenance and scanners shape the decision, how YAML policy resolves the action,
-            and which commands expose each part of the system.
-          </p>
+          <h1 id="internals-title">Hermes Katana Function Map</h1>
+          <p class="hermetic-line">As Above So Below</p>
           <div class="manual-links">
             <a class="button primary" href="#pipeline">Read the Pipeline</a>
             <a class="button" href="#runtime">Runtime Chain</a>
             <a class="button" href="#commands">Command Reference</a>
           </div>
         </div>
-        <aside class="hero-note">
-          <p>
-            The art is intentionally text-light; the technical copy here is the source for review.
-            If a bubble label ever feels wrong, change the HTML first and only then regenerate art.
-          </p>
-          <div class="review-strip">
-            <article><strong>Entrypoints</strong><span>CLI, plugin, installer, proxy</span></article>
-            <article><strong>Runtime</strong><span>middleware before dispatch</span></article>
-            <article><strong>Signals</strong><span>Scabbard, scanners, policy</span></article>
-            <article><strong>Evidence</strong><span>audit, artifacts, release gate</span></article>
-          </div>
-        </aside>
       </section>
 
       <section id="pipeline" class="map-section" aria-labelledby="pipeline-title">
@@ -685,6 +688,7 @@
         <a href="runbook.md">runbook</a>, and
         <a href="https://github.com/claudlos/hermes-katana#readme">README</a>.
       </p>
+      <p class="footer-axiom">As Below So Above</p>
     </footer>
   </body>
 </html>
