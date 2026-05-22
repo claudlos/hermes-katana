@@ -119,6 +119,12 @@ from .image_injection import (  # noqa: F401
     detect_image_injection,
     detect_image_injection_bytes,
 )
+from .ooxml_scanner import (  # noqa: F401
+    OOXMLFinding,
+    OOXMLSeverity,
+    detect_ooxml_injection,
+    detect_ooxml_injection_bytes,
+)
 
 # MCP (Model Context Protocol) tool-poisoning scanner
 from .mcp_scanner import (  # noqa: F401
@@ -283,6 +289,27 @@ def _escalate_scanner_failures(
         result.metadata["scanner_failure_action"] = "record"
 
 
+def _max_confidence(findings: list[Any], default: float) -> float:
+    """Return the strongest confidence from dataclass-style scanner findings."""
+    if not findings:
+        return default
+    return max(float(getattr(f, "confidence", default)) for f in findings)
+
+
+def _has_ooxml_indicator(text: str, lower_text: str | None = None) -> bool:
+    """Cheap prefilter for Office Open XML payloads embedded in text."""
+    lower_text = text.lower() if lower_text is None else lower_text
+    if text.lstrip().startswith(("PK\x03\x04", "PK\x05\x06", "PK\x07\x08")):
+        return True
+    return (
+        "openxmlformats-officedocument" in lower_text
+        or "wordprocessingml" in lower_text
+        or "spreadsheetml" in lower_text
+        or "presentationml" in lower_text
+        or ("data:application/zip" in lower_text and "base64" in lower_text)
+    )
+
+
 attach_optional_import_metadata = _attach_optional_import_metadata
 record_scanner_failure = _record_scanner_failure
 
@@ -401,6 +428,7 @@ class ScanResult:
     unicode_spoof_findings: list[Any] = field(default_factory=list)
     pdf_js_findings: list[Any] = field(default_factory=list)
     multimodal_findings: list[Any] = field(default_factory=list)
+    ooxml_findings: list[Any] = field(default_factory=list)
     normalized_text: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -436,6 +464,7 @@ class ScanResult:
             or self.unicode_spoof_findings
             or self.pdf_js_findings
             or self.multimodal_findings
+            or self.ooxml_findings
         )
 
     @property
@@ -465,6 +494,7 @@ class ScanResult:
             + list(self.unicode_spoof_findings)
             + list(self.pdf_js_findings)
             + list(self.multimodal_findings)
+            + list(self.ooxml_findings)
         )
 
     @property
@@ -522,6 +552,8 @@ class ScanResult:
             parts.append(f"{len(self.pdf_js_findings)} PDF JS issue(s)")
         if self.multimodal_findings:
             parts.append(f"{len(self.multimodal_findings)} multimodal issue(s)")
+        if self.ooxml_findings:
+            parts.append(f"{len(self.ooxml_findings)} OOXML issue(s)")
 
         if not parts:
             return f"[{self.verdict.value.upper()}] No findings (score: {self.risk_score:.2f})"
@@ -611,6 +643,7 @@ def scan_input(
         scan_text = normalized
     else:
         scan_text = text
+    scan_text_lower = scan_text.lower()
 
     # Injection detection
     if check_injection:
@@ -726,7 +759,7 @@ def scan_input(
 
     # SVG sanitizer — detects script/event handlers in SVG content
     if scan_svg is not None and (
-        "<svg" in scan_text.lower() or "xmlns=" in scan_text.lower() or "<script" in scan_text.lower()
+        "<svg" in scan_text_lower or "xmlns=" in scan_text_lower or "<script" in scan_text_lower
     ):
         try:
             result.svg_findings = scan_svg(scan_text)
@@ -736,13 +769,43 @@ def scan_input(
             record_scanner_failure(result, "svg_sanitizer", exc)
 
     # Multimodal — detects data URIs, QR-like patterns in text
-    if scan_data_uri is not None and ("data:" in scan_text or "base64" in scan_text.lower()):
+    if scan_data_uri is not None and ("data:" in scan_text_lower or "base64" in scan_text_lower):
         try:
             result.multimodal_findings = scan_data_uri(scan_text)
             if result.multimodal_findings:
                 risk_scores.append(0.7)
         except Exception as exc:
             record_scanner_failure(result, "multimodal", exc)
+
+    # Image metadata injection embedded as data:image/... URIs.
+    if "data:image/" in scan_text_lower:
+        try:
+            result.image_injection_findings = detect_image_injection(scan_text)
+            if result.image_injection_findings:
+                risk_scores.append(_max_confidence(result.image_injection_findings, 0.85))
+        except Exception as exc:
+            record_scanner_failure(result, "image_injection", exc)
+
+    # PDF JavaScript in inbound payloads. This is intentionally not gated behind
+    # check_structural because a PDF payload can arrive as regular text input.
+    if detect_pdf_js is not None and (
+        "pdf" in scan_text_lower or "%pdf" in scan_text_lower or "/JS" in scan_text or "OpenAction" in scan_text
+    ):
+        try:
+            result.pdf_js_findings = detect_pdf_js(scan_text)
+            if result.pdf_js_findings:
+                risk_scores.append(_max_confidence(result.pdf_js_findings, 0.8))
+        except Exception as exc:
+            record_scanner_failure(result, "pdf_js_scanner", exc)
+
+    # OOXML package scan for DOCX/XLSX/PPTX data URIs or raw package text.
+    if _has_ooxml_indicator(scan_text, scan_text_lower):
+        try:
+            result.ooxml_findings = detect_ooxml_injection(scan_text)
+            if result.ooxml_findings:
+                risk_scores.append(_max_confidence(result.ooxml_findings, 0.8))
+        except Exception as exc:
+            record_scanner_failure(result, "ooxml_scanner", exc)
 
     # Aho-Corasick multi-pattern injection scanner — supplementary signal only.
     # Uses min_confidence=0.9 to suppress single-keyword false positives (e.g.
@@ -876,6 +939,7 @@ def scan_output(
         scan_text = normalized
     else:
         scan_text = text
+    scan_text_lower = scan_text.lower()
 
     # Content scanning
     if check_content:
@@ -898,7 +962,7 @@ def scan_output(
             risk_scores.append(injection_score(scan_text))
 
     # SVG sanitizer (LLM can output SVG with script injection)
-    if scan_svg is not None and ("<svg" in scan_text.lower() or "xmlns=" in scan_text.lower()):
+    if scan_svg is not None and ("<svg" in scan_text_lower or "xmlns=" in scan_text_lower):
         try:
             result.svg_findings = scan_svg(scan_text)
             if result.svg_findings:
@@ -907,13 +971,22 @@ def scan_output(
             record_scanner_failure(result, "svg_sanitizer", exc)
 
     # Multimodal — data URIs in output
-    if scan_data_uri is not None and ("data:" in scan_text or "base64" in scan_text.lower()):
+    if scan_data_uri is not None and ("data:" in scan_text_lower or "base64" in scan_text_lower):
         try:
             result.multimodal_findings = scan_data_uri(scan_text)
             if result.multimodal_findings:
                 risk_scores.append(0.7)
         except Exception as exc:
             record_scanner_failure(result, "multimodal", exc)
+
+    # Image metadata injection embedded as data:image/... URIs.
+    if "data:image/" in scan_text_lower:
+        try:
+            result.image_injection_findings = detect_image_injection(scan_text)
+            if result.image_injection_findings:
+                risk_scores.append(_max_confidence(result.image_injection_findings, 0.85))
+        except Exception as exc:
+            record_scanner_failure(result, "image_injection", exc)
 
     # Unicode spoof in output
     if scan_unicode_spoof is not None:
@@ -926,14 +999,23 @@ def scan_output(
 
     # PDF JavaScript in output
     if detect_pdf_js is not None and (
-        "pdf" in scan_text.lower() or "%pdf" in scan_text.lower() or "/JS" in scan_text or "OpenAction" in scan_text
+        "pdf" in scan_text_lower or "%pdf" in scan_text_lower or "/JS" in scan_text or "OpenAction" in scan_text
     ):
         try:
             result.pdf_js_findings = detect_pdf_js(scan_text)
             if result.pdf_js_findings:
-                risk_scores.append(0.8)
+                risk_scores.append(_max_confidence(result.pdf_js_findings, 0.8))
         except Exception as exc:
             record_scanner_failure(result, "pdf_js_scanner", exc)
+
+    # OOXML package scan for DOCX/XLSX/PPTX data URIs or raw package text.
+    if _has_ooxml_indicator(scan_text, scan_text_lower):
+        try:
+            result.ooxml_findings = detect_ooxml_injection(scan_text)
+            if result.ooxml_findings:
+                risk_scores.append(_max_confidence(result.ooxml_findings, 0.8))
+        except Exception as exc:
+            record_scanner_failure(result, "ooxml_scanner", exc)
 
     if risk_scores:
         result.risk_score = max(risk_scores)
@@ -1243,4 +1325,9 @@ __all__ = [
     "scan_data_uri",
     "MultimodalFinding",
     "MultimodalSeverity",
+    # OOXML
+    "detect_ooxml_injection",
+    "detect_ooxml_injection_bytes",
+    "OOXMLFinding",
+    "OOXMLSeverity",
 ]
