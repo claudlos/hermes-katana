@@ -256,8 +256,10 @@ h2 {
 
 .quote-title {
   max-width: 31ch;
+  color: var(--green);
   font-size: clamp(1.9rem, 3.7vw, 4.4rem);
   line-height: 1.04;
+  text-transform: uppercase;
 }
 
 h3 {
@@ -564,6 +566,18 @@ footer {
 footer p {
   margin-top: 0;
   margin-bottom: 0;
+}
+
+.footer-axiom {
+  color: var(--green);
+  font-weight: 950;
+  letter-spacing: 0;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+footer .footer-axiom {
+  margin-top: 18px;
 }
 
 footer a {
