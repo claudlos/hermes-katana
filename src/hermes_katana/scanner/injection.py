@@ -586,7 +586,12 @@ _hp(
 
 _hp(
     "acrostic_secret",
-    r"(?i)\b(?:acrostic|cipher|encoded|hidden\s+message|hidden\s+code)\b",
+    r"(?i)\b(?:"
+    r"acrostic|hidden\s+(?:message|code)|"
+    r"(?:cipher|encoded)\s+(?:message|payload|instruction|prompt|text|code)|"
+    r"(?:decode|decipher|decrypt|solve|read)\s+(?:the\s+)?"
+    r"(?:acrostic|cipher|encoded|hidden\s+message|hidden\s+code)"
+    r")\b",
     InjectionCategory.INSTRUCTION_OVERRIDE,
     0.75,
     "Use of acrostic, cipher, or encoding framing to hide instructions.",
@@ -718,7 +723,12 @@ _hp(
 
 _hp(
     "acrostic_secret",
-    r"(?i)(?:acrostic|cipher|encoded|hidden\s+message)\s*",
+    r"(?i)\b(?:"
+    r"acrostic|hidden\s+message|"
+    r"(?:cipher|encoded)\s+(?:message|payload|instruction|prompt|text|code)|"
+    r"(?:decode|decipher|decrypt|solve|read)\s+(?:the\s+)?"
+    r"(?:acrostic|cipher|encoded|hidden\s+message)"
+    r")\b",
     InjectionCategory.INSTRUCTION_OVERRIDE,
     0.75,
     "Use of acrostic, cipher, or encoding framing to hide instructions.",
@@ -1730,7 +1740,9 @@ _hp(
 
 _hp(
     "red_team_evaluation",
-    r"(?:this\s+is\s+a?\s+)?red[\s-]?team\s+(?:evaluation|assessment|test|exercise|audit|review)",
+    r"(?:this\s+is\s+a?\s+)?red[\s-]?team\s+"
+    r"(?:evaluation|assessment|test|exercise|audit|review)\b"
+    r"(?!\s+(?:debrief|note|notes|report|writeup|summary))",
     InjectionCategory.ROLE_OVERRIDE,
     0.55,
     "Red-team framing — presents attack as authorized security testing (Skeleton Key variant).",
