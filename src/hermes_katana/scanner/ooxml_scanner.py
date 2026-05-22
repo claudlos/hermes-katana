@@ -13,7 +13,6 @@ aggregate text scanner against embedded OOXML data URIs.
 
 from __future__ import annotations
 
-import base64
 from dataclasses import dataclass
 from enum import Enum
 import html
@@ -22,6 +21,7 @@ import re
 import zipfile
 
 from .injection import detect_injection
+from .multimodal import extract_data_uri_payloads
 
 __all__ = [
     "OOXMLSeverity",
@@ -56,14 +56,19 @@ _MAX_PARTS = 150
 _MAX_PART_BYTES = 256 * 1024
 _MAX_FINDINGS = 50
 
-_DATA_URI_CANDIDATE_RE = re.compile(r"""data:[^\s"'<>`]+""", re.IGNORECASE)
 _OOXML_MIME_HINTS = (
     "openxmlformats-officedocument",
     "wordprocessingml",
     "spreadsheetml",
     "presentationml",
+    "macroenabled",
+    "application/vnd.ms-word",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/msword",
     "application/zip",
     "application/x-zip-compressed",
+    "application/octet-stream",
 )
 _DANGEROUS_REL_TARGET_RE = re.compile(r"^(?:javascript:|data:|file:|https?://|//|\\\\)", re.IGNORECASE)
 _HIGH_RISK_REL_TARGET_RE = re.compile(r"^(?:javascript:|data:|file:|//|\\\\)", re.IGNORECASE)
@@ -112,9 +117,11 @@ def detect_ooxml_injection(content: str | bytes) -> list[OOXMLFinding]:
     if not text:
         return findings
 
-    for candidate in _extract_data_uri_candidates(text):
-        decoded = _decode_data_uri_candidate(candidate)
+    for payload in extract_data_uri_payloads(text):
+        decoded = payload.decoded_bytes
         if decoded is None:
+            continue
+        if not _data_uri_may_be_ooxml(payload.media_type, payload.header, decoded):
             continue
         findings.extend(detect_ooxml_injection_bytes(decoded))
         if len(findings) >= _MAX_FINDINGS:
@@ -187,30 +194,11 @@ def detect_ooxml_injection_bytes(data: bytes) -> list[OOXMLFinding]:
     return findings[:_MAX_FINDINGS]
 
 
-def _extract_data_uri_candidates(text: str) -> list[str]:
-    candidates: list[str] = []
-    for match in _DATA_URI_CANDIDATE_RE.finditer(text):
-        candidate = match.group(0).rstrip(".,;)]}")
-        if "," not in candidate:
-            continue
-        header = candidate.split(",", 1)[0].lower()
-        if "base64" not in header:
-            continue
-        if any(hint in header for hint in _OOXML_MIME_HINTS):
-            candidates.append(candidate)
-    return candidates
-
-
-def _decode_data_uri_candidate(candidate: str) -> bytes | None:
-    try:
-        _, payload = candidate.split(",", 1)
-        payload = re.sub(r"\s+", "", payload)
-        missing_padding = len(payload) % 4
-        if missing_padding:
-            payload += "=" * (4 - missing_padding)
-        return base64.b64decode(payload, validate=False)
-    except Exception:
-        return None
+def _data_uri_may_be_ooxml(media_type: str, header: str, decoded: bytes) -> bool:
+    header_lower = f"{media_type};{header}".lower()
+    return decoded.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")) or any(
+        hint in header_lower for hint in _OOXML_MIME_HINTS
+    )
 
 
 def _looks_like_ooxml(names: set[str]) -> bool:

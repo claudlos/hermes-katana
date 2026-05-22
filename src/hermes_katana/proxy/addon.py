@@ -197,6 +197,40 @@ class KatanaAddon:
             return False  # Unlimited
         return len(body) > self.config.max_body_scan_size
 
+    @staticmethod
+    def _needs_binary_scan(data: bytes, content_type: str = "") -> bool:
+        """Return true for file-like bodies that should not be treated as UTF-8 text."""
+        lower_type = content_type.lower()
+        if any(
+            marker in lower_type
+            for marker in (
+                "application/pdf",
+                "application/zip",
+                "application/x-zip-compressed",
+                "application/octet-stream",
+                "openxmlformats-officedocument",
+                "macroenabled",
+                "vnd.ms-word",
+                "vnd.ms-excel",
+                "vnd.ms-powerpoint",
+                "image/",
+            )
+        ):
+            return True
+        stripped = data.lstrip()
+        if stripped.startswith((b"%PDF-", b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
+            return True
+        if stripped.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"RIFF")):
+            return True
+        sample = data[:4096]
+        if b"\x00" in sample:
+            return True
+        try:
+            sample.decode("utf-8")
+        except UnicodeDecodeError:
+            return True
+        return False
+
     def _scan_text(
         self,
         text: str,
@@ -240,6 +274,40 @@ class KatanaAddon:
                 check_injection=modes.injection,  # Indirect injection defense
             )
 
+        return {
+            "verdict": result.verdict.value,
+            "risk_score": result.risk_score,
+            "is_blocked": result.is_blocked,
+            "finding_count": result.finding_count,
+            "summary": result.summary,
+        }
+
+    def _scan_bytes(
+        self,
+        data: bytes,
+        direction: str = "request",
+        content_type: str = "",
+    ) -> dict[str, Any]:
+        """Run the scanner on raw request/response body bytes."""
+        from hermes_katana.scanner import scan_bytes
+
+        modes = self.config.scan_modes
+        with self._vault_values_lock:
+            vault_vals = self._vault_values
+
+        result = scan_bytes(
+            data,
+            content_type=content_type,
+            direction="output" if direction == "response" else "input",
+            vault_values=vault_vals,
+            check_injection=modes.injection,
+            check_secrets=modes.secrets,
+            check_unicode=modes.unicode,
+            check_content=modes.content,
+            check_content_harm=True,
+            check_prompt_leak=True,
+            security_level=self.config.scanner_security_level,
+        )
         return {
             "verdict": result.verdict.value,
             "risk_score": result.risk_score,
@@ -505,8 +573,12 @@ class KatanaAddon:
                 scan_body = body[: self.config.max_body_scan_size]
                 self._increment_stat("requests_oversized")
             try:
-                text = scan_body.decode("utf-8", errors="replace")
-                scan_result = self._scan_text(text, direction="request")
+                content_type = flow.request.headers.get("content-type", "")
+                if self._needs_binary_scan(scan_body, content_type):
+                    scan_result = self._scan_bytes(scan_body, direction="request", content_type=content_type)
+                else:
+                    text = scan_body.decode("utf-8", errors="replace")
+                    scan_result = self._scan_text(text, direction="request")
 
                 if scan_result["is_blocked"]:
                     self._increment_stat("requests_blocked_scan")
@@ -629,8 +701,12 @@ class KatanaAddon:
                 scan_body = body[: self.config.max_body_scan_size]
                 self._increment_stat("responses_oversized")
             try:
-                text = scan_body.decode("utf-8", errors="replace")
-                scan_result = self._scan_text(text, direction="response")
+                content_type = flow.response.headers.get("content-type", "")
+                if self._needs_binary_scan(scan_body, content_type):
+                    scan_result = self._scan_bytes(scan_body, direction="response", content_type=content_type)
+                else:
+                    text = scan_body.decode("utf-8", errors="replace")
+                    scan_result = self._scan_text(text, direction="response")
                 scanned = True
 
                 if scan_result["is_blocked"]:
@@ -850,14 +926,16 @@ class KatanaAddon:
             # Permissive mode: scan only the prefix.
             content = bytes(content[:cap])
 
-        if isinstance(content, bytes):
-            text = content.decode("utf-8", errors="replace")
-        else:
-            text = str(content)
-
         try:
             direction = "request" if getattr(msg, "from_client", True) else "response"
-            scan_result = self._scan_text(text, direction=direction)
+            if isinstance(content, bytes):
+                if self._needs_binary_scan(content):
+                    scan_result = self._scan_bytes(content, direction=direction)
+                else:
+                    text = content.decode("utf-8", errors="replace")
+                    scan_result = self._scan_text(text, direction=direction)
+            else:
+                scan_result = self._scan_text(str(content), direction=direction)
 
             if scan_result["is_blocked"]:
                 self._increment_stat("ws_messages_blocked")

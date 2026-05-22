@@ -119,6 +119,7 @@ from .image_injection import (  # noqa: F401
     detect_image_injection,
     detect_image_injection_bytes,
 )
+from .multimodal import extract_data_uri_payloads, scan_bytes_multimodal
 from .ooxml_scanner import (  # noqa: F401
     OOXMLFinding,
     OOXMLSeverity,
@@ -296,6 +297,28 @@ def _max_confidence(findings: list[Any], default: float) -> float:
     return max(float(getattr(f, "confidence", default)) for f in findings)
 
 
+def _finding_identity(finding: Any) -> tuple[str, str, str, str, str, str, str]:
+    return (
+        finding.__class__.__name__,
+        str(getattr(finding, "category", "")),
+        str(getattr(finding, "action_type", "")),
+        str(getattr(finding, "location", "")),
+        str(getattr(finding, "source", "")),
+        str(getattr(finding, "content", getattr(finding, "matched_text", "")))[:500],
+        repr(finding)[:500],
+    )
+
+
+def _extend_unique_findings(existing: list[Any], findings: list[Any]) -> None:
+    seen = {_finding_identity(finding) for finding in existing}
+    for finding in findings:
+        key = _finding_identity(finding)
+        if key in seen:
+            continue
+        existing.append(finding)
+        seen.add(key)
+
+
 def _has_ooxml_indicator(text: str, lower_text: str | None = None) -> bool:
     """Cheap prefilter for Office Open XML payloads embedded in text."""
     lower_text = text.lower() if lower_text is None else lower_text
@@ -306,8 +329,174 @@ def _has_ooxml_indicator(text: str, lower_text: str | None = None) -> bool:
         or "wordprocessingml" in lower_text
         or "spreadsheetml" in lower_text
         or "presentationml" in lower_text
+        or "macroenabled" in lower_text
+        or "application/vnd.ms-word" in lower_text
+        or "application/vnd.ms-excel" in lower_text
+        or "application/vnd.ms-powerpoint" in lower_text
+        or "application/msword" in lower_text
         or ("data:application/zip" in lower_text and "base64" in lower_text)
+        or ("data:application/octet-stream" in lower_text and "base64" in lower_text)
     )
+
+
+def _payload_may_be_pdf(media_type: str, header: str, data: bytes) -> bool:
+    hint = f"{media_type};{header}".lower()
+    return data.lstrip().startswith(b"%PDF-") or media_type == "application/pdf" or "pdf" in hint
+
+
+def _payload_may_be_ooxml(media_type: str, header: str, data: bytes) -> bool:
+    hint = f"{media_type};{header}".lower()
+    return data.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")) or any(
+        needle in hint
+        for needle in (
+            "openxmlformats-officedocument",
+            "wordprocessingml",
+            "spreadsheetml",
+            "presentationml",
+            "macroenabled",
+            "application/vnd.ms-word",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "application/msword",
+            "application/zip",
+            "application/x-zip-compressed",
+            "application/octet-stream",
+        )
+    )
+
+
+def _payload_may_be_image(media_type: str, data: bytes) -> bool:
+    if media_type.startswith("image/"):
+        return True
+    return data.startswith(
+        (
+            b"\x89PNG\r\n\x1a\n",
+            b"\xff\xd8\xff",
+            b"GIF87a",
+            b"GIF89a",
+            b"RIFF",
+            b"BM",
+            b"II*\x00",
+            b"MM\x00*",
+        )
+    )
+
+
+def _merge_scan_results(target: "ScanResult", source: "ScanResult", risk_scores: list[float]) -> None:
+    """Merge finding lists from a nested text scan into an aggregate result."""
+    for field_name in (
+        "injection_findings",
+        "secret_findings",
+        "command_findings",
+        "content_findings",
+        "unicode_findings",
+        "bloom_findings",
+        "html_findings",
+        "pdf_findings",
+        "markdown_findings",
+        "css_findings",
+        "structural_flags",
+        "content_harm_findings",
+        "prompt_leak_findings",
+        "image_injection_findings",
+        "persona_findings",
+        "semantic_findings",
+        "decoder_findings",
+        "behavioral_findings",
+        "deberta_findings",
+        "svg_findings",
+        "unicode_spoof_findings",
+        "pdf_js_findings",
+        "multimodal_findings",
+        "ooxml_findings",
+    ):
+        _extend_unique_findings(getattr(target, field_name), getattr(source, field_name))
+    if source.risk_score:
+        risk_scores.append(source.risk_score)
+    if source.metadata.get("scanner_failures"):
+        target.metadata.setdefault("scanner_failures", []).extend(source.metadata["scanner_failures"])
+
+
+def _looks_textual_bytes(data: bytes) -> bool:
+    if not data:
+        return False
+    sample = data[:4096]
+    if b"\x00" in sample:
+        return False
+    text = sample.decode("utf-8", errors="ignore")
+    if not text:
+        return False
+    printable = sum(1 for ch in text if ch.isprintable() or ch.isspace())
+    return printable / max(len(text), 1) >= 0.85
+
+
+def _scan_embedded_file_payloads(
+    result: "ScanResult",
+    scan_text: str,
+    risk_scores: list[float],
+) -> None:
+    """Run binary scanners over decoded data URI carriers inside text."""
+    if "data" not in scan_text.lower():
+        return
+    try:
+        payloads = extract_data_uri_payloads(scan_text)
+    except Exception as exc:
+        _record_scanner_failure(result, "data_uri_payload_decoder", exc)
+        return
+
+    if payloads:
+        result.metadata["decoded_data_uri_payloads"] = len(payloads)
+
+    for payload in payloads:
+        data = payload.decoded_bytes
+        if not data:
+            continue
+
+        if _payload_may_be_pdf(payload.media_type, payload.header, data):
+            if detect_pdf_js is not None:
+                try:
+                    findings = detect_pdf_js(data)
+                    if findings:
+                        result.pdf_js_findings.extend(findings)
+                        risk_scores.append(_max_confidence(findings, 0.8))
+                except Exception as exc:
+                    _record_scanner_failure(result, "pdf_js_scanner:data_uri", exc)
+            try:
+                findings = detect_pdf_layers_bytes(data)
+                if findings:
+                    result.pdf_findings.extend(findings)
+                    risk_scores.append(_max_confidence(findings, 0.7))
+            except Exception as exc:
+                _record_scanner_failure(result, "pdf_layers:data_uri", exc)
+
+        if _payload_may_be_ooxml(payload.media_type, payload.header, data):
+            try:
+                findings = detect_ooxml_injection_bytes(data)
+                if findings:
+                    result.ooxml_findings.extend(findings)
+                    risk_scores.append(_max_confidence(findings, 0.8))
+            except Exception as exc:
+                _record_scanner_failure(result, "ooxml_scanner:data_uri", exc)
+
+        if _payload_may_be_image(payload.media_type, data):
+            try:
+                findings = detect_image_injection_bytes(data)
+                if findings:
+                    result.image_injection_findings.extend(findings)
+                    risk_scores.append(_max_confidence(findings, 0.85))
+            except Exception as exc:
+                _record_scanner_failure(result, "image_injection:data_uri", exc)
+
+        if _payload_may_be_pdf(payload.media_type, payload.header, data) or _payload_may_be_image(
+            payload.media_type, data
+        ):
+            try:
+                findings = scan_bytes_multimodal(data)
+                if findings:
+                    result.multimodal_findings.extend(findings)
+                    risk_scores.append(_max_confidence(findings, 0.7))
+            except Exception as exc:
+                _record_scanner_failure(result, "multimodal_bytes:data_uri", exc)
 
 
 attach_optional_import_metadata = _attach_optional_import_metadata
@@ -358,6 +547,7 @@ __all__ = [
     "ScanResult",
     "scan_input",
     "scan_output",
+    "scan_bytes",
     "scan_command",
     "scan_with_context",
     "classify_deberta",
@@ -777,12 +967,15 @@ def scan_input(
         except Exception as exc:
             record_scanner_failure(result, "multimodal", exc)
 
+    _scan_embedded_file_payloads(result, scan_text, risk_scores)
+
     # Image metadata injection embedded as data:image/... URIs.
     if "data:image/" in scan_text_lower:
         try:
-            result.image_injection_findings = detect_image_injection(scan_text)
-            if result.image_injection_findings:
-                risk_scores.append(_max_confidence(result.image_injection_findings, 0.85))
+            findings = detect_image_injection(scan_text)
+            if findings:
+                result.image_injection_findings.extend(findings)
+                risk_scores.append(_max_confidence(findings, 0.85))
         except Exception as exc:
             record_scanner_failure(result, "image_injection", exc)
 
@@ -792,18 +985,20 @@ def scan_input(
         "pdf" in scan_text_lower or "%pdf" in scan_text_lower or "/JS" in scan_text or "OpenAction" in scan_text
     ):
         try:
-            result.pdf_js_findings = detect_pdf_js(scan_text)
-            if result.pdf_js_findings:
-                risk_scores.append(_max_confidence(result.pdf_js_findings, 0.8))
+            findings = detect_pdf_js(scan_text)
+            if findings:
+                result.pdf_js_findings.extend(findings)
+                risk_scores.append(_max_confidence(findings, 0.8))
         except Exception as exc:
             record_scanner_failure(result, "pdf_js_scanner", exc)
 
     # OOXML package scan for DOCX/XLSX/PPTX data URIs or raw package text.
     if _has_ooxml_indicator(scan_text, scan_text_lower):
         try:
-            result.ooxml_findings = detect_ooxml_injection(scan_text)
-            if result.ooxml_findings:
-                risk_scores.append(_max_confidence(result.ooxml_findings, 0.8))
+            findings = detect_ooxml_injection(scan_text)
+            if findings:
+                result.ooxml_findings.extend(findings)
+                risk_scores.append(_max_confidence(findings, 0.8))
         except Exception as exc:
             record_scanner_failure(result, "ooxml_scanner", exc)
 
@@ -960,6 +1155,13 @@ def scan_output(
         result.injection_findings = detect_injection(scan_text)
         if result.injection_findings:
             risk_scores.append(injection_score(scan_text))
+        if decode_and_scan is not None:
+            try:
+                result.decoder_findings = decode_and_scan(scan_text, vault_values=vault_values)
+                if result.decoder_findings:
+                    risk_scores.append(max(f.confidence for f in result.decoder_findings))
+            except Exception as exc:
+                record_scanner_failure(result, "decoder", exc)
 
     # SVG sanitizer (LLM can output SVG with script injection)
     if scan_svg is not None and ("<svg" in scan_text_lower or "xmlns=" in scan_text_lower):
@@ -979,12 +1181,15 @@ def scan_output(
         except Exception as exc:
             record_scanner_failure(result, "multimodal", exc)
 
+    _scan_embedded_file_payloads(result, scan_text, risk_scores)
+
     # Image metadata injection embedded as data:image/... URIs.
     if "data:image/" in scan_text_lower:
         try:
-            result.image_injection_findings = detect_image_injection(scan_text)
-            if result.image_injection_findings:
-                risk_scores.append(_max_confidence(result.image_injection_findings, 0.85))
+            findings = detect_image_injection(scan_text)
+            if findings:
+                result.image_injection_findings.extend(findings)
+                risk_scores.append(_max_confidence(findings, 0.85))
         except Exception as exc:
             record_scanner_failure(result, "image_injection", exc)
 
@@ -1002,18 +1207,20 @@ def scan_output(
         "pdf" in scan_text_lower or "%pdf" in scan_text_lower or "/JS" in scan_text or "OpenAction" in scan_text
     ):
         try:
-            result.pdf_js_findings = detect_pdf_js(scan_text)
-            if result.pdf_js_findings:
-                risk_scores.append(_max_confidence(result.pdf_js_findings, 0.8))
+            findings = detect_pdf_js(scan_text)
+            if findings:
+                result.pdf_js_findings.extend(findings)
+                risk_scores.append(_max_confidence(findings, 0.8))
         except Exception as exc:
             record_scanner_failure(result, "pdf_js_scanner", exc)
 
     # OOXML package scan for DOCX/XLSX/PPTX data URIs or raw package text.
     if _has_ooxml_indicator(scan_text, scan_text_lower):
         try:
-            result.ooxml_findings = detect_ooxml_injection(scan_text)
-            if result.ooxml_findings:
-                risk_scores.append(_max_confidence(result.ooxml_findings, 0.8))
+            findings = detect_ooxml_injection(scan_text)
+            if findings:
+                result.ooxml_findings.extend(findings)
+                risk_scores.append(_max_confidence(findings, 0.8))
         except Exception as exc:
             record_scanner_failure(result, "ooxml_scanner", exc)
 
@@ -1021,6 +1228,112 @@ def scan_output(
         result.risk_score = max(risk_scores)
     result.verdict = _compute_verdict(result.risk_score)
 
+    return result
+
+
+def scan_bytes(
+    data: bytes,
+    *,
+    filename: str = "",
+    content_type: str = "",
+    direction: Literal["input", "output"] = "input",
+    vault_values: Optional[set[str]] = None,
+    check_injection: bool = True,
+    check_secrets: bool = True,
+    check_unicode: bool = True,
+    check_content: bool = False,
+    check_content_harm: bool = True,
+    check_prompt_leak: bool = True,
+    check_structural: bool = False,
+    security_level: Literal["low", "medium", "high"] = "high",
+) -> ScanResult:
+    """Scan raw file or proxy body bytes without lossy text-only routing."""
+    security_level = _validate_security_level(str(security_level))
+    direction = "output" if direction == "output" else "input"
+    result = ScanResult(
+        metadata={
+            "scan_type": f"bytes_{direction}",
+            "byte_length": len(data),
+        }
+    )
+    if filename:
+        result.metadata["filename"] = filename
+    if content_type:
+        result.metadata["content_type"] = content_type
+    attach_optional_import_metadata(result)
+    risk_scores: list[float] = []
+
+    hint = f"{content_type};{filename}".lower()
+    if _payload_may_be_pdf(content_type.lower(), hint, data):
+        if detect_pdf_js is not None:
+            try:
+                result.pdf_js_findings = detect_pdf_js(data)
+                if result.pdf_js_findings:
+                    risk_scores.append(_max_confidence(result.pdf_js_findings, 0.8))
+            except Exception as exc:
+                record_scanner_failure(result, "pdf_js_scanner", exc)
+        try:
+            result.pdf_findings = detect_pdf_layers_bytes(data)
+            if result.pdf_findings:
+                risk_scores.append(_max_confidence(result.pdf_findings, 0.7))
+        except Exception as exc:
+            record_scanner_failure(result, "pdf_layers", exc)
+
+    if _payload_may_be_ooxml(content_type.lower(), hint, data):
+        try:
+            result.ooxml_findings = detect_ooxml_injection_bytes(data)
+            if result.ooxml_findings:
+                risk_scores.append(_max_confidence(result.ooxml_findings, 0.8))
+        except Exception as exc:
+            record_scanner_failure(result, "ooxml_scanner", exc)
+
+    if _payload_may_be_image(content_type.lower(), data):
+        try:
+            result.image_injection_findings = detect_image_injection_bytes(data)
+            if result.image_injection_findings:
+                risk_scores.append(_max_confidence(result.image_injection_findings, 0.85))
+        except Exception as exc:
+            record_scanner_failure(result, "image_injection", exc)
+
+    try:
+        result.multimodal_findings.extend(scan_bytes_multimodal(data, filename=filename))
+        if result.multimodal_findings:
+            risk_scores.append(_max_confidence(result.multimodal_findings, 0.7))
+    except Exception as exc:
+        record_scanner_failure(result, "multimodal_bytes", exc)
+
+    sample_lower = data[:2_000_000].lower()
+    if _looks_textual_bytes(data) or b"data:" in sample_lower or b"base64" in sample_lower:
+        text = data.decode("utf-8", errors="replace")
+        if direction == "output":
+            text_result = scan_output(
+                text,
+                vault_values=vault_values,
+                check_content=check_content,
+                check_secrets=check_secrets,
+                check_unicode=check_unicode,
+                check_injection=check_injection,
+            )
+        else:
+            text_result = scan_input(
+                text,
+                vault_values=vault_values,
+                check_injection=check_injection,
+                check_secrets=check_secrets,
+                check_unicode=check_unicode,
+                check_content=check_content,
+                check_content_harm=check_content_harm,
+                check_prompt_leak=check_prompt_leak,
+                check_structural=check_structural,
+                check_commands=False,
+                security_level=security_level,
+            )
+        _merge_scan_results(result, text_result, risk_scores)
+
+    _escalate_scanner_failures(result, risk_scores, security_level)
+    if risk_scores:
+        result.risk_score = max(risk_scores)
+    result.verdict = _compute_verdict(result.risk_score)
     return result
 
 
@@ -1070,6 +1383,13 @@ def scan_command(
         result.injection_findings = detect_injection(cmd)
         if result.injection_findings:
             risk_scores.append(injection_score(cmd))
+        if decode_and_scan is not None:
+            try:
+                result.decoder_findings = decode_and_scan(cmd, vault_values=vault_values)
+                if result.decoder_findings:
+                    risk_scores.append(max(f.confidence for f in result.decoder_findings))
+            except Exception as exc:
+                record_scanner_failure(result, "decoder", exc)
 
     # Secret detection in commands
     if check_secrets:
@@ -1224,6 +1544,7 @@ __all__ = [
     # Main scan functions
     "scan_input",
     "scan_output",
+    "scan_bytes",
     "scan_command",
     "scan_with_context",
     # Result type

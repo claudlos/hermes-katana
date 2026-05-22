@@ -752,6 +752,39 @@ class KatanaScanMiddleware(KatanaMiddleware):
             )
         return None
 
+    @staticmethod
+    def _route_skipped_value_needs_scan(text: str) -> bool:
+        """Detect high-risk carriers inside fields that are usually route-skipped."""
+        import html
+        import urllib.parse
+
+        normalized = html.unescape(text)
+        decoded = urllib.parse.unquote(normalized)
+        blob = f"{normalized} {decoded}".lower()
+        return any(
+            marker in blob
+            for marker in (
+                "data:",
+                "javascript:",
+                "vbscript:",
+                "file:",
+                "<svg",
+                "<script",
+                "%pdf",
+                "/js",
+                "openaction",
+                "base64,",
+                "openxmlformats-officedocument",
+                "macroenabled",
+                "vnd.ms-word",
+                "vnd.ms-excel",
+                "vnd.ms-powerpoint",
+                "ignore previous",
+                "ignore all previous",
+                "disregard previous",
+            )
+        )
+
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         """Scan all string arguments for attacks.
 
@@ -782,7 +815,8 @@ class KatanaScanMiddleware(KatanaMiddleware):
                 RouteKind.URL,
                 RouteKind.URL_LIST,
             }:
-                continue
+                if not self._route_skipped_value_needs_scan(text):
+                    continue
 
             # Use command scanner for command-like arguments
             if route.kind == RouteKind.COMMAND or arg_name in ("command", "cmd", "shell_command", "script"):
