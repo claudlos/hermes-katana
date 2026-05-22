@@ -17,10 +17,13 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
 
+from hermes_katana._paths import home_or_fallback
+from hermes_katana._version import ARTIFACT_REVISION
+
 DEFAULT_ARTIFACT_MODEL = "minilm"
 DEFAULT_MINILM_ONNX_REPO = "claudlos/hermes-katana-v15-distill-minilm-onnx"
 DEFAULT_V15_LARGE_REPO = "claudlos/hermes-katana-v15-large"
-DEFAULT_REVISION = "v3.0.0"
+DEFAULT_REVISION = ARTIFACT_REVISION
 ARTIFACT_MANIFEST = "artifact_manifest.json"
 
 MINILM_ONNX_REQUIRED_FILES = (
@@ -130,7 +133,7 @@ _BASE_ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
         allow_patterns=V15_LARGE_ALLOW_PATTERNS,
         size_label="large",
         role="optional high-accuracy local Scabbard model",
-        profile="paranoid_local",
+        profile="max_local",
         path_env_var="KATANA_V15_LARGE_DIR",
         repo_env_var="KATANA_V15_LARGE_HF_REPO_ID",
         revision_env_var="KATANA_V15_LARGE_HF_REVISION",
@@ -180,7 +183,7 @@ def default_artifact_cache_dir() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     xdg = os.environ.get("XDG_CACHE_HOME")
-    base = Path(xdg).expanduser() if xdg else Path.home() / ".cache"
+    base = Path(xdg).expanduser() if xdg else home_or_fallback() / ".cache"
     return (base / "hermes-katana" / "artifacts").resolve()
 
 

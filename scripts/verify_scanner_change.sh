@@ -103,8 +103,8 @@ if [[ "${SKIP_LINT}" -eq 0 ]]; then
   run_cmd "ruff format --check src/ tests/" ruff format --check src/ tests/
 fi
 
-run_shell "python3 test_false_positives.py" "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src '${PYTHON_BIN}' test_false_positives.py"
-run_shell "python3 test_evasion.py" "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src '${PYTHON_BIN}' test_evasion.py"
+run_shell "python3 tests/smoke/false_positive_gate.py" "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src '${PYTHON_BIN}' tests/smoke/false_positive_gate.py"
+run_shell "python3 tests/smoke/evasion_gate.py" "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src '${PYTHON_BIN}' tests/smoke/evasion_gate.py"
 run_shell "python3 -m pytest tests/integration/test_adversarial_eval_pack.py -q" "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src '${PYTHON_BIN}' -m pytest tests/integration/test_adversarial_eval_pack.py -q"
 
 if [[ "${RUN_EVAL}" -eq 1 ]]; then

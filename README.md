@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="HermesKatana" width="800">
+  <img src="docs/assets/infographics/01-system-map.webp" alt="Hermes Katana defense manual cover" width="800">
 </p>
 
 <h1 align="center">Hermes Katana</h1>
@@ -20,13 +20,23 @@
 
 ## Hermes Katana
 
-🛡️ **CaMeL-inspired taint tracking** — Character-level data provenance inspired by [Google DeepMind's CaMeL paper](https://arxiv.org/abs/2503.18813). Every byte is tagged with its origin and tracked through string operations.
+Hermes Katana is a defense-in-depth security layer for AI agents. It tracks
+where text came from, scans decoded content for prompt injection and unsafe
+commands, applies YAML policies before tool dispatch, scrubs outbound secrets,
+and records decisions in a tamper-evident audit trail.
 
-🛡️ **7-layer defense-in-depth** — Not just detection — *prevention*. Taint tracking, flow analysis, input/output scanning, policy engine, HTTPS proxy, and tamper-evident audit trail working together.
+For a visual user manual and command map, open
+[`docs/index.html`](docs/index.html). When GitHub Pages is enabled for this
+repo, the same manual is deployed as the project site. Release-thread captions
+for the twelve infographic cards are in
+[`docs/v3_release_thread.md`](docs/v3_release_thread.md).
 
-🛡️ **False positives are tracked explicitly** — benign-corpus precision and deployment readiness are surfaced in evals instead of being left implicit.
+Core guarantees:
 
-🛡️ **Adversarial eval loop** — scanner floors, per-scanner regressions, and ML runtime readiness are part of the release gate.
+- Character-level provenance inspired by [Google DeepMind's CaMeL paper](https://arxiv.org/abs/2503.18813)
+- Runtime policy decisions for clean, tainted, dangerous, and unknown tool calls
+- Explicit false-positive and adversarial regression gates
+- Optional proving-ground harness for empirical attack-effectiveness testing
 
 ---
 
@@ -57,6 +67,17 @@ See [`docs/artifacts.md`](docs/artifacts.md) for artifact setup and verification
 
 See [docs/quickstart.md](docs/quickstart.md) for the full setup guide and
 [docs/runbook.md](docs/runbook.md) for day-2 operations.
+
+### V3 Upgrade Note
+
+V3 renamed the strict policy preset from `paranoid` to `max`. Reinstall or
+upgrade your checkout/package, then run:
+
+```bash
+katana policy use max
+```
+
+If an older config still references `paranoid`, replace it with `max`.
 
 ---
 
@@ -155,11 +176,13 @@ dangerous = combined[5:]       # "rm -rf /" — WEB_CONTENT → DENIED
 
 Declarative rules evaluated on every tool call. Three built-in presets:
 
-| Preset | Tainted terminal | Clean terminal | Tainted read-only | Exfiltration |
-|--------|:---:|:---:|:---:|:---:|
-| `paranoid` | DENY | ESCALATE | ESCALATE | DENY |
-| `balanced` | DENY | ALLOW | ALLOW | DENY |
-| `permissive` | LOG | ALLOW | ALLOW | DENY |
+<!-- policy-table:start -->
+| Preset | Clean terminal | Tainted terminal | Dangerous terminal | Clean unknown tool | Tainted read-only |
+|--------|:---:|:---:|:---:|:---:|:---:|
+| `max` | ESCALATE | DENY | DENY | DENY | ESCALATE |
+| `balanced` | ALLOW | DENY | DENY | ESCALATE | ALLOW |
+| `permissive` | LOG_ONLY | LOG_ONLY | DENY | LOG_ONLY | LOG_ONLY |
+<!-- policy-table:end -->
 
 Custom YAML policies with hot-reload:
 
@@ -208,7 +231,7 @@ katana scan-command CMD              Scan a shell command
 katana preflight [--json]            Run release readiness checks
 
 katana policy list                   Show active policy set
-katana policy use PRESET             Switch preset (paranoid/balanced/permissive)
+katana policy use PRESET             Switch preset (max/balanced/permissive)
 katana policy export PATH            Export policies to YAML
 
 katana vault list|set|remove|rotate|lock|unlock|verify
@@ -271,6 +294,7 @@ All scanners use precompiled regex patterns loaded at import time where practica
 
 | Document | Description |
 |----------|-------------|
+| [docs/index.html](docs/index.html) | Visual manual and enhanced README for GitHub Pages |
 | [docs/quickstart.md](docs/quickstart.md) | Fastest local setup path |
 | [docs/runbook.md](docs/runbook.md) | Day-2 operations and recovery |
 | [docs/compatibility.md](docs/compatibility.md) | Hermes version compatibility |

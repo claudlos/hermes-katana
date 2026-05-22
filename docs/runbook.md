@@ -43,7 +43,7 @@ the matching `pip install hermes-katana[...]` command.
 | Remove patches | `katana uninstall --target /path/to/hermes` |
 | Run Hermes with Katana | `katana run --target /path/to/hermes -- --task "hello"` |
 | List policies | `katana policy list` |
-| Switch policy preset | `katana policy use paranoid` |
+| Switch policy preset | `katana policy use max` |
 | Export policies to YAML | `katana policy export policy.yaml` |
 | List vault keys | `katana vault list` |
 | Store a secret | `katana vault set KEY VALUE` |
@@ -142,7 +142,7 @@ vault.verify_integrity()  # post-check
 
 ```bash
 katana policy use balanced    # Smart defaults
-katana policy use paranoid    # Maximum security
+katana policy use max    # Maximum security
 katana policy use permissive  # Monitoring only
 ```
 
@@ -360,7 +360,7 @@ tampering immediately detectable.
 5. **Tighten policy:**
 
    ```bash
-   katana policy use paranoid
+   katana policy use max
    ```
 
 6. **Resume operations:**
@@ -475,9 +475,9 @@ When a full-suite invocation is too memory-heavy or you want deterministic
 file-by-file logging, use the dedicated serial runner:
 
 ```bash
-./scripts/run_serial_pytest.sh
-./scripts/run_serial_pytest.sh tests/unit
-./scripts/run_serial_pytest.sh tests/unit/test_cli.py
+bash scripts/run_serial_pytest.sh
+bash scripts/run_serial_pytest.sh tests/unit
+bash scripts/run_serial_pytest.sh tests/unit/test_cli.py
 ```
 
 The helper discovers `test_*.py` files under the requested target, runs each
@@ -502,15 +502,15 @@ Use this path for large local sweeps, memory-sensitive debugging, or artifact
 readiness validation:
 
 ```bash
-./scripts/run_serial_pytest.sh
-./scripts/run_serial_pytest.sh tests/scabbard
-./scripts/run_serial_pytest.sh tests/integration
+bash scripts/run_serial_pytest.sh
+bash scripts/run_serial_pytest.sh tests/scabbard
+bash scripts/run_serial_pytest.sh tests/integration
 ```
 
 Pass extra pytest flags after the target path:
 
 ```bash
-./scripts/run_serial_pytest.sh tests/unit/test_cli.py -k status -x
+bash scripts/run_serial_pytest.sh tests/unit/test_cli.py -k status -x
 ```
 
 Outputs are stored in `.pytest_tmp/serial/` as a timestamped log plus a summary

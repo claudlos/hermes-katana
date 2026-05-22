@@ -456,11 +456,11 @@ engine = PolicyEngine(policies=policies)
 ### Default Presets
 
 ```python
-from hermes_katana.policy.defaults import get_preset
+from hermes_katana.policy import PolicyEngine
 
-balanced = get_preset("balanced")    # list[PolicyRule]
-paranoid = get_preset("paranoid")
-permissive = get_preset("permissive")
+balanced = PolicyEngine.with_defaults("balanced")
+max_engine = PolicyEngine.with_defaults("max")
+permissive = PolicyEngine.with_defaults("permissive")
 ```
 
 ---
@@ -722,12 +722,12 @@ config.audit_enabled       # True
 config.log_level           # "INFO"
 
 # Modify and save
-config.policy_preset = "paranoid"
+config.policy_preset = "max"
 config.save()
 ```
 
 Environment variable overrides use the `KATANA_` prefix:
-`KATANA_LOG_LEVEL=DEBUG`, `KATANA_POLICY_PRESET=paranoid`, etc.
+`KATANA_LOG_LEVEL=DEBUG`, `KATANA_POLICY_PRESET=max`, etc.
 
 ---
 

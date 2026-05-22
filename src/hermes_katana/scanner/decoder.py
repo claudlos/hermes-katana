@@ -343,10 +343,11 @@ def decode_and_scan(
     *,
     depth: int = 0,
     max_depth: int = MAX_DECODE_DEPTH,
+    vault_values: Optional[set[str]] = None,
     _parent_chain: tuple[str, ...] = (),
     _original_positions: Optional[tuple[int, int]] = None,
 ) -> list[DecoderFinding]:
-    """Recursively decode encoded blobs and re-scan with injection scanner.
+    """Recursively decode encoded blobs and re-scan decoded plaintext.
 
     Args:
         text: Input text to scan for encoded payloads.
@@ -360,7 +361,9 @@ def decode_and_scan(
         return []
 
     # Lazy import to avoid circular dependency
+    from hermes_katana.scanner.commands import detect_dangerous_command
     from hermes_katana.scanner.injection import detect_injection
+    from hermes_katana.scanner.secrets import scan_for_secrets
 
     findings: list[DecoderFinding] = []
     blobs = detect_encoded_blobs(text)
@@ -373,17 +376,28 @@ def decode_and_scan(
         chain = _parent_chain + (category.value,)
         pos = _original_positions if _original_positions else (start, end)
 
-        # Re-scan decoded text through injection scanner
-        inner = detect_injection(decoded)
-        high_conf_inner = [f for f in inner if f.confidence >= MIN_INNER_CONFIDENCE]
+        # Re-scan decoded text through the same high-risk scanner classes used
+        # by the top-level scan paths. Encoded command/secret payloads should
+        # not need an injection phrase to become visible.
+        injection_findings = detect_injection(decoded)
+        high_conf_injection = [f for f in injection_findings if f.confidence >= MIN_INNER_CONFIDENCE]
+        command_findings = detect_dangerous_command(decoded)
+        secret_findings = scan_for_secrets(decoded, vault_values)
+        inner_findings = [*high_conf_injection, *command_findings, *secret_findings]
 
-        if high_conf_inner:
+        if inner_findings:
             # Discount confidence by 0.1 per decode layer
             discount = 0.1 * len(chain)
-            max_inner_conf = max(f.confidence for f in high_conf_inner)
+            max_inner_conf = max(getattr(f, "confidence", 0.9) for f in inner_findings)
             adjusted_conf = max(max_inner_conf - discount, 0.1)
 
             result_category = DecoderCategory.NESTED if len(chain) > 1 else category
+            if high_conf_injection:
+                finding_type = "injection"
+            elif command_findings:
+                finding_type = "dangerous command"
+            else:
+                finding_type = "secret"
 
             findings.append(
                 DecoderFinding(
@@ -393,10 +407,10 @@ def decode_and_scan(
                     position=pos,
                     category=result_category,
                     encoding_chain=chain,
-                    inner_findings=tuple(high_conf_inner),
+                    inner_findings=tuple(inner_findings),
                     pattern_name=f"decoded_{category.value}",
                     description=(
-                        f"Decoded {' -> '.join(chain)} payload contains injection: {high_conf_inner[0].description}"
+                        f"Decoded {' -> '.join(chain)} payload contains {finding_type}: {inner_findings[0].description}"
                     ),
                 )
             )
@@ -407,6 +421,7 @@ def decode_and_scan(
                 decoded,
                 depth=depth + 1,
                 max_depth=max_depth,
+                vault_values=vault_values,
                 _parent_chain=chain,
                 _original_positions=pos,
             )

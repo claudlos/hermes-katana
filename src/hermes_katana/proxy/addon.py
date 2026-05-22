@@ -717,10 +717,10 @@ class KatanaAddon:
 
     def _fail_closed_active(self) -> bool:
         """Whether the proxy is configured to fail closed on scan errors."""
-        return getattr(self.config, "mode", "strict") in ("strict", "paranoid")
+        return getattr(self.config, "mode", "strict") in ("strict", "max")
 
     def _fail_request_scan(self, flow: Any, host: str, scope: str, exc: Exception) -> None:
-        """Block the request fail-closed in strict/paranoid; log-and-allow in permissive."""
+        """Block the request fail-closed in strict/max; log-and-allow in permissive."""
         self._increment_stat("requests_scan_errors")
         if not self._fail_closed_active():
             logger.warning(
@@ -749,7 +749,7 @@ class KatanaAddon:
         )
 
     def _fail_response_scan(self, flow: Any, host: str, scope: str, exc: Exception) -> None:
-        """Block the response fail-closed in strict/paranoid; log-and-allow in permissive."""
+        """Block the response fail-closed in strict/max; log-and-allow in permissive."""
         self._increment_stat("responses_scan_errors")
         if not self._fail_closed_active():
             logger.warning(

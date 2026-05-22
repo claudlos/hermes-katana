@@ -44,6 +44,8 @@ class KatanaTaintMiddleware(KatanaMiddleware):
         if isinstance(value, _tainted_types):
             found.append(value)
         elif isinstance(value, dict):
+            for nested in value.keys():
+                found.extend(KatanaTaintMiddleware._find_tainted(nested, _tainted_types))
             for nested in value.values():
                 found.extend(KatanaTaintMiddleware._find_tainted(nested, _tainted_types))
         elif isinstance(value, (list, tuple)):

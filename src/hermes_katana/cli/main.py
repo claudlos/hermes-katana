@@ -40,6 +40,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
+from hermes_katana._version import __version__
 from hermes_katana.cli._support import (
     build_proxy_url as _build_proxy_url,
     check_command as _check_command,
@@ -67,7 +68,7 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_SECURITY = 2
 
-VERSION = "3.0.0"
+VERSION = __version__
 
 
 def _build_preflight_summary(target: str | None = None) -> dict[str, object]:
@@ -890,7 +891,7 @@ def policy_list() -> None:
 
 
 @policy.command("use")
-@click.argument("preset", type=click.Choice(["paranoid", "balanced", "permissive"]))
+@click.argument("preset", type=click.Choice(["max", "balanced", "permissive"]))
 def policy_use(preset: str) -> None:
     """Switch to a policy preset."""
     console.print(f"\n[bold]Switching to '{preset}' policy preset...[/bold]")
@@ -927,7 +928,7 @@ def policy_export(path: str) -> None:
 
     policy_set = PolicySet(
         name="katana-export",
-        version="3.0.0",
+        version=VERSION,
         description=f"Exported from {source}",
         policies=policies,
     )

@@ -82,8 +82,8 @@ def test_balanced_profile_keeps_scabbard_primary_and_disables_overlapping_ml_by_
     assert middleware["katana.sentinel"].enabled is False
 
 
-def test_paranoid_profile_enables_overlapping_ml_gates_and_fails_closed_outputs():
-    chain = create_default_chain({"profile": "paranoid"})
+def test_max_profile_enables_overlapping_ml_gates_and_fails_closed_outputs():
+    chain = create_default_chain({"profile": "max"})
 
     middleware = _middleware_by_name(chain)
 

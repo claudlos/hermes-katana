@@ -623,7 +623,7 @@ def scan_input(
         # decoder.py instead of requiring callers to remember a separate pass.
         if decode_and_scan is not None:
             try:
-                result.decoder_findings = decode_and_scan(scan_text)
+                result.decoder_findings = decode_and_scan(scan_text, vault_values=vault_values)
                 if result.decoder_findings:
                     risk_scores.append(max(f.confidence for f in result.decoder_findings))
             except Exception as exc:

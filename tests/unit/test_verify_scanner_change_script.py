@@ -34,8 +34,8 @@ def test_verify_scanner_change_dry_run_lists_required_gates():
     output = result.stdout
     assert "ruff check src/ tests/" in output
     assert "ruff format --check src/ tests/" in output
-    assert "python3 test_false_positives.py" in output
-    assert "python3 test_evasion.py" in output
+    assert "python3 tests/smoke/false_positive_gate.py" in output
+    assert "python3 tests/smoke/evasion_gate.py" in output
     assert "python3 -m pytest tests/integration/test_adversarial_eval_pack.py -q" in output
 
 

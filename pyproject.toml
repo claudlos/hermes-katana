@@ -98,6 +98,9 @@ katana = "hermes_katana.hermes_plugin"
 [tool.hatch.build.targets.wheel]
 packages = ["src/hermes_katana"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"policies" = "hermes_katana/policies"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "/CHANGELOG.md",
@@ -112,6 +115,7 @@ include = [
     "/examples",
     "/policies",
     "/pyproject.toml",
+    "/scripts",
     "/src",
     "/tests",
 ]

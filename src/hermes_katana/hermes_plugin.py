@@ -23,7 +23,7 @@ Plugin config lives under ``katana:`` in Hermes ``config.yaml``::
 
     plugins:
       katana:
-        policy_preset: balanced     # paranoid | balanced | permissive
+        policy_preset: balanced     # max | balanced | permissive
         scan_block_threshold: 0.7
         taint_enabled: true
         audit_enabled: true
@@ -31,7 +31,7 @@ Plugin config lives under ``katana:`` in Hermes ``config.yaml``::
         scabbard_profile: katana_v15_minilm   # minimal | standard | full | katana_v15_minilm | katana_v15_large
         scabbard_backend: onnx                # onnx for MiniLM, torch for v15 large
         scabbard_device: cuda                 # optional torch device for v15 large
-        scabbard_route_mode: balanced         # off | content_only | balanced | paranoid
+        scabbard_route_mode: balanced         # off | content_only | balanced | max
         scabbard_scan_outputs: true           # scan routed tool-output content
         scabbard_audit_routes: true           # record scan/skip route reasons
 """
@@ -45,6 +45,7 @@ import threading
 import time
 from typing import Any, Optional
 
+from hermes_katana._version import __version__
 from hermes_katana.security_logging import log_security_event, summarize_tool_call
 
 __all__ = [
@@ -61,7 +62,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 plugin_name = "katana"
-plugin_version = "3.0.0"
+plugin_version = __version__
 
 # ---------------------------------------------------------------------------
 # Module-level state (initialized in setup())

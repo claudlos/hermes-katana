@@ -15,7 +15,7 @@ pip install -e .          # or: pip install -e ".[dev]"
 |------|---------------|
 | `basic_scanning.py` | Detect prompt injection, dangerous commands, and leaked secrets |
 | `taint_tracking.py` | Track data provenance — taint labels, merging, flow decisions |
-| `policy_engine.py` | Evaluate tool calls against paranoid/balanced/permissive presets |
+| `policy_engine.py` | Evaluate tool calls against max/balanced/permissive presets |
 | `middleware_chain.py` | Full security pipeline — chain scanners + policy + audit |
 | `custom_policy.yaml` | Example YAML policy file with comments explaining each field |
 | `vault_usage.py` | Encrypted secret storage — store, retrieve, rotate keys |

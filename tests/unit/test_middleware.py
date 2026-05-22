@@ -59,6 +59,18 @@ class RecordingMiddleware(KatanaMiddleware):
         self.record.append(f"post:{self.name}")
 
 
+class TestKatanaTaintMiddleware:
+    def test_find_tainted_checks_dict_keys(self):
+        from hermes_katana.middleware.taint_middleware import KatanaTaintMiddleware
+        from hermes_katana.taint import Source, TaintTracker
+
+        tainted_key = TaintTracker().register("attacker_key", Source.web("https://example.invalid"))
+
+        found = KatanaTaintMiddleware._find_tainted({tainted_key: "value"})
+
+        assert found == [tainted_key]
+
+
 # ======================================================================
 # Chain execution order
 # ======================================================================

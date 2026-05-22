@@ -50,16 +50,16 @@ class TestCLIContracts:
             monkeypatch.setenv("KATANA_POLICY_PRESET", "")
             monkeypatch.delenv("KATANA_POLICY_PRESET")
 
-        result = self.runner.invoke(cli_main.main, ["policy", "use", "paranoid"])
+        result = self.runner.invoke(cli_main.main, ["policy", "use", "max"])
 
         assert result.exit_code == 0
         config = config_mod.load_config()
-        assert config.policy_preset == "paranoid"
+        assert config.policy_preset == "max"
         assert config.policy_path is None
 
         engine, source = cli_main._load_policy_engine()
-        assert engine.policy_set_name == "paranoid"
-        assert source == "preset paranoid"
+        assert engine.policy_set_name == "max"
+        assert source == "preset max"
 
     def test_vault_list_uses_real_vault_helper(self, monkeypatch):
         stdout = StringIO()
@@ -456,7 +456,7 @@ class TestCLIContracts:
             "load_checkout_state",
             lambda checkout_root=None: SimpleNamespace(
                 checkout_root=Path(checkout_root) if checkout_root else checkout,
-                policy_source="preset paranoid",
+                policy_source="preset max",
             ),
         )
         monkeypatch.setattr(
@@ -466,7 +466,7 @@ class TestCLIContracts:
                 **env,
                 "KATANA_ACTIVE": "1",
                 "KATANA_CHECKOUT_ROOT": str(checkout),
-                "KATANA_POLICY_SOURCE": "preset paranoid",
+                "KATANA_POLICY_SOURCE": "preset max",
                 "KATANA_PROXY_URL": "http://127.0.0.1:9000",
             },
         )
@@ -488,7 +488,7 @@ class TestCLIContracts:
         assert captured["args"] == ["hermes.exe", "--task", "hello"]
         env = captured["env"]
         assert env["KATANA_CHECKOUT_ROOT"] == str(checkout)
-        assert env["KATANA_POLICY_SOURCE"] == "preset paranoid"
+        assert env["KATANA_POLICY_SOURCE"] == "preset max"
         assert env["KATANA_PROXY_URL"] == "http://127.0.0.1:9000"
 
     def test_restore_uses_installer_manifest(self, monkeypatch, tmp_dir):

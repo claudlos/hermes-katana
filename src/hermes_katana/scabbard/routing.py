@@ -22,7 +22,7 @@ class RouteMode(StrEnum):
     OFF = "off"
     CONTENT_ONLY = "content_only"
     BALANCED = "balanced"
-    PARANOID = "paranoid"
+    MAX = "max"
 
 
 class RouteKind(StrEnum):
@@ -310,9 +310,9 @@ def should_scabbard_scan_arg(
         return ScabbardRouteDecision(False, "routing_disabled", kind)
     if kind == RouteKind.EMPTY:
         return ScabbardRouteDecision(False, "empty_value", kind)
-    if route_mode == RouteMode.PARANOID:
+    if route_mode == RouteMode.MAX:
         return ScabbardRouteDecision(
-            kind not in {RouteKind.EMPTY, RouteKind.NUMERIC, RouteKind.BOOLEAN}, "paranoid_mode", kind
+            kind not in {RouteKind.EMPTY, RouteKind.NUMERIC, RouteKind.BOOLEAN}, "max_mode", kind
         )
     if route_mode == RouteMode.CONTENT_ONLY:
         if _is_content_only_field(arg_name) and kind == RouteKind.NATURAL_LANGUAGE:
@@ -416,7 +416,7 @@ def extract_scabbard_output_texts(
     def add(path: str, text: str, reason: str = "output_content_field") -> None:
         if not text.strip() or len(results) >= max_fragments:
             return
-        if route_mode != RouteMode.PARANOID and not (_looks_like_prose(text) or has_scabbard_adversarial_signal(text)):
+        if route_mode != RouteMode.MAX and not (_looks_like_prose(text) or has_scabbard_adversarial_signal(text)):
             return
         clipped = text[:max_chars_per_fragment]
         results.append(
@@ -446,7 +446,7 @@ def extract_scabbard_output_texts(
         if isinstance(obj, str):
             # Raw string output from retrieval/browser-like tools is usually content.
             if tool_name in {"web_extract", "web_search", "browser_snapshot", "browser_console", "read_file"}:
-                if _looks_like_prose(obj) or route_mode == RouteMode.PARANOID:
+                if _looks_like_prose(obj) or route_mode == RouteMode.MAX:
                     add(path or "output", obj, "raw_output_prose")
 
     walk(parsed, "output")

@@ -173,7 +173,7 @@ class PolicySet(BaseModel):
     loaded from files, and extended (inherited) by other sets.
 
     Attributes:
-        name:        Unique name (e.g. ``paranoid``, ``balanced``).
+        name:        Unique name (e.g. ``max``, ``balanced``).
         version:     SemVer-ish version string for change tracking.
         description: Human-readable description.
         extends:     Optional name of a parent PolicySet whose policies are
