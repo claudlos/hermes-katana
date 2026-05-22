@@ -35,7 +35,7 @@ from typing import Any, Optional, Sequence, Union
 
 from hermes_katana.taint import Source, TaintedBytes, TaintedStr, TaintedValue
 
-from .defaults import BUILTIN_POLICY_SETS
+from .defaults import BUILTIN_POLICY_SETS, load_builtin_policy_set
 from .models import (
     Condition,
     ConditionOperator,
@@ -477,7 +477,7 @@ class PolicyEngine:
         """Create an engine pre-loaded with a built-in policy set.
 
         Args:
-            preset: One of ``paranoid``, ``balanced``, ``permissive``.
+            preset: One of ``max``, ``balanced``, ``permissive``.
 
         Returns:
             A new PolicyEngine with the built-in policies loaded.
@@ -485,15 +485,16 @@ class PolicyEngine:
         Raises:
             ValueError: If *preset* is not a known built-in name.
         """
-        raw = BUILTIN_POLICY_SETS.get(preset)
-        if raw is None:
+        try:
+            raw = load_builtin_policy_set(preset)
+        except KeyError as exc:
             available = ", ".join(sorted(BUILTIN_POLICY_SETS))
-            raise ValueError(f"Unknown preset '{preset}'. Available: {available}")
+            raise ValueError(f"Unknown preset '{preset}'. Available: {available}") from exc
 
         ps = PolicySet.model_validate(raw)
         # Use preset-appropriate default action instead of blanket ALLOW
         _preset_defaults = {
-            "paranoid": PolicyResult.DENY,
+            "max": PolicyResult.DENY,
             "balanced": PolicyResult.ESCALATE,
             "permissive": PolicyResult.LOG_ONLY,
         }

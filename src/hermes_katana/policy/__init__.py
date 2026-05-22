@@ -37,7 +37,7 @@ Quick start::
 
 Three built-in policy presets are provided:
 
-- ``paranoid``   — maximum security, denies all tainted side-effects
+- ``max``   — maximum security, denies all tainted side-effects
 - ``balanced``   — smart defaults for development
 - ``permissive`` — log-only, blocks obvious exfiltration
 

@@ -185,11 +185,11 @@ class TestProxyConfigScannerSecurityLevel:
     def test_strict_mode_defaults_to_medium_scanner_security(self):
         assert ProxyConfig(mode="strict").scanner_security_level == "medium"
 
-    def test_paranoid_mode_defaults_to_high_scanner_security(self):
-        assert ProxyConfig(mode="paranoid").scanner_security_level == "high"
+    def test_max_mode_defaults_to_high_scanner_security(self):
+        assert ProxyConfig(mode="max").scanner_security_level == "high"
 
     def test_explicit_scanner_security_level_is_preserved(self):
-        cfg = ProxyConfig(mode="paranoid", scanner_security_level="medium")
+        cfg = ProxyConfig(mode="max", scanner_security_level="medium")
         assert cfg.scanner_security_level == "medium"
 
 

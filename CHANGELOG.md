@@ -7,18 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- GitHub Pages static manual at `docs/index.html`.
+- Generated policy documentation check via `scripts/generate_policy_assets.py`.
+
+### Changed
+- Built-in policy YAML files are now the source of truth for runtime defaults and README preset documentation.
+- The strict built-in policy preset is now named `max`; users with older configs should reinstall or upgrade and run `katana policy use max`.
+- Proving Ground helper entry points now use packaged module paths instead of repository-root compatibility shims.
+
+### Removed
+- Legacy root compatibility shims and duplicated Proving Ground research trees from the public repository root.
+- Stale machine-specific Proving Ground runbooks that referenced private fleet specs.
+
 ## [3.0.0] - 2026-05-19
 
 ### Added
-- V3 production middleware profiles: `fast_cpu`, `balanced`, and `paranoid`.
+- V3 production middleware profiles: `fast_cpu`, `balanced`, and `max`.
 - Fast CPU Scabbard profile using the distilled v15 MiniLM ONNX runtime with route-aware scanning defaults.
 - Readiness and latency diagnostics in Katana plugin status output.
 - Scanner-change release gate covering ruff, false-positive smoke, evasion, and adversarial integration checks.
 - `katana artifacts` registry and guided setup for the default MiniLM ONNX artifact and optional large local model.
-- `scripts/tune_v14_thresholds.py` — principled threshold sweep with multi-recommendation output (F1-max, operational-conservative, aggressive-max-recall) across all three eval surfaces.
-- `scripts/post_process_threshold_tune.py` — replays selector logic on an existing sweep without re-running v14 inference (~1s vs ~25 min CPU).
-- `scripts/per_class_score_analysis.py` — per-attack-class confidence-quartile analyzer + hard-negative FPR drill-down. Run after each v14 retrain to spot under-confident categories.
-- `scripts/compare_live_tests.py` — A/B comparison between two live-test runs (overlap analysis with per-attack flip detail).
 - Three regression tests in `tests/unit/test_scabbard_pipeline.py` pinning the threshold defaults so accidental reverts fail loudly.
 
 ### Changed

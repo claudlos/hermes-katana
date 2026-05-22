@@ -86,7 +86,7 @@ _CHAIN_PROFILE_ALIASES = {
     "fast": "fast_cpu",
     "fast-cpu": "fast_cpu",
     "balanced": "balanced",
-    "paranoid": "paranoid",
+    "max": "max",
 }
 
 
@@ -94,8 +94,8 @@ def _normalize_chain_profile(profile: Any) -> str:
     """Normalize a user-facing deployment profile name."""
     normalized = str(profile or "balanced").strip().lower().replace("-", "_")
     normalized = _CHAIN_PROFILE_ALIASES.get(normalized, normalized)
-    if normalized not in {"fast_cpu", "balanced", "paranoid"}:
-        raise ValueError("profile must be one of: fast_cpu, balanced, paranoid")
+    if normalized not in {"fast_cpu", "balanced", "max"}:
+        raise ValueError("profile must be one of: fast_cpu, balanced, max")
     return normalized
 
 
@@ -140,7 +140,7 @@ def _profile_defaults(profile: str) -> dict[str, Any]:
             "policy.preset": "balanced",
         }
 
-    # paranoid: keep overlapping ML gates enabled and fail closed on output findings.
+    # max: keep overlapping ML gates enabled and fail closed on output findings.
     return {
         "scabbard.enabled": True,
         "scabbard.route_mode": "strict",
@@ -154,7 +154,7 @@ def _profile_defaults(profile: str) -> dict[str, Any]:
         "scan.enforce_output_findings": True,
         "scan.block_threshold": 0.5,
         "scan.warn_threshold": 0.3,
-        "policy.preset": "paranoid",
+        "policy.preset": "max",
     }
 
 
@@ -1591,7 +1591,7 @@ def create_default_chain(
     Example::
 
         chain = create_default_chain({
-            "policy.preset": "paranoid",
+            "policy.preset": "max",
             "scan.block_threshold": 0.5,
             "audit.log_allow": False,
         })

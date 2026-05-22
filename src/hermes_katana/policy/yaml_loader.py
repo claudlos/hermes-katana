@@ -39,13 +39,15 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from collections.abc import Mapping
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import ValidationError
 
-from .defaults import BUILTIN_POLICY_SETS
+from .defaults import BUILTIN_POLICY_SETS, load_builtin_policy_set
 from .models import PolicySet
 
 logger = logging.getLogger(__name__)
@@ -239,15 +241,21 @@ def load_policy_directory(
 def _resolve_inheritance(data: dict[str, Any], parent_name: str) -> dict[str, Any]:
     """Merge *data* on top of the named parent policy set.
 
-    The parent must be a built-in set name (paranoid, balanced, permissive).
+    The parent must be a built-in set name (max, balanced, permissive).
     Raises PolicyValidationError if the parent is unknown to fail closed.
     """
-    parent_raw = BUILTIN_POLICY_SETS.get(parent_name)
+    parent_raw: Mapping[str, Any] | None
+    try:
+        parent_raw = load_builtin_policy_set(parent_name)
+    except KeyError:
+        parent_raw = BUILTIN_POLICY_SETS.get(parent_name)
+
     if parent_raw is None:
         raise PolicyValidationError(
             f"Policy set extends unknown parent '{parent_name}'. "
             f"Available built-in sets: {', '.join(sorted(BUILTIN_POLICY_SETS))}"
         )
+    parent_raw = deepcopy(parent_raw)
 
     # Build merged policy list: parent first, child overrides by name
     parent_policies = {p["name"]: p for p in parent_raw.get("policies", [])}

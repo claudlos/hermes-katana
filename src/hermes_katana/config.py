@@ -21,7 +21,7 @@ Usage::
     print(config.proxy_port)        # 8443
 
     # Modify and save
-    config.policy_preset = "paranoid"
+    config.policy_preset = "max"
     config.save()
 """
 
@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 # there and safe_home() emits a one-time warning if it isn't.
 _CONFIG_DIR = home_or_fallback() / ".hermes-katana"
 _CONFIG_FILE = _CONFIG_DIR / "config.yaml"
-_VALID_PRESETS = {"paranoid", "balanced", "permissive"}
+_VALID_PRESETS = {"max", "balanced", "permissive"}
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 
@@ -77,7 +77,7 @@ class KatanaConfig(BaseModel):
     Attributes
     ----------
     policy_preset : str
-        Built-in policy set to use.  One of: ``paranoid``, ``balanced``,
+        Built-in policy set to use.  One of: ``max``, ``balanced``,
         ``permissive``.  Ignored when ``policy_path`` is set.
     policy_path : Optional[Path]
         Path to a custom policy YAML file.  When set, this takes priority
@@ -112,7 +112,7 @@ class KatanaConfig(BaseModel):
 
     policy_preset: str = Field(
         default="balanced",
-        description=("Built-in policy set. One of: paranoid, balanced, permissive. Ignored when policy_path is set."),
+        description=("Built-in policy set. One of: max, balanced, permissive. Ignored when policy_path is set."),
     )
     policy_path: Optional[Path] = Field(
         default=None,

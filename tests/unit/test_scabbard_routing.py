@@ -60,10 +60,10 @@ def test_balanced_routing_scans_known_content_fields() -> None:
         assert decision.kind == RouteKind.NATURAL_LANGUAGE
 
 
-def test_paranoid_mode_scans_structural_strings() -> None:
-    decision = should_scabbard_scan_arg("read_file", "path", "sandbox/input.txt", mode=RouteMode.PARANOID)
+def test_max_mode_scans_structural_strings() -> None:
+    decision = should_scabbard_scan_arg("read_file", "path", "sandbox/input.txt", mode=RouteMode.MAX)
     assert decision.scan is True
-    assert decision.reason == "paranoid_mode"
+    assert decision.reason == "max_mode"
 
 
 def test_middleware_scans_only_routed_content_and_records_audit_routes() -> None:

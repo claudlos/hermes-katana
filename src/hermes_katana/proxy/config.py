@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # 1 MB default body scan limit
 _DEFAULT_MAX_BODY_SCAN_SIZE = 1_048_576
 
-ProxyMode = Literal["permissive", "strict", "paranoid"]
+ProxyMode = Literal["permissive", "strict", "max"]
 
 
 class ScanModes(BaseModel):
@@ -107,7 +107,7 @@ class ProxyConfig(BaseModel):
         description=(
             "Security level passed to scanner.scan_input for proxy request surfaces. "
             "When omitted, the level follows proxy mode: permissive=low, "
-            "strict=medium, paranoid=high."
+            "strict=medium, max=high."
         ),
     )
     rate_limit_requests: int = Field(
@@ -156,7 +156,7 @@ class ProxyConfig(BaseModel):
     mode: ProxyMode = Field(
         default="strict",
         description=(
-            "Failure-handling mode. 'strict' and 'paranoid' fail closed on scanner "
+            "Failure-handling mode. 'strict' and 'max' fail closed on scanner "
             "exceptions and oversized bodies; 'permissive' logs and allows traffic. "
             "Mirrors the policy engine's tri-mode model."
         ),
@@ -174,7 +174,7 @@ class ProxyConfig(BaseModel):
             data["scanner_security_level"] = {
                 "permissive": "low",
                 "strict": "medium",
-                "paranoid": "high",
+                "max": "high",
             }.get(mode, "medium")
         return data
 

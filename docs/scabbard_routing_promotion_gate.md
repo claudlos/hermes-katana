@@ -22,7 +22,7 @@ plugins:
     scabbard_enabled: true
     scabbard_profile: katana_v15_minilm
     scabbard_backend: onnx
-    scabbard_route_mode: balanced     # off | content_only | balanced | paranoid
+    scabbard_route_mode: balanced     # off | content_only | balanced | max
     scabbard_scan_outputs: true
     scabbard_audit_routes: true
 ```
@@ -32,7 +32,7 @@ Modes:
 - `off`: Scabbard route checks skip classification.
 - `content_only`: scan explicit content fields such as `content`, `text`, `prompt`, `message`, `html`, `markdown`, `body`.
 - `balanced`: scan content/query/prose fields; skip paths, URLs, controls, commands, enums, booleans, and numbers.
-- `paranoid`: scan most string-like values, including structural strings, for diagnostic/security stress runs.
+- `max`: scan most string-like values, including structural strings, for diagnostic/security stress runs.
 
 ## Specialized detector split
 

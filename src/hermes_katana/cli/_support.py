@@ -11,11 +11,12 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any, Optional
 
+from hermes_katana._version import __version__
 from hermes_katana.runtime_artifacts import verify_runtime_artifact_manifest
 from rich import box
 from rich.panel import Panel
 
-VERSION = "3.0.0"
+VERSION = __version__
 HERMETIC_ML_READY_ENV = "HERMES_KATANA_REQUIRE_ML_READY"
 _TRUTHY = {"1", "true", "yes", "on"}
 

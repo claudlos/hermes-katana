@@ -2,8 +2,10 @@ name: Release Gate
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main, master, "release/**"]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, "release/**"]
 
 concurrency:
   group: release-gate-${{ github.ref }}
@@ -36,6 +38,8 @@ jobs:
         run: python -m ruff check src/ tests/
       - name: Ruff format check
         run: python -m ruff format --check src/ tests/
+      - name: Generated policy assets check
+        run: python scripts/generate_policy_assets.py --check
       - name: Full tests
         run: PYTHONPATH=src python -m pytest tests/ -q
       - name: Scanner gate
@@ -44,6 +48,40 @@ jobs:
         run: python -m build
       - name: Twine metadata check
         run: python -m twine check dist/*
+      - name: Installed wheel policy smoke
+        run: |
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          wheel = glob.glob("dist/*.whl")[0]
+          required = {
+              "hermes_katana/policies/balanced.yaml",
+              "hermes_katana/policies/max.yaml",
+              "hermes_katana/policies/permissive.yaml",
+          }
+          with zipfile.ZipFile(wheel) as zf:
+              missing = sorted(required - set(zf.namelist()))
+          if missing:
+              raise SystemExit(f"wheel missing policy YAMLs: {missing}")
+          PY
+          python -m venv /tmp/katana-wheel-smoke
+          /tmp/katana-wheel-smoke/bin/python -m pip install --upgrade pip
+          /tmp/katana-wheel-smoke/bin/python -m pip install dist/*.whl
+          HOME="$(mktemp -d)" PYTHONPATH= /tmp/katana-wheel-smoke/bin/python - <<'PY'
+          from hermes_katana.policy.defaults import builtin_policy_path, load_builtin_policy_set
+          from hermes_katana.policy.engine import PolicyEngine
+
+          max_path = builtin_policy_path("max")
+          path = builtin_policy_path("balanced")
+          assert max_path is not None
+          assert path is not None
+          assert "site-packages/hermes_katana/policies/max.yaml" in str(max_path), max_path
+          assert "site-packages/hermes_katana/policies/balanced.yaml" in str(path), path
+          assert load_builtin_policy_set("max")["name"] == "max"
+          assert load_builtin_policy_set("balanced")["name"] == "balanced"
+          assert PolicyEngine.with_defaults("permissive").evaluate("terminal", {"command": "ls"}).action.value == "log_only"
+          PY
       - name: Artifact status smoke
         run: PYTHONPATH=src python -m hermes_katana.cli.main artifacts status --all
 
