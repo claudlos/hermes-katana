@@ -21,8 +21,8 @@ from hermes_katana._paths import home_or_fallback
 from hermes_katana._version import ARTIFACT_REVISION
 
 DEFAULT_ARTIFACT_MODEL = "minilm"
-DEFAULT_MINILM_ONNX_REPO = "claudlos/hermes-katana-v15-distill-minilm-onnx"
-DEFAULT_V15_LARGE_REPO = "claudlos/hermes-katana-v15-large"
+DEFAULT_MINILM_ONNX_REPO = "Carlosian/hermes-katana-v15-distill-minilm-onnx"
+DEFAULT_V15_LARGE_REPO = "Carlosian/hermes-katana-v15-large"
 DEFAULT_REVISION = ARTIFACT_REVISION
 ARTIFACT_MANIFEST = "artifact_manifest.json"
 
