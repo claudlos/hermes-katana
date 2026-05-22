@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from run_agent_shard import _load_shard
+from hermes_katana.proving_ground.run_agent_shard import _load_shard
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-import run_agent_shard as ras
-from scripts import analyze_asr_scientific as aas
-from scripts import build_corpus
-from scripts import fleet
-from scripts import rescore_semantic
-from scripts import synth_to_shards
+import hermes_katana.proving_ground.run_agent_shard as ras
+from hermes_katana.proving_ground.scripts import analyze_asr_scientific as aas
+from hermes_katana.proving_ground.scripts import build_corpus
+from hermes_katana.proving_ground.scripts import fleet
+from hermes_katana.proving_ground.scripts import rescore_semantic
+from hermes_katana.proving_ground.scripts import synth_to_shards
 
 
 def test_trial_plan_slice_filters_and_resumes_by_planned_trial_id(tmp_path):

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 
-from run_agent_shard import (
+from hermes_katana.proving_ground.run_agent_shard import (
     _load_done_keys,
     _load_done_attack_ids,
     OUTPUT_SCHEMA_VERSION,

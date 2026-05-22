@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from run_agent_shard import _compute_effective, _run_invalid_reason
-from scripts.fleet import _expand
+from hermes_katana.proving_ground.run_agent_shard import _compute_effective, _run_invalid_reason
+from hermes_katana.proving_ground.scripts.fleet import _expand
 
 
 def test_deferred_semantic_does_not_score_off_task():

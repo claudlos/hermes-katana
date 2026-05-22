@@ -12,6 +12,7 @@ from hermes_katana.proving_ground.sandbox.agent_cli_runner import (
     _build_subprocess_env,
     _env_key_allowed_for_subprocess,
 )
+from hermes_katana.proving_ground.sandbox import workspace as workspace_module
 from hermes_katana.proving_ground.sandbox.workspace import WorkspaceTools
 
 
@@ -235,7 +236,7 @@ def test_workspace_run_command_uses_noprofile_norc(tmp_path, monkeypatch):
 
         return R()
 
-    monkeypatch.setattr("sandbox.workspace.subprocess.run", spy)
+    monkeypatch.setattr(workspace_module.subprocess, "run", spy)
 
     tools = WorkspaceTools(str(tmp_path))
     tools._tool_run_command({"command": "echo hi", "timeout": 5})
@@ -324,7 +325,7 @@ def test_claude_driver_env_strips_anthropic_key(monkeypatch):
 
 def test_local_model_registry_has_no_duplicate_literal_keys():
     """Duplicate literal keys silently overwrite earlier model registry entries."""
-    source = Path("local_models.py").read_text()
+    source = Path("src/hermes_katana/proving_ground/local_models.py").read_text()
     tree = ast.parse(source)
     duplicates: list[str] = []
 

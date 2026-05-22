@@ -259,7 +259,7 @@ def test_warn_silent_for_hermes_driver(hermes_driver):
 
 
 def _broken_pattern(exit_code: int, output_chars: int, tool_call_count: int, duration_sec: float) -> bool:
-    """Inline copy of the watchdog predicate from run_agent_shard.py:319-326.
+    """Inline copy of the agent-shard watchdog predicate.
     Pinned here so a refactor of the predicate has to update both places —
     if you change the live one, this test will tell you to update the
     fixture and the actual predicate together."""
@@ -367,7 +367,7 @@ def test_load_dotenv_does_not_leak_anthropic_keys(monkeypatch, tmp_path):
     monkeypatch.delenv("CLAUDECODE", raising=False)
     monkeypatch.delenv("KATANA_LOCAL_QWEN35_MODEL", raising=False)
 
-    import run_agent_shard as ras
+    import hermes_katana.proving_ground.run_agent_shard as ras
 
     importlib.reload(ras)
     monkeypatch.setattr(ras, "ROOT", tmp_path)
@@ -397,7 +397,7 @@ def test_load_dotenv_respects_pre_set_env(monkeypatch, tmp_path):
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-FROM-SHELL")
 
-    import run_agent_shard as ras
+    import hermes_katana.proving_ground.run_agent_shard as ras
 
     importlib.reload(ras)
     monkeypatch.setattr(ras, "ROOT", tmp_path)

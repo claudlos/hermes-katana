@@ -16,14 +16,13 @@ Empirical attack-effectiveness testing for LLM agents and APIs. The proving grou
 ## Quick start
 
 ```bash
-# 1. Clone alongside the hermes-katana repo (sibling layout)
-git clone <this-repo>           katana-proving-ground
-git clone <hermes-katana-repo>  hermes-katana
-cd katana-proving-ground
+# 1. Clone Hermes Katana
+git clone <hermes-katana-repo> hermes-katana
+cd hermes-katana
 
 # 2. Install
 python -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install -e ".[proving-ground]"
 
 # 3. Run a sandbox session against a local model
 proving-ground run \
@@ -33,7 +32,7 @@ proving-ground run \
   --base-url http://localhost:8080/v1
 ```
 
-The `proving-ground` console script (also `python main.py`) dispatches to subcommands. Run `proving-ground --help` for the full list.
+The `proving-ground` console script dispatches to the common sandbox subcommands. Run `proving-ground --help` for the full list.
 
 ### Path overrides
 
@@ -56,12 +55,12 @@ By default, the harness expects `hermes-katana` to live as a sibling of `katana-
 | `proving-ground list-tasks` | show available workspace task templates |
 | `proving-ground synthesize` | generate new variants of confirmed-effective attacks |
 
-For fleet-scale runs (multi-model, multi-shard, days at a time), the standalone scripts are still the canonical entry points:
+For fleet-scale runs (multi-model, multi-shard, days at a time), use the packaged module entry points:
 
 ```bash
-python run_agent_shard.py --shard 600 --driver claude_cli  --task readme_summarize  ...
-python run_shard.py        --shard 100 --model qwen3-8b   --base-url http://...    ...
-python export_attacks.py                                                              # promote confirmed attacks
+python -m hermes_katana.proving_ground.run_agent_shard --shard-id 600 --agent-id claude_cli --task readme_summarize ...
+python -m hermes_katana.proving_ground.run_shard --shard-id 100 --model-id qwen3-8b --base-url http://... ...
+python -m hermes_katana.proving_ground.scripts.fleet launch --spec src/hermes_katana/proving_ground/scripts/fleet_smoke.json
 ```
 
 ## Channels
@@ -94,7 +93,8 @@ These are conclusions backed by preregistered hypotheses with statistical power:
 
 ## Reproducibility
 
-See [`reproducibility.md`](reproducibility.md) for seed handling, dependency notes, hardware requirements, and historical corpus rebuild notes.
+See [`methodology.md`](methodology.md) for seed handling, dependency notes,
+hardware requirements, and the public reporting bar.
 
 ## Configuration
 
@@ -119,9 +119,7 @@ Provider API keys are read from environment variables (never `config.yaml`); pin
 
 ## Further reading
 
-- [`factory.md`](factory.md) — methodology and promotion workflow
-- [`limitations.md`](limitations.md) — current known limits and interpretation risks
-- [`fleet_runbook.md`](fleet_runbook.md) — fleet-scale operations
+- [`methodology.md`](methodology.md) — campaign design, reproducibility, and caveats
 - [`mini-agent-guide.md`](mini-agent-guide.md) — parallel agent driver wiring
 
 ## License

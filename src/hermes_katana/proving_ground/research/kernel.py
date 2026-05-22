@@ -19,10 +19,9 @@ Typical usage (library):
     k.submit_claim(claim, supporting_obs)  # rigor-gate + verifier → Result or Downgrade
     k.save()
 
-This is NOT an LLM-driven loop. Adding an LLM planner is a thin layer
-above: see `scripts/intern.py`. The kernel is deliberately small and
-dep-free so it can be wired into any planner (rule-based, LLM-driven,
-human-driven).
+This is NOT an LLM-driven loop. Adding an LLM planner is a thin layer above the
+packaged research tools. The kernel is deliberately small and dep-free so it can
+be wired into any planner (rule-based, LLM-driven, human-driven).
 """
 
 from __future__ import annotations

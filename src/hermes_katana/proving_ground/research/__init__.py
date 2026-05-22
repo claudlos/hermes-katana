@@ -15,8 +15,6 @@ Modules:
   verifier   — separate critic that audits claims against raw evidence
   tools      — proving-grounds-specific tool router for the agent
   kernel     — ResearchKernel: composes all of the above
-
-The agent CLI entry point lives at `scripts/intern.py`.
 """
 
 __all__: list[str] = []

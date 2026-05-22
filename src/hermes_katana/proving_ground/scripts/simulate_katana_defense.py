@@ -53,7 +53,7 @@ from hermes_katana.proving_ground.research.statistics import wilson_ci, cohens_h
 # Import channel wrapping from detection_bench (single source of truth)
 _spec = None
 try:
-    from scripts.detection_bench import wrap_for_channel  # type: ignore
+    from hermes_katana.proving_ground.scripts.detection_bench import wrap_for_channel
 except ImportError:
     # Allow direct execution: scripts/ is not a package, so load by path
     import importlib.util as _iu

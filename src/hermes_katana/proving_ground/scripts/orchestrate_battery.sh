@@ -36,7 +36,7 @@ for shard in $(seq "$START_SHARD" "$END_SHARD"); do
         echo "=============================================="
         echo "[$(date '+%F %T')] $TAG: shard $shard × $model"
         echo "=============================================="
-        .venv/bin/python run_shard.py \
+        .venv/bin/python -m hermes_katana.proving_ground.run_shard \
             --shard-id "$shard" \
             --model-id "$model" \
             $MAX_ARG \
