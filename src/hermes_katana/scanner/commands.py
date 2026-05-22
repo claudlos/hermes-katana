@@ -21,7 +21,9 @@ Performance: <1ms for typical command strings. All patterns precompiled.
 
 from __future__ import annotations
 
+import ipaddress
 import re
+import shlex
 import unicodedata
 from dataclasses import dataclass
 from enum import Enum
@@ -1457,6 +1459,74 @@ def _shell_evasion_variants(cmd: str) -> tuple[str, ...]:
     return tuple(variants)
 
 
+_NMAP_VALUE_OPTIONS = {
+    "-p",
+    "--top-ports",
+    "--exclude",
+    "--excludefile",
+    "-iL",
+    "-oA",
+    "-oG",
+    "-oN",
+    "-oX",
+    "--script",
+    "--script-args",
+}
+_NMAP_LOCAL_HIGH_RISK_OPTIONS = {"-A", "-O", "--script"}
+
+
+def _is_loopback_target(token: str) -> bool:
+    cleaned = token.strip("[]")
+    if cleaned.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(cleaned).is_loopback
+    except ValueError:
+        pass
+    try:
+        return ipaddress.ip_network(cleaned, strict=False).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_only_nmap(cmd: str) -> bool:
+    """Allow benign local port checks without weakening remote nmap detection."""
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        tokens = cmd.split()
+
+    try:
+        nmap_index = next(i for i, token in enumerate(tokens) if token == "nmap")
+    except StopIteration:
+        return False
+
+    targets: list[str] = []
+    index = nmap_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _NMAP_LOCAL_HIGH_RISK_OPTIONS or any(
+            token.startswith(f"{opt}=") for opt in _NMAP_LOCAL_HIGH_RISK_OPTIONS
+        ):
+            return False
+        if token in _NMAP_VALUE_OPTIONS:
+            index += 2
+            continue
+        if any(token.startswith(f"{opt}=") for opt in _NMAP_VALUE_OPTIONS):
+            index += 1
+            continue
+        if token.startswith("-p") and len(token) > 2:
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        targets.append(token)
+        index += 1
+
+    return bool(targets) and all(_is_loopback_target(target) for target in targets)
+
+
 # ---------------------------------------------------------------------------
 # Main detection function
 # ---------------------------------------------------------------------------
@@ -1510,6 +1580,8 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
     for variant in _shell_evasion_variants(cmd):
         for name, pattern, category, severity, description in _COMMAND_PATTERNS:
             for match in pattern.finditer(variant):
+                if name == "nmap_scan" and _is_loopback_only_nmap(variant):
+                    continue
                 findings.append(
                     CommandFinding(
                         pattern_name=name,
@@ -1566,6 +1638,8 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
         for exp_variant in _shell_evasion_variants(cmd_expanded):
             for name, pattern, category, severity, description in _COMMAND_PATTERNS:
                 for match in pattern.finditer(exp_variant):
+                    if name == "nmap_scan" and _is_loopback_only_nmap(exp_variant):
+                        continue
                     findings.append(
                         CommandFinding(
                             pattern_name=name,
