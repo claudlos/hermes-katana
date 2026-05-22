@@ -16,12 +16,20 @@ required for the base scanner, policy engine, vault, audit trail, or proxy.
 Useful entry points:
 
 ```bash
-pip install -e ".[proving-ground]"
+katana setup --proving-ground
 
-proving-ground run --task code_review --channel file_content --model qwen3-8b
+katana proving-ground run \
+  --task code_review \
+  --channel file_content \
+  --model qwen3-8b \
+  --base-url http://localhost:8000/v1
 
 python -m hermes_katana.proving_ground.run_agent_shard \
-  --shard-id 1 --agent-id claude_cli --max-attacks 5
+  --shard-id 1 \
+  --agent-id claude_cli \
+  --channel file_content \
+  --max-attacks 5 \
+  --run-id smoke-local
 
 python -m hermes_katana.proving_ground.scripts.fleet launch \
   --spec src/hermes_katana/proving_ground/scripts/fleet_smoke.json \

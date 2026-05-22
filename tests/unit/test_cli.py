@@ -586,3 +586,65 @@ class TestCLIContracts:
         assert [call[0] for call in calls] == ["katana_v15_distill_minilm_onnx", "katana_v15_large"]
         assert calls[0][1] == tmp_dir / "cache" / "katana_v15_distill_minilm_onnx"
         assert calls[1][1] == tmp_dir / "cache" / "katana_v15_large"
+
+    def test_setup_yes_downloads_small_only_and_skips_proving_ground(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_dir / "artifacts"))
+        artifact_calls = []
+        install_calls = []
+
+        def fake_download(spec, target_dir=None, *, force=False):
+            path = Path(target_dir or tmp_dir / spec.name)
+            artifact_calls.append((spec.name, path, force))
+            return artifacts_mod.ArtifactStatus(spec=spec, path=path, present=True, missing_files=(), source="test")
+
+        def fake_install():
+            install_calls.append("proving-ground")
+
+        monkeypatch.setattr(artifacts_mod, "download_artifact", fake_download)
+        monkeypatch.setattr(cli_main, "_install_proving_ground_extra", fake_install)
+
+        result = self.runner.invoke(cli_main.main, ["setup", "--yes"])
+
+        assert result.exit_code == 0
+        assert [call[0] for call in artifact_calls] == ["katana_v15_distill_minilm_onnx"]
+        assert install_calls == []
+
+    def test_setup_proving_ground_installs_extra_without_artifact_choice(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_dir / "artifacts"))
+        monkeypatch.setattr(cli_main, "_missing_proving_ground_dependencies", lambda: ["openai"])
+        calls = []
+
+        def fake_run(cmd, *, check):
+            calls.append((cmd, check))
+            return SimpleNamespace(returncode=0)
+
+        monkeypatch.setattr(cli_main.subprocess, "run", fake_run)
+
+        result = self.runner.invoke(cli_main.main, ["setup", "--proving-ground"])
+
+        assert result.exit_code == 0
+        assert calls
+        cmd, check = calls[0]
+        assert check is True
+        assert cmd[:4] == [cli_main.sys.executable, "-m", "pip", "install"]
+        assert cmd[-2:] == ["-e", ".[proving-ground]"]
+
+    def test_setup_rejects_conflicting_proving_ground_options(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_dir / "artifacts"))
+
+        result = self.runner.invoke(cli_main.main, ["setup", "--proving-ground", "--no-proving-ground"])
+
+        assert result.exit_code != 0
+        assert "--proving-ground and --no-proving-ground cannot be used together" in result.output

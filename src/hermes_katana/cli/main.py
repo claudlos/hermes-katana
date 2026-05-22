@@ -28,6 +28,8 @@ __all__ = [
 import os
 import platform
 import json
+import importlib.util
+import shlex
 import shutil
 import subprocess
 import sys
@@ -69,6 +71,172 @@ EXIT_ERROR = 1
 EXIT_SECURITY = 2
 
 VERSION = __version__
+
+_PROVING_GROUND_EXTRA = "proving-ground"
+_PROVING_GROUND_MODULES = (
+    ("openai", "openai"),
+    ("anthropic", "anthropic"),
+    ("google.genai", "google-genai"),
+    ("numpy", "numpy"),
+    ("pandas", "pandas"),
+    ("sklearn", "scikit-learn"),
+    ("joblib", "joblib"),
+    ("psutil", "psutil"),
+)
+
+
+def _missing_proving_ground_dependencies() -> list[str]:
+    """Return distribution names missing for the optional Proving Ground extra."""
+    missing: list[str] = []
+    for module_name, distribution_name in _PROVING_GROUND_MODULES:
+        try:
+            found = importlib.util.find_spec(module_name) is not None
+        except (ImportError, ModuleNotFoundError, ValueError):
+            found = False
+        if not found:
+            missing.append(distribution_name)
+    return missing
+
+
+def _current_checkout_install_args(extra: str) -> list[str] | None:
+    """Return editable pip args when the command is run from a Hermes Katana checkout."""
+    pyproject = Path.cwd() / "pyproject.toml"
+    if not pyproject.is_file():
+        return None
+    try:
+        text = pyproject.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if 'name = "hermes-katana"' not in text:
+        return None
+    return ["-e", f".[{extra}]"]
+
+
+def _extra_install_args(extra: str) -> list[str]:
+    return _current_checkout_install_args(extra) or [f"hermes-katana[{extra}]"]
+
+
+def _install_proving_ground_extra() -> None:
+    """Install optional Proving Ground dependencies into the active environment."""
+    missing = _missing_proving_ground_dependencies()
+    if not missing:
+        console.print("[green]Present[/green] Proving Ground dependencies")
+        return
+
+    cmd = [sys.executable, "-m", "pip", "install", *_extra_install_args(_PROVING_GROUND_EXTRA)]
+    console.print("[bold]Installing Proving Ground extra[/bold]")
+    console.print(f"   {_format_command(cmd)}")
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"Proving Ground extra install failed with exit code {exc.returncode}") from exc
+
+
+def _format_command(cmd: list[str]) -> str:
+    return shlex.join(cmd)
+
+
+def _prompt_install_proving_ground(
+    *,
+    yes: bool,
+    install_proving_ground: bool,
+    no_proving_ground: bool,
+) -> bool:
+    if install_proving_ground and no_proving_ground:
+        raise click.ClickException("--proving-ground and --no-proving-ground cannot be used together")
+    if install_proving_ground:
+        return True
+    if no_proving_ground or yes:
+        return False
+
+    missing = _missing_proving_ground_dependencies()
+    if not missing:
+        console.print("[green]Present[/green] Proving Ground dependencies")
+        return False
+
+    if not sys.stdin.isatty():
+        return False
+
+    prompt = (
+        "Install Proving Ground optional dependencies "
+        "(research harness for empirical attack testing; not needed for normal runtime)?"
+    )
+    return bool(click.confirm(prompt, default=False))
+
+
+def _run_artifacts_setup(
+    *,
+    yes: bool,
+    small: bool,
+    large: bool,
+    all_models: bool,
+    no_large: bool,
+    target_dir: str | None,
+    force: bool,
+    allow_no_artifact_choice: bool = False,
+    prompt_for_artifacts: bool = True,
+) -> bool:
+    """Prompt for optional model downloads and prepare the local artifact cache."""
+    from hermes_katana.artifacts import ArtifactError, artifact_specs, artifact_status, download_artifact
+
+    if all_models and no_large:
+        raise click.ClickException("--all and --no-large cannot be used together")
+
+    specs = artifact_specs()
+    by_alias = {spec.aliases[0]: spec for spec in specs if spec.aliases}
+    selected = []
+
+    if all_models:
+        selected = list(specs)
+    elif small or large:
+        if small:
+            selected.append(by_alias["minilm"])
+        if large and not no_large:
+            selected.append(by_alias["large"])
+    elif yes:
+        selected = [spec for spec in specs if spec.interactive_default]
+    elif not prompt_for_artifacts:
+        pass
+    elif not sys.stdin.isatty():
+        if not allow_no_artifact_choice:
+            raise click.ClickException("Non-interactive setup requires --yes, --small, --large, or --all")
+    else:
+        console.print("[bold]Katana artifact setup[/bold]\n")
+        for spec in specs:
+            if no_large and spec.requires_confirmation:
+                continue
+            status = artifact_status(spec)
+            if status.present and not force:
+                console.print(f"[green]Present[/green] {spec.name}: {status.path}")
+                continue
+            default = spec.interactive_default and not spec.requires_confirmation
+            prompt = f"Download {spec.display_name or spec.name} ({spec.size_label or 'unknown size'}, {spec.role})?"
+            if click.confirm(prompt, default=default):
+                selected.append(spec)
+
+    if no_large:
+        selected = [spec for spec in selected if not spec.requires_confirmation]
+
+    if not selected:
+        if prompt_for_artifacts or not allow_no_artifact_choice:
+            console.print("No artifact downloads selected.")
+        return False
+
+    target_root = Path(target_dir).expanduser().resolve() if target_dir else None
+    multiple = len(selected) > 1
+    for spec in selected:
+        spec_target = target_root / spec.name if target_root is not None and multiple else target_root
+        status = artifact_status(spec, spec_target)
+        if status.present and not force:
+            console.print(f"[green]Present[/green] {spec.name}: {status.path}")
+            continue
+        try:
+            downloaded = download_artifact(spec, spec_target, force=force)
+        except ArtifactError as exc:
+            err_console.print(f"[red]Artifact download failed for {spec.name}:[/red] {exc}")
+            raise SystemExit(EXIT_ERROR)
+        console.print(f"[green]Downloaded[/green] {spec.name}: {downloaded.path}")
+    return True
 
 
 def _build_preflight_summary(target: str | None = None) -> dict[str, object]:
@@ -530,6 +698,56 @@ def preflight(target: str | None, json_output: bool) -> None:
 
     if not ready:
         raise SystemExit(EXIT_ERROR)
+
+
+# ---------------------------------------------------------------------------
+# katana setup
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option("--yes", "-y", is_flag=True, help="Accept default setup choices without prompting.")
+@click.option("--small", is_flag=True, help="Download the default fast CPU model.")
+@click.option("--large", is_flag=True, help="Download the optional large local model.")
+@click.option("--all", "all_models", is_flag=True, help="Download every registered model.")
+@click.option("--no-large", is_flag=True, help="Skip optional large models.")
+@click.option("--proving-ground", "install_proving_ground", is_flag=True, help="Install Proving Ground extras.")
+@click.option("--no-proving-ground", is_flag=True, help="Skip Proving Ground extras.")
+@click.option("--target-dir", default=None, type=click.Path(), help="Local artifact directory or cache root.")
+@click.option("--force", is_flag=True, help="Force re-download when using huggingface_hub.")
+def setup(
+    yes: bool,
+    small: bool,
+    large: bool,
+    all_models: bool,
+    no_large: bool,
+    install_proving_ground: bool,
+    no_proving_ground: bool,
+    target_dir: str | None,
+    force: bool,
+) -> None:
+    """Run first-use setup for optional models and research harness extras."""
+    if install_proving_ground and no_proving_ground:
+        raise click.ClickException("--proving-ground and --no-proving-ground cannot be used together")
+    explicit_artifact_choice = yes or small or large or all_models
+    _run_artifacts_setup(
+        yes=yes,
+        small=small,
+        large=large,
+        all_models=all_models,
+        no_large=no_large,
+        target_dir=target_dir,
+        force=force,
+        allow_no_artifact_choice=install_proving_ground,
+        prompt_for_artifacts=not install_proving_ground or explicit_artifact_choice,
+    )
+    install_pg = _prompt_install_proving_ground(
+        yes=yes,
+        install_proving_ground=install_proving_ground,
+        no_proving_ground=no_proving_ground,
+    )
+    if install_pg:
+        _install_proving_ground_extra()
 
 
 # ---------------------------------------------------------------------------
@@ -1641,61 +1859,15 @@ def artifacts_setup(
     force: bool,
 ) -> None:
     """Prompt for optional model downloads and prepare the local artifact cache."""
-    from hermes_katana.artifacts import ArtifactError, artifact_specs, artifact_status, download_artifact
-
-    if all_models and no_large:
-        raise click.ClickException("--all and --no-large cannot be used together")
-
-    specs = artifact_specs()
-    by_alias = {spec.aliases[0]: spec for spec in specs if spec.aliases}
-    selected = []
-
-    if all_models:
-        selected = list(specs)
-    elif small or large:
-        if small:
-            selected.append(by_alias["minilm"])
-        if large and not no_large:
-            selected.append(by_alias["large"])
-    elif yes:
-        selected = [spec for spec in specs if spec.interactive_default]
-    elif not sys.stdin.isatty():
-        raise click.ClickException("Non-interactive setup requires --yes, --small, --large, or --all")
-    else:
-        console.print("[bold]Katana artifact setup[/bold]\n")
-        for spec in specs:
-            if no_large and spec.requires_confirmation:
-                continue
-            status = artifact_status(spec)
-            if status.present and not force:
-                console.print(f"[green]Present[/green] {spec.name}: {status.path}")
-                continue
-            default = spec.interactive_default and not spec.requires_confirmation
-            prompt = f"Download {spec.display_name or spec.name} ({spec.size_label or 'unknown size'}, {spec.role})?"
-            if click.confirm(prompt, default=default):
-                selected.append(spec)
-
-    if no_large:
-        selected = [spec for spec in selected if not spec.requires_confirmation]
-
-    if not selected:
-        console.print("No artifact downloads selected.")
-        return
-
-    target_root = Path(target_dir).expanduser().resolve() if target_dir else None
-    multiple = len(selected) > 1
-    for spec in selected:
-        spec_target = target_root / spec.name if target_root is not None and multiple else target_root
-        status = artifact_status(spec, spec_target)
-        if status.present and not force:
-            console.print(f"[green]Present[/green] {spec.name}: {status.path}")
-            continue
-        try:
-            downloaded = download_artifact(spec, spec_target, force=force)
-        except ArtifactError as exc:
-            err_console.print(f"[red]Artifact download failed for {spec.name}:[/red] {exc}")
-            raise SystemExit(EXIT_ERROR)
-        console.print(f"[green]Downloaded[/green] {spec.name}: {downloaded.path}")
+    _run_artifacts_setup(
+        yes=yes,
+        small=small,
+        large=large,
+        all_models=all_models,
+        no_large=no_large,
+        target_dir=target_dir,
+        force=force,
+    )
 
 
 # ---------------------------------------------------------------------------

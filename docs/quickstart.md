@@ -13,18 +13,24 @@ pip install -e ".[security]"
 ```
 
 The base install is the smallest path and does not download model artifacts. To
-enable the default fast CPU ML profile:
+enable optional local ML artifacts and first-run extras:
 
 ```bash
 pip install -e ".[fast-cpu]"
-katana artifacts setup --yes
+katana setup
 ```
+
+`katana setup` prompts for the default MiniLM artifact, the larger optional
+model, and the Proving Ground research harness. Use `katana setup --yes` for
+the default unattended path: small model only, no larger model, no Proving
+Ground dependencies.
 
 When a PyPI release exists, the equivalent install commands are:
 
 ```bash
 pip install hermes-katana
 pip install "hermes-katana[fast-cpu]"
+katana setup
 ```
 
 **Expected output:**
@@ -53,7 +59,7 @@ checkout has been installed.
 > `katana doctor` and `katana status` also show ML runtime readiness,
 > including artifact discovery, Scabbard asset state, and semantic backend
 > readiness. Optional model artifacts are downloaded explicitly with
-> `katana artifacts setup` or `katana artifacts download`; see
+> `katana setup`, `katana artifacts setup`, or `katana artifacts download`; see
 > [`docs/artifacts.md`](artifacts.md).
 
 ---

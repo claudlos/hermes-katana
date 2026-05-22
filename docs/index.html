@@ -344,7 +344,7 @@
           </article>
           <article>
             <h3>Operator check</h3>
-            <p>Run <code>katana artifacts setup --yes</code> only when you intentionally want the optional artifact profile on that machine.</p>
+            <p>Run <code>katana setup</code> when you intentionally want optional artifacts or research harness dependencies on that machine.</p>
           </article>
         </div>
       </section>
@@ -372,7 +372,7 @@
           </article>
           <article>
             <h3>Operator check</h3>
-            <p>Install <code>.[proving-ground]</code> when you need research data, regression checks, or adversarial baselines beyond normal unit tests.</p>
+            <p>Use <code>katana setup --proving-ground</code> when you need research data, regression checks, or adversarial baselines beyond normal unit tests.</p>
           </article>
         </div>
       </section>
@@ -506,11 +506,14 @@ python -m twine check dist/*</code></pre>
           </p>
         </div>
         <div class="terminal-panel accent">
-          <pre><code>pip install -e ".[proving-ground]"
-proving-ground run --task code_review --channel file_content --model qwen3-8b
+          <pre><code>katana setup --proving-ground
+katana proving-ground list-tasks
 
-python -m hermes_katana.proving_ground.run_agent_shard \
-  --shard-id 1 --agent-id claude_cli --max-attacks 5</code></pre>
+katana proving-ground run \
+  --task code_review \
+  --channel file_content \
+  --model qwen3-8b \
+  --base-url http://localhost:8000/v1</code></pre>
         </div>
       </section>
     </main>
