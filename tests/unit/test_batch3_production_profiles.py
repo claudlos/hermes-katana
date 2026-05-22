@@ -48,7 +48,7 @@ def test_fast_cpu_profile_uses_cpu_first_scabbard_without_redundant_ml_gates(mon
     scabbard = middleware["katana.scabbard"]
 
     assert middleware["katana.protectai"].enabled is False
-    assert middleware["katana.sentinel"].enabled is False
+    assert middleware["katana.scabbard_secondary"].enabled is False
     assert middleware["katana.scan"].enabled is True
     assert scabbard.enabled is True
     assert scabbard._route_mode == "balanced"
@@ -79,7 +79,7 @@ def test_balanced_profile_keeps_scabbard_primary_and_disables_overlapping_ml_by_
     assert scabbard._route_mode == "balanced"
     assert middleware["katana.scan"]._route_aware is True
     assert middleware["katana.protectai"].enabled is False
-    assert middleware["katana.sentinel"].enabled is False
+    assert middleware["katana.scabbard_secondary"].enabled is False
 
 
 def test_max_profile_enables_overlapping_ml_gates_and_fails_closed_outputs():
@@ -88,7 +88,7 @@ def test_max_profile_enables_overlapping_ml_gates_and_fails_closed_outputs():
     middleware = _middleware_by_name(chain)
 
     assert middleware["katana.protectai"].enabled is True
-    assert middleware["katana.sentinel"].enabled is True
+    assert middleware["katana.scabbard_secondary"].enabled is True
     assert middleware["katana.scabbard"]._enforce_output_blocks is True
     assert middleware["katana.scan"]._enforce_output_findings is True
     assert middleware["katana.scan"]._route_aware is False
@@ -161,7 +161,7 @@ def test_katana_status_includes_readiness_diagnostics_for_fast_cpu(monkeypatch, 
     assert diagnostics["active_profile"] == "fast_cpu"
     assert "katana.scabbard" in diagnostics["scanners"]["active"]
     assert "katana.protectai" in diagnostics["scanners"]["inactive"]
-    assert "katana.sentinel" in diagnostics["scanners"]["inactive"]
+    assert "katana.scabbard_secondary" in diagnostics["scanners"]["inactive"]
     assert diagnostics["ml"]["scabbard_backend"] == "onnx"
     assert diagnostics["ml"]["scabbard_device"] == "cpu"
     assert diagnostics["ml"]["model_version"] == "katana_v15_distill_minilm"
@@ -215,5 +215,5 @@ def test_fast_cpu_latency_metadata_excludes_disabled_heavy_ml_gates(monkeypatch,
     assert "katana.scabbard" in latency
     assert "katana.scan" in latency
     assert "katana.protectai" not in latency
-    assert "katana.sentinel" not in latency
+    assert "katana.scabbard_secondary" not in latency
     assert ctx.extras["middleware_total_ms"] >= 0.0

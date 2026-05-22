@@ -1,7 +1,7 @@
 """KatanaProtectAIMiddleware — ProtectAI binary gate middleware (priority=88).
 
-Sits between KatanaScabbardMiddleware (pri=90) and KatanaSentinelMiddleware
-(pri=85) in the dispatch chain.
+Sits between the primary Scabbard middleware (pri=90) and the secondary
+Scabbard middleware (pri=85) in the dispatch chain.
 
 Behaviour:
 - INJECTION with confidence > block_threshold  → DENY

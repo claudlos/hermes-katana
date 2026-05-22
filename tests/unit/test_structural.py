@@ -232,7 +232,7 @@ class TestStructuralMiddlewareIntegration:
         names = [m.name for m in chain.list_middleware()]
         assert "katana.taint" in names
         assert "katana.scabbard" in names
-        assert "katana.sentinel" in names
+        assert "katana.scabbard_secondary" in names
         assert "katana.scan" in names
         assert "katana.structural" in names
         assert "katana.policy" in names

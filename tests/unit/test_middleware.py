@@ -344,7 +344,7 @@ class TestCreateDefaultChain:
         assert "katana.taint" in names
         assert "katana.scabbard" in names
         assert "katana.protectai" in names
-        assert "katana.sentinel" in names
+        assert "katana.scabbard_secondary" in names
         assert "katana.scan" in names
         # New scanners (mcp, multiturn, rag_injection)
         assert "katana.mcp" in names
