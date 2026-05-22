@@ -257,8 +257,8 @@ h2 {
 .quote-title {
   max-width: 31ch;
   color: var(--green);
-  font-size: clamp(1.9rem, 3.7vw, 4.4rem);
-  line-height: 1.04;
+  font-size: clamp(1.1rem, 2.2vw, 1.7rem);
+  line-height: 1.16;
   text-transform: uppercase;
 }
 
@@ -528,6 +528,17 @@ td {
   font-weight: 750;
 }
 
+th:first-child,
+td:first-child {
+  min-width: 118px;
+  white-space: nowrap;
+}
+
+.table-panel code {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
 .command-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -570,6 +581,7 @@ footer p {
 
 .footer-axiom {
   color: var(--green);
+  font-size: clamp(1.1rem, 2.2vw, 1.7rem);
   font-weight: 950;
   letter-spacing: 0;
   text-align: center;
