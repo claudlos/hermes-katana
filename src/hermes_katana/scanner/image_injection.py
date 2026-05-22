@@ -83,6 +83,7 @@ _INJECTION_PATTERNS = [
     re.compile(r, re.IGNORECASE)
     for r in [
         r"ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?)",
+        r"ignore\s+all\s+(instructions?|prompts?|rules?)",
         r"disregard\s+(all\s+)?(previous|prior|your)\s+(instructions?|prompts?|rules?)",
         r"forget\s+everything",
         r"(new|updated|real)\s+instructions?\s*[:=]",

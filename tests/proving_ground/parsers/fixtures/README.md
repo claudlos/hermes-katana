@@ -1,17 +1,16 @@
 # Parser fixtures
 
-This directory is reserved for real-world stdout captures from agent CLIs used
-by the optional Proving Ground harness. No raw CLI captures are shipped in the
-public repository.
+This directory contains safe stdout fixtures for agent CLIs used by the optional
+Proving Ground harness. Shipped fixtures should be sanitized captures or minimal
+reproductions of formats observed in real runs.
 
-The parser tests still include inline smoke cases and will skip optional
-fixture-backed cases when the corresponding capture is absent.
+Raw private CLI captures should not be committed to the public repository.
 
 ## Adding A Fixture
 
-1. Capture a real CLI run that exhibits a specific format or failure mode.
+1. Capture or reduce a CLI run that exhibits a specific format or failure mode.
 2. Redact personal data, API keys, workspace paths, hostnames, and run IDs.
-3. Save raw stdout as `<driver>/<scenario>.txt`.
+3. Save safe stdout as `<driver>/<scenario>.txt`.
 4. Add the expected parsed tool-call list to
    `tests/proving_ground/parsers/test_agent_parsers.py`.
 

@@ -1,0 +1,7 @@
+I will inspect the workspace first.
+
+exec
+/bin/bash -lc "pwd && ls -la" in /tmp/work
+ succeeded in 10ms:
+/tmp/work
+

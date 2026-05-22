@@ -10,10 +10,11 @@ five agent drivers that need golden-output coverage:
     - codex_cli                    (30.0%, garbage + verdict misalign)
     - gemini_cli                   (53.5%, model_garbage)
 
-This test module pins parser behavior against curated stdout/stderr fixtures
-collected from real runs. Adding a fixture here means: (1) drop a
-``fixtures/<driver>/<scenario>.txt`` file with the captured output, (2) add
-the expected tool-call extraction below.
+This test module pins parser behavior against curated stdout/stderr fixtures.
+Fixtures may be sanitized captures or minimal reproductions of formats observed
+in real runs. Adding a fixture here means: (1) drop a
+``fixtures/<driver>/<scenario>.txt`` file with safe output, (2) add the
+expected tool-call extraction below.
 
 When parser logic changes, run ``pytest tests/proving_ground/parsers/`` to
 confirm no regression. When a real-world output format changes (provider rolls
@@ -89,13 +90,19 @@ def test_codex_parses_apply_patch(tmp_path):
     assert any("findings.md" in str(c.get("args_preview", "") or c.get("args", "")) for c in calls)
 
 
-@pytest.mark.parametrize("scenario", ["text_only_response", "tool_with_reasoning_preamble"])
-def test_codex_real_fixture(scenario, tmp_path):
-    """Pin against fixtures captured from real codex runs."""
+@pytest.mark.parametrize(
+    ("scenario", "expected_names"),
+    [
+        ("text_only_response", []),
+        ("tool_with_reasoning_preamble", ["exec"]),
+    ],
+)
+def test_codex_fixture(scenario, expected_names, tmp_path):
+    """Pin against safe Codex stdout fixtures."""
     parsers = _get_parsers()
     stdout = _fixture("codex_cli", scenario)
     calls = parsers["codex_cli"](stdout, "", tmp_path)
-    assert isinstance(calls, list)
+    assert [c["name"] for c in calls] == expected_names
 
 
 # -----------------------------------------------------------------------------
@@ -112,13 +119,19 @@ def test_gemini_parses_tool_invocations(tmp_path):
     assert "WriteFile" in names
 
 
-@pytest.mark.parametrize("scenario", ["empty_response", "model_garbage_2_5_flash"])
-def test_gemini_handles_known_failure_modes(scenario, tmp_path):
+@pytest.mark.parametrize(
+    ("scenario", "expected_names"),
+    [
+        ("empty_response", []),
+        ("model_garbage_2_5_flash", []),
+    ],
+)
+def test_gemini_handles_known_failure_modes(scenario, expected_names, tmp_path):
     """Empty / garbage outputs should produce 0 calls without raising."""
     parsers = _get_parsers()
     stdout = _fixture("gemini_cli", scenario)
     calls = parsers["gemini_cli"](stdout, "", tmp_path)
-    assert isinstance(calls, list)
+    assert [c["name"] for c in calls] == expected_names
 
 
 # -----------------------------------------------------------------------------
@@ -127,18 +140,18 @@ def test_gemini_handles_known_failure_modes(scenario, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "scenario",
+    ("scenario", "expected_names"),
     [
-        "ok_with_tool_calls",
-        "or_arcee_spark_empty",
-        "or_deepseek_v3_free_empty",
+        ("ok_with_tool_calls", ["read_file"]),
+        ("or_arcee_spark_empty", []),
+        ("or_deepseek_v3_free_empty", []),
     ],
 )
-def test_hermes_handles_provider_specific_failures(scenario, tmp_path):
+def test_hermes_handles_provider_specific_failures(scenario, expected_names, tmp_path):
     parsers = _get_parsers()
     stdout = _fixture("hermes_cli", scenario)
     calls = parsers["hermes_cli"](stdout, "", tmp_path)
-    assert isinstance(calls, list)
+    assert [c["name"] for c in calls] == expected_names
 
 
 # -----------------------------------------------------------------------------

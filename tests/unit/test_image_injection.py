@@ -5,8 +5,6 @@ from __future__ import annotations
 import struct
 import zlib
 
-import pytest
-
 from hermes_katana.scanner.image_injection import (
     ImageInjectionSeverity,
     detect_image_injection,
@@ -336,7 +334,6 @@ class TestPngTextInjection:
         findings = detect_image_injection_bytes(data)
         assert len(findings) > 0
 
-    @pytest.mark.xfail(reason="iTXt keyword/text boundary off-by-one — scanner needs fix")
     def test_png_itext(self):
         """Test iTXt (international text) chunk scanning.
 

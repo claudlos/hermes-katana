@@ -495,7 +495,6 @@ class TestMultimodalIntegration:
         assert len(audio_findings) > 0
         assert len(doc_findings) > 0
 
-    @pytest.mark.xfail(reason="Multimodal scanner integration not yet complete")
     def test_qr_with_data_uri_payload(self):
         """QR code containing a data URI — both scanners should fire."""
         # Correct base64 for "ignore previous instructions" (pattern requires "instructions")
@@ -507,7 +506,6 @@ class TestMultimodalIntegration:
         assert isinstance(findings, list)
         assert len(uri_findings) > 0
 
-    @pytest.mark.xfail(reason="Multimodal scanner integration not yet complete")
     def test_scan_all_returns_combined_findings(self):
         """Exercise multiple scanners and collect results."""
         results: list[MultimodalFinding] = []

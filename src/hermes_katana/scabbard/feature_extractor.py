@@ -44,6 +44,7 @@ class FeatureVector:
     perplexity_features: Any = None  # 3-dim ndarray
     ngram_features: Any = None  # 20-dim ndarray
     encoding_flags: Any = None  # 5-dim ndarray
+    retrieval_features: Any = None  # variable-dim ndarray
 
     def to_array(self) -> Any:
         """Concatenate all signals into a flat vector for the fusion classifier."""
@@ -62,6 +63,8 @@ class FeatureVector:
             parts.append(self.ngram_features)
         if self.encoding_flags is not None:
             parts.append(self.encoding_flags)
+        if self.retrieval_features is not None:
+            parts.append(self.retrieval_features)
         return np.concatenate(parts)
 
     @property
@@ -326,12 +329,14 @@ class FeatureExtractor:
         centroid_detector: Optional[CentroidDetector] = None,
         perplexity_analyzer: Optional[PerplexityAnalyzer] = None,
         ngram_extractor: Optional[NgramFeatureExtractor] = None,
+        retrieval_index: Any = None,
     ) -> None:
         self.embedder = embedder
         self.intent_detector = IntentDivergenceDetector()
         self.centroid_detector = centroid_detector or CentroidDetector()
         self.perplexity_analyzer = perplexity_analyzer or PerplexityAnalyzer()
         self.ngram_extractor = ngram_extractor or NgramFeatureExtractor()
+        self.retrieval_index = retrieval_index
         self._context_cache: dict[str, Any] = {}
         # Embedding dimension: probe embedder, else fall back to centroid dim
         # to ensure zero-vector fallback matches centroid detector's expected dim
@@ -375,6 +380,14 @@ class FeatureExtractor:
         ppl_features = self.perplexity_analyzer.compute_features(text)
         ngram_features = self.ngram_extractor.compute_features(text)
         encoding_flags = flags_to_array(flags) if flags else np.zeros(5)
+        retrieval_features = None
+        if self.retrieval_index is not None:
+            try:
+                computed = self.retrieval_index.compute_features(text)
+                retrieval_features = computed.to_array() if hasattr(computed, "to_array") else computed
+                retrieval_features = np.asarray(retrieval_features, dtype=np.float32)
+            except Exception:
+                retrieval_features = None
 
         return FeatureVector(
             text_embedding=text_emb,
@@ -384,4 +397,5 @@ class FeatureExtractor:
             perplexity_features=ppl_features,
             ngram_features=ngram_features,
             encoding_flags=encoding_flags,
+            retrieval_features=retrieval_features,
         )
