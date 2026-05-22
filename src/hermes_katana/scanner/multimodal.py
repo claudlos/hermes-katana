@@ -3,7 +3,7 @@ Multimodal injection scanner for HermesKatana.
 
 Detects prompt injections embedded in non-text content:
 1. Image metadata (EXIF, XMP) containing prompt injections
-2. Base64-encoded images with OCR text extraction (if pytesseract available)
+2. Base64-encoded image metadata and optional explicit OCR helpers
 3. Audio file metadata (ID3 tags) with injection content
 4. Document metadata (PDF info dict, DOCX properties)
 5. QR code content detection and scanning
@@ -16,6 +16,7 @@ just skips those checks.
 from __future__ import annotations
 
 import base64
+import html
 import re
 import urllib.parse
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ __all__ = [
     "MultimodalCategory",
     "MultimodalSeverity",
     "MultimodalFinding",
+    "DataUriPayload",
+    "extract_data_uri_payloads",
     "scan_image_metadata",
     "scan_base64_image",
     "scan_audio_metadata",
@@ -57,7 +60,7 @@ class MultimodalCategory(str, Enum):
     """Prompt injection in image XMP metadata."""
 
     IMAGE_OCR = "image_ocr"
-    """Prompt injection found via OCR text extraction from image."""
+    """Prompt injection found by the explicit optional OCR helper."""
 
     AUDIO_ID3 = "audio_id3"
     """Prompt injection in audio ID3 tag metadata."""
@@ -99,6 +102,19 @@ class MultimodalFinding:
     matched_text: str
     position: tuple[int, int] = (0, 0)
     description: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class DataUriPayload:
+    """Decoded data URI carrier exposed for binary scanners."""
+
+    uri: str
+    header: str
+    media_type: str
+    is_base64: bool
+    encoded: str
+    decoded_bytes: bytes | None = None
+    decoded_text: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -741,21 +757,143 @@ def _check_url_param_loose(
 # 6. Data URI scanner
 # ---------------------------------------------------------------------------
 
-_DATA_URI_CANDIDATE_RE = re.compile(r"""data:[^\s"'<>`]+""", re.IGNORECASE)
+_MAX_DATA_URI_RECURSION = 3
+_DATA_URI_START_RE = re.compile(
+    r"""data\s*:\s*[^,\s"'<>`]+(?:\s*;\s*[^,\s"'<>`]*)*\s*,""",
+    re.IGNORECASE,
+)
+_BASE64_URI_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
+_DATA_URI_TRAILING = ".,;)]}"
+_DATA_URI_TERMINATORS = frozenset("\"'<>`")
 
 
 def _extract_data_uri_candidates(text: str) -> list[str]:
-    """Extract standalone data URI substrings from larger text."""
+    """Extract standalone data URI substrings from larger text.
+
+    The extraction intentionally normalizes HTML entities and allows wrapped
+    base64 payloads using newlines or tabs. Spaces are treated as separators so
+    normal prose following a data URI is not swallowed as base64.
+    """
     candidates: list[str] = []
-    for match in _DATA_URI_CANDIDATE_RE.finditer(text):
-        candidate = match.group(0).rstrip(".,;)]}")
-        if "," in candidate:
+    normalized = html.unescape(text)
+    for match in _DATA_URI_START_RE.finditer(normalized):
+        header = match.group(0)
+        is_base64 = "base64" in header.lower()
+        payload_chars: list[str] = []
+        index = match.end()
+        while index < len(normalized):
+            char = normalized[index]
+            if char in _DATA_URI_TERMINATORS:
+                break
+            if is_base64:
+                if char in _BASE64_URI_CHARS:
+                    payload_chars.append(char)
+                    index += 1
+                    continue
+                if char in "\r\n\t":
+                    payload_chars.append(char)
+                    index += 1
+                    continue
+                break
+            if char.isspace():
+                break
+            payload_chars.append(char)
+            index += 1
+
+        encoded = "".join(payload_chars).rstrip(_DATA_URI_TRAILING)
+        if encoded:
+            candidate = f"{header}{encoded}".rstrip(_DATA_URI_TRAILING)
             candidates.append(candidate)
     return candidates
 
 
+def _clean_data_uri_header(header: str) -> str:
+    compact = re.sub(r"\s+", "", header)
+    if compact.lower().startswith("data:"):
+        return compact[5:]
+    return compact
+
+
+def _decode_data_uri_payload(data_uri: str) -> DataUriPayload | None:
+    """Parse and decode one data URI candidate."""
+    if "," not in data_uri:
+        return None
+
+    header, encoded = data_uri.split(",", 1)
+    header_only = _clean_data_uri_header(header)
+    media_type = header_only.split(";", 1)[0].strip().lower()
+    is_base64 = "base64" in header_only.lower()
+    encoded = encoded.rstrip(_DATA_URI_TRAILING)
+
+    decoded_bytes: bytes | None = None
+    decoded_text = ""
+    if is_base64:
+        try:
+            clean_encoded = urllib.parse.unquote(encoded)
+            clean_encoded = re.sub(r"[\r\n\t]", "", clean_encoded).strip()
+            padding = "=" * (-len(clean_encoded) % 4)
+            if "-" in clean_encoded or "_" in clean_encoded:
+                decoded_bytes = base64.urlsafe_b64decode(clean_encoded + padding)
+            else:
+                decoded_bytes = base64.b64decode(clean_encoded + padding, validate=False)
+            decoded_text = decoded_bytes.decode("utf-8", errors="ignore")
+        except Exception:
+            decoded_bytes = None
+            decoded_text = ""
+    else:
+        try:
+            decoded_text = urllib.parse.unquote(encoded)
+            decoded_bytes = decoded_text.encode("utf-8", errors="ignore")
+        except Exception:
+            decoded_text = ""
+            decoded_bytes = None
+
+    return DataUriPayload(
+        uri=data_uri,
+        header=header_only,
+        media_type=media_type,
+        is_base64=is_base64,
+        encoded=encoded,
+        decoded_bytes=decoded_bytes,
+        decoded_text=decoded_text,
+    )
+
+
+def extract_data_uri_payloads(text: str, *, max_depth: int = _MAX_DATA_URI_RECURSION) -> list[DataUriPayload]:
+    """Extract decoded data URI payloads, including nested data URI carriers."""
+    payloads: list[DataUriPayload] = []
+    if not text or not isinstance(text, str):
+        return payloads
+
+    def visit(candidate_text: str, depth: int) -> None:
+        if depth > max_depth:
+            return
+        for candidate in _extract_data_uri_candidates(candidate_text):
+            payload = _decode_data_uri_payload(candidate)
+            if payload is None:
+                continue
+            payloads.append(payload)
+            decoded_text = payload.decoded_text
+            if decoded_text and "data" in decoded_text.lower():
+                visit(decoded_text, depth + 1)
+
+    normalized = html.unescape(text)
+    candidates = _extract_data_uri_candidates(normalized)
+    if candidates:
+        visit(normalized, 0)
+    elif normalized.strip().lower().startswith("data"):
+        payload = _decode_data_uri_payload(normalized.strip())
+        if payload is not None:
+            payloads.append(payload)
+            if payload.decoded_text and "data" in payload.decoded_text.lower():
+                visit(payload.decoded_text, 1)
+    return payloads
+
+
 def scan_data_uri(
     data_uri: str,
+    *,
+    _depth: int = 0,
 ) -> list[MultimodalFinding]:
     """Scan a data URI for embedded prompt injections.
 
@@ -795,84 +933,59 @@ def scan_data_uri(
         )
     )
 
-    candidates = _extract_data_uri_candidates(data_uri)
-    if not candidates and data_uri.strip().lower().startswith("data:"):
-        candidates = [data_uri.strip()]
+    normalized = html.unescape(data_uri)
+    candidates = _extract_data_uri_candidates(normalized)
+    if not candidates and normalized.strip().lower().startswith("data"):
+        candidates = [normalized.strip()]
     if candidates:
         for candidate in candidates:
-            findings.extend(_scan_single_data_uri(candidate))
+            findings.extend(_scan_single_data_uri(candidate, _depth=_depth))
         return findings
 
     return findings
 
 
-def _scan_single_data_uri(data_uri: str) -> list[MultimodalFinding]:
+def _scan_single_data_uri(data_uri: str, *, _depth: int = 0) -> list[MultimodalFinding]:
     """Parse and scan one data URI candidate."""
     findings: list[MultimodalFinding] = []
 
     # Parse and scan the media type / parameters
     try:
-        if "," in data_uri:
-            header, encoded = data_uri.split(",", 1)
+        payload = _decode_data_uri_payload(data_uri)
+        if payload is not None:
             # Scan the header (before comma) for injections
             # e.g. data:text/html;base64 or data:text/plain;name="payload.txt"
-            header_only = header.removeprefix("data:")
             findings.extend(
                 _scan_text_for_injections(
-                    header_only,
+                    payload.header,
                     "data_uri:header",
                     MultimodalCategory.DATA_URI,
                     MultimodalSeverity.MEDIUM,
                 )
             )
 
-            # Try to decode and scan the content
-            is_base64 = "base64" in header_only.lower()
-            decoded_text = ""
-            if is_base64:
-                try:
-                    decoded_bytes = base64.b64decode(encoded, validate=True)
-                    # If decoded bytes look like UTF-8 text, scan it
-                    try:
-                        decoded_text = decoded_bytes.decode("utf-8", errors="ignore")
-                        if decoded_text.strip():
-                            findings.extend(
-                                _scan_text_for_injections(
-                                    decoded_text,
-                                    "data_uri:decoded",
-                                    MultimodalCategory.DATA_URI,
-                                    MultimodalSeverity.HIGH,
-                                )
-                            )
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-            else:
-                # Not base64 — URL-decode and scan
-                try:
-                    decoded_text = urllib.parse.unquote(encoded)
-                    findings.extend(
-                        _scan_text_for_injections(
-                            decoded_text,
-                            "data_uri:decoded",
-                            MultimodalCategory.DATA_URI,
-                            MultimodalSeverity.HIGH,
-                        )
+            decoded_text = payload.decoded_text
+            if decoded_text.strip():
+                findings.extend(
+                    _scan_text_for_injections(
+                        decoded_text,
+                        "data_uri:decoded",
+                        MultimodalCategory.DATA_URI,
+                        MultimodalSeverity.HIGH,
                     )
-                except Exception:
-                    pass
+                )
+                if _depth < _MAX_DATA_URI_RECURSION and "data" in decoded_text.lower():
+                    findings.extend(scan_data_uri(decoded_text, _depth=_depth + 1))
 
             # Always scan raw encoded portion for loose injection keywords
             # (catches base64-encoded text that hasn't been decoded in the raw scan)
-            _check_data_uri_encoded(encoded, is_base64, findings)
+            _check_data_uri_encoded(payload.encoded, payload.is_base64, findings)
 
             # Check for XSS/code execution in executable media types
-            media_type = header_only.split(";")[0].strip().lower()
-            if media_type in _EXECUTABLE_MEDIA_TYPES and decoded_text:
+            if payload.media_type in _EXECUTABLE_MEDIA_TYPES and decoded_text:
                 _check_data_uri_xss(decoded_text, findings)
             # If the content is SVG, run SVG-specific scanning
-            if media_type == "image/svg+xml" and decoded_text:
+            if payload.media_type == "image/svg+xml" and decoded_text:
                 findings.extend(scan_svg_content(decoded_text))
     except Exception:
         pass
@@ -1169,6 +1282,8 @@ def scan_bytes_multimodal(
     - Image EXIF/XMP (if PIL/Pillow is available)
     - PDF info dict
     - Base64-encoded image detection
+    - No page rendering/OCR by default; OCR only runs when explicitly enabled
+      via scan_base64_image(..., do_ocr=True)
 
     Args:
         data: Raw bytes to scan.

@@ -812,17 +812,17 @@ def scan(ctx: click.Context, text: str) -> None:
 @click.pass_context
 def scan_file(ctx: click.Context, path: str) -> None:
     """Scan a file for injections, secrets, and dangerous content."""
-    from hermes_katana.scanner import scan_input, ScanVerdict
+    from hermes_katana.scanner import scan_bytes, ScanVerdict
 
     file_path = Path(path)
     try:
-        content = file_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
+        content = file_path.read_bytes()
+    except OSError as exc:
         err_console.print(f"[red]Error reading file:[/red] {exc}")
         raise SystemExit(EXIT_ERROR)
 
-    result = scan_input(content)
-    _display_scan_result(console, result, f"File: {file_path.name} ({len(content)} chars)")
+    result = scan_bytes(content, filename=file_path.name)
+    _display_scan_result(console, result, f"File: {file_path.name} ({len(content)} bytes)")
 
     if result.verdict == ScanVerdict.BLOCK:
         raise SystemExit(EXIT_SECURITY)

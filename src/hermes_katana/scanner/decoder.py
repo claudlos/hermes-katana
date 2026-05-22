@@ -220,6 +220,12 @@ def detect_encoded_blobs(text: str) -> list[tuple[DecoderCategory, int, int, str
 
     for m in _RE_URL_ENCODED.finditer(text):
         candidates.append((DecoderCategory.URL_ENCODING, m.start(), m.end(), m.group()))
+    if "%" in text:
+        percent_escapes = list(re.finditer(r"%[0-9a-fA-F]{2}", text))
+        if percent_escapes:
+            decoded = urllib.parse.unquote(text)
+            if decoded != text:
+                candidates.append((DecoderCategory.URL_ENCODING, 0, len(text), text))
 
     for m in _RE_HTML_ENTITIES.finditer(text):
         candidates.append((DecoderCategory.HTML_ENTITIES, m.start(), m.end(), m.group()))

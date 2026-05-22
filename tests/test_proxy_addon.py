@@ -282,6 +282,26 @@ class TestKatanaAddon:
             addon.request(flow)
         assert addon._stats.get("requests_blocked_scan", 0) >= 1
 
+    def test_request_pdf_body_uses_binary_scan(self):
+        addon = self._make_addon()
+        flow = MockFlow(host="example.com", headers={"content-type": "application/pdf"}, body=b"%PDF-1.7\n%%EOF\n")
+        clean = {"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""}
+        blocked = {
+            "verdict": "block",
+            "risk_score": 100,
+            "is_blocked": True,
+            "finding_count": 1,
+            "summary": "pdf issue",
+        }
+        with (
+            patch.object(addon, "_scan_text", return_value=clean),
+            patch.object(addon, "_scan_bytes", return_value=blocked) as scan_bytes,
+        ):
+            addon.request(flow)
+
+        scan_bytes.assert_called_once()
+        assert addon._stats.get("requests_blocked_scan", 0) >= 1
+
     def test_request_body_warned(self):
         addon = self._make_addon()
         flow = MockFlow(host="example.com", body=b"suspicious")
