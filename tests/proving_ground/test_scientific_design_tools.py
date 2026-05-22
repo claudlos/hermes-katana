@@ -10,8 +10,8 @@ from hermes_katana.proving_ground.research.statistics import (
     sample_size_paired_delta,
     sample_size_single_proportion,
 )
-from scripts import build_trial_plan as btp
-from scripts.quarantine_invalid_rows import denominator_summary, quarantine_rows
+from hermes_katana.proving_ground.scripts import build_trial_plan as btp
+from hermes_katana.proving_ground.scripts.quarantine_invalid_rows import denominator_summary, quarantine_rows
 
 
 def test_power_planning_uses_independent_family_units():

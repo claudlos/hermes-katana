@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,7 +38,7 @@ from hermes_katana.proving_ground.research.events import Action, Observation, Ga
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PY = str(ROOT / ".venv/bin/python")
+PY = sys.executable
 
 
 # ---------------------------------------------------------------------------
@@ -274,9 +275,13 @@ def _list_shards_handler(_args: dict) -> dict:
     }
 
 
+def _script_module(name: str) -> list[str]:
+    return [PY, "-m", f"hermes_katana.proving_ground.scripts.{name}"]
+
+
 def _query_corpus_handler(args: dict) -> dict:
-    """Invoke scripts/query.py and parse its --json output."""
-    cmd = [PY, "scripts/query.py", "--json"]
+    """Invoke the query helper and parse its --json output."""
+    cmd = [*_script_module("query"), "--json"]
     for k in ("run_id", "agent", "channel", "shard", "label", "attack_id"):
         if args.get(k) is not None:
             cmd += [f"--{k.replace('_', '-')}", str(args[k])]
@@ -339,7 +344,7 @@ def _list_hypotheses_handler(_args: dict) -> dict:
 def _generate_report_handler(args: dict) -> dict:
     run_id = args["run_id"]
     out = subprocess.run(
-        [PY, "scripts/report.py", "--run-id", run_id],
+        [*_script_module("report"), "--run-id", run_id],
         cwd=str(ROOT),
         capture_output=True,
         text=True,
@@ -357,7 +362,7 @@ def _generate_report_handler(args: dict) -> dict:
 def _launch_fleet_handler(args: dict) -> dict:
     spec_path = args["spec"]
     run_id = args.get("run_id")
-    cmd = [PY, "scripts/fleet.py", "launch", "--spec", spec_path]
+    cmd = [*_script_module("fleet"), "launch", "--spec", spec_path]
     if run_id:
         cmd += ["--run-id", run_id]
     # Blocking would tie up the agent for hours; spawn detached.
@@ -373,13 +378,13 @@ def _launch_fleet_handler(args: dict) -> dict:
 
 def _stop_fleet_handler(args: dict) -> dict:
     run_id = args["run_id"]
-    cmd = [PY, "scripts/fleet.py", "stop", "--run-id", run_id]
+    cmd = [*_script_module("fleet"), "stop", "--run-id", run_id]
     out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=30)
     return {"run_id": run_id, "stdout": out.stdout, "returncode": out.returncode}
 
 
 def _harness_matrix_handler(args: dict) -> dict:
-    cmd = [PY, "scripts/harness_matrix.py"]
+    cmd = _script_module("harness_matrix")
     if args.get("apply_exclusion"):
         cmd.append("--apply-exclusion")
     if args.get("min_n"):
@@ -396,7 +401,7 @@ def _harness_matrix_handler(args: dict) -> dict:
 
 
 def _factorial_decompose_handler(args: dict) -> dict:
-    cmd = [PY, "scripts/factorial_decompose.py"]
+    cmd = _script_module("factorial_decompose")
     if args.get("apply_exclusion"):
         cmd.append("--apply-exclusion")
     sub = args.get("subsample") or 80000
@@ -415,7 +420,7 @@ def _factorial_decompose_handler(args: dict) -> dict:
 
 
 def _simulate_defense_handler(args: dict) -> dict:
-    cmd = [PY, "scripts/simulate_katana_defense.py"]
+    cmd = _script_module("simulate_katana_defense")
     if args.get("apply_exclusion"):
         cmd.append("--apply-exclusion")
     if args.get("threshold") is not None:
@@ -437,7 +442,7 @@ def _simulate_defense_handler(args: dict) -> dict:
 
 
 def _harness_ablation_handler(args: dict) -> dict:
-    cmd = [PY, "scripts/harness_ablation.py"]
+    cmd = _script_module("harness_ablation")
     for k in ("harness_a", "harness_b", "label_a", "label_b"):
         if args.get(k):
             cmd += [f"--{k.replace('_', '-')}", args[k]]
@@ -457,7 +462,7 @@ def _harness_ablation_handler(args: dict) -> dict:
 
 
 def _detection_bench_handler(args: dict) -> dict:
-    cmd = [PY, "scripts/detection_bench.py"]
+    cmd = _script_module("detection_bench")
     if args.get("detectors"):
         cmd += ["--detectors", args["detectors"]]
     if args.get("apply_dedup"):
@@ -547,7 +552,7 @@ def default_tools() -> list[ToolSpec]:
         ),
         ToolSpec(
             name="launch_fleet",
-            description="Spawn a detached scripts/fleet.py supervisor with spec + run_id.",
+            description="Spawn a detached proving-ground fleet supervisor with spec + run_id.",
             params_schema={
                 "type": "object",
                 "properties": {

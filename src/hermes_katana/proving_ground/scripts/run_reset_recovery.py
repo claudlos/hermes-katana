@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 import time
 from collections import Counter, defaultdict, deque
 from pathlib import Path
@@ -154,8 +155,9 @@ def missing_fill_plan(out_dir: Path) -> Path:
 
 def command_for(job: dict) -> list[str]:
     return [
-        str(ROOT / ".venv/bin/python"),
-        str(ROOT / "run_agent_shard.py"),
+        sys.executable,
+        "-m",
+        "hermes_katana.proving_ground.run_agent_shard",
         "--shard-id",
         str(job["shard"]),
         "--agent-id",
@@ -244,8 +246,9 @@ def run_post(recovery_run_id: str, recovery_plan: Path, log_dir: Path) -> list[d
         (
             "analysis_main",
             [
-                str(ROOT / ".venv/bin/python"),
-                "scripts/analyze_asr_methodology.py",
+                sys.executable,
+                "-m",
+                "hermes_katana.proving_ground.scripts.analyze_asr_methodology",
                 "--glob",
                 f"results/agent_shard_runs/*{MAIN_RUN_ID}*.jsonl",
                 "--out",
@@ -257,8 +260,9 @@ def run_post(recovery_run_id: str, recovery_plan: Path, log_dir: Path) -> list[d
         (
             "quarantine_main",
             [
-                str(ROOT / ".venv/bin/python"),
-                "scripts/quarantine_invalid_rows.py",
+                sys.executable,
+                "-m",
+                "hermes_katana.proving_ground.scripts.quarantine_invalid_rows",
                 "--run-id",
                 MAIN_RUN_ID,
                 "--plan",
@@ -272,8 +276,9 @@ def run_post(recovery_run_id: str, recovery_plan: Path, log_dir: Path) -> list[d
         (
             "analysis_recovery",
             [
-                str(ROOT / ".venv/bin/python"),
-                "scripts/analyze_asr_methodology.py",
+                sys.executable,
+                "-m",
+                "hermes_katana.proving_ground.scripts.analyze_asr_methodology",
                 "--glob",
                 f"results/agent_shard_runs/*{recovery_run_id}*.jsonl",
                 "--out",
@@ -285,8 +290,9 @@ def run_post(recovery_run_id: str, recovery_plan: Path, log_dir: Path) -> list[d
         (
             "quarantine_recovery",
             [
-                str(ROOT / ".venv/bin/python"),
-                "scripts/quarantine_invalid_rows.py",
+                sys.executable,
+                "-m",
+                "hermes_katana.proving_ground.scripts.quarantine_invalid_rows",
                 "--run-id",
                 recovery_run_id,
                 "--plan",

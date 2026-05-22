@@ -2,12 +2,12 @@
 
 Stages (executed in order):
 
-    1. build-corpus     — scripts/build_corpus.py (attack / benign / multilingual)
-    2. launch-fleet     — scripts/fleet.py launch (blocking; waits for exit)
-    3. cross-reference  — scripts/cross_reference_confirm.py
-    4. features         — scripts/features/* + scripts/export_channel_weights.py
-    5. report           — scripts/report.py --run-id ...
-    6. manifest         — scripts/build_manifest.py
+    1. build-corpus     - build attack / benign / multilingual shards
+    2. launch-fleet     - run fleet launch and wait for exit
+    3. cross-reference  - refresh confirmed/rejected/provisional attacks
+    4. features         - rebuild derived scanner feed features
+    5. report           - write the campaign report
+    6. manifest         - refresh the manifest
 
 Fresh-hit follow-up stages:
 
@@ -23,21 +23,21 @@ Idempotency is provided by each individual stage:
 Typical invocations:
 
     # Full pipeline on an existing spec — auto-generates run_id
-    python scripts/pipeline.py --spec scripts/fleet_v12.json
+    python -m hermes_katana.proving_ground.scripts.pipeline --spec scripts/fleet_v12.json
 
     # Analysis-only pass on a completed run
-    python scripts/pipeline.py --run-id a5f3b2c1 --skip build-corpus launch-fleet
+    python -m hermes_katana.proving_ground.scripts.pipeline --run-id a5f3b2c1 --skip build-corpus launch-fleet
 
     # Fresh-hit funnel after a Haiku/Codex scan has completed
-    python scripts/pipeline.py \
+    python -m hermes_katana.proving_ground.scripts.pipeline \
       --only postrun-followup launch-confirm-queue \
       --confirm-run-id confirm_queue_20260505_1911
 
     # Single stage
-    python scripts/pipeline.py --run-id a5f3b2c1 --only report
+    python -m hermes_katana.proving_ground.scripts.pipeline --run-id a5f3b2c1 --only report
 
     # Build corpus only (no fleet, no analysis)
-    python scripts/pipeline.py --only build-corpus --corpus-mode attack
+    python -m hermes_katana.proving_ground.scripts.pipeline --only build-corpus --corpus-mode attack
 
 The orchestrator is intentionally thin — it's a record of the canonical
 stage ordering, not a re-implementation. Each stage invokes the existing
@@ -56,7 +56,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PY = str(ROOT / ".venv/bin/python")
+PY = sys.executable
 
 STAGES = [
     "build-corpus",
@@ -78,8 +78,16 @@ def _run(cmd: list[str]) -> int:
     return rc
 
 
+def _script_module(name: str) -> list[str]:
+    return [PY, "-m", f"hermes_katana.proving_ground.scripts.{name}"]
+
+
+def _feature_module(name: str) -> list[str]:
+    return [PY, "-m", f"hermes_katana.proving_ground.scripts.features.{name}"]
+
+
 def stage_build_corpus(args: argparse.Namespace) -> int:
-    cmd = [PY, "scripts/build_corpus.py", args.corpus_mode]
+    cmd = [*_script_module("build_corpus"), args.corpus_mode]
     if args.corpus_mode == "attack" and args.corpus_num_shards:
         cmd += ["--num-shards", str(args.corpus_num_shards)]
     return _run(cmd)
@@ -87,8 +95,7 @@ def stage_build_corpus(args: argparse.Namespace) -> int:
 
 def stage_launch_fleet(args: argparse.Namespace) -> int:
     cmd = [
-        PY,
-        "scripts/fleet.py",
+        *_script_module("fleet"),
         "launch",
         "--spec",
         args.spec,
@@ -99,15 +106,14 @@ def stage_launch_fleet(args: argparse.Namespace) -> int:
 
 
 def stage_cross_reference(args: argparse.Namespace) -> int:
-    return _run([PY, "scripts/cross_reference_confirm.py"])
+    return _run(_script_module("cross_reference_confirm"))
 
 
 def stage_features(args: argparse.Namespace) -> int:
     out_dir = "results/scanner_feeds"
     commands = [
         [
-            PY,
-            "scripts/features/extract_trigger_ngrams.py",
+            *_feature_module("extract_trigger_ngrams"),
             "--confirmed",
             "results/confirmed_attacks.jsonl",
             "--rejected",
@@ -120,8 +126,7 @@ def stage_features(args: argparse.Namespace) -> int:
             "5",
         ],
         [
-            PY,
-            "scripts/features/build_semantic_centroids.py",
+            *_feature_module("build_semantic_centroids"),
             "--confirmed",
             "results/confirmed_attacks.jsonl",
             "--rejected",
@@ -130,8 +135,7 @@ def stage_features(args: argparse.Namespace) -> int:
             out_dir,
         ],
         [
-            PY,
-            "scripts/features/cluster_cross_model_effects.py",
+            *_feature_module("cluster_cross_model_effects"),
             "--confirmed",
             "results/confirmed_attacks.jsonl",
             "--rejected",
@@ -139,7 +143,7 @@ def stage_features(args: argparse.Namespace) -> int:
             "--out-dir",
             out_dir,
         ],
-        [PY, "scripts/export_channel_weights.py", "--out-dir", out_dir],
+        [*_script_module("export_channel_weights"), "--out-dir", out_dir],
     ]
     for cmd in commands:
         rc = _run(cmd)
@@ -152,18 +156,17 @@ def stage_report(args: argparse.Namespace) -> int:
     if args.run_id == "":
         print("SKIP report: no run_id (set via --run-id or via launch-fleet)")
         return 0
-    return _run([PY, "scripts/report.py", "--run-id", args.run_id])
+    return _run([*_script_module("report"), "--run-id", args.run_id])
 
 
 def stage_manifest(args: argparse.Namespace) -> int:
-    return _run([PY, "scripts/build_manifest.py"])
+    return _run(_script_module("build_manifest"))
 
 
 def stage_postrun_followup(args: argparse.Namespace) -> int:
     return _run(
         [
-            PY,
-            "scripts/postrun_followup_20260505.py",
+            *_script_module("postrun_followup_20260505"),
             "--run-id",
             args.confirm_run_id,
             "--haiku-codex-run-id",
@@ -176,8 +179,7 @@ def stage_postrun_followup(args: argparse.Namespace) -> int:
 
 def stage_launch_confirm_queue(args: argparse.Namespace) -> int:
     cmd = [
-        PY,
-        "scripts/fleet.py",
+        *_script_module("fleet"),
         "launch",
         "--spec",
         args.confirm_spec,
@@ -273,7 +275,10 @@ def main() -> int:
         rc = HANDLERS[stage](args)
         if rc != 0:
             print(f"\n[pipeline] STAGE FAILED: {stage} (exit={rc})")
-            print(f"[pipeline] resume with:  python scripts/pipeline.py --run-id {args.run_id} --only {stage}")
+            print(
+                "[pipeline] resume with:  "
+                f"python -m hermes_katana.proving_ground.scripts.pipeline --run-id {args.run_id} --only {stage}"
+            )
             return rc
 
     print(f"\n[pipeline] all stages complete for run_id={args.run_id}")

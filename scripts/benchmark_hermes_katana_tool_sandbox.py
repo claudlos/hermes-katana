@@ -489,7 +489,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--variants", default="base,minilm,v15-deberta")
     ap.add_argument("--suites", default="benign_tool_args,content_payloads,adversarial_tool_args,tool_outputs")
     ap.add_argument("--stack", choices=("full", "scabbard-only"), default="full")
-    ap.add_argument("--route-mode", choices=("off", "content_only", "balanced", "paranoid"), default="balanced")
+    ap.add_argument("--route-mode", choices=("off", "content_only", "balanced", "max"), default="balanced")
     ap.add_argument("--device", default=None, help="Torch device for v15-deberta, e.g. cuda or cpu. Default: auto.")
     ap.add_argument("--warmups", type=int, default=2)
     ap.add_argument("--iterations", type=int, default=10)

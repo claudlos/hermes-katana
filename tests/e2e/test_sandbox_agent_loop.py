@@ -5,8 +5,8 @@ Hermes+Katana middleware chain (no real LLM) and measures:
   * false_positive_rate on benign cases (expected: 0%)
   * audit-trail integrity (every dispatch emits exactly one JSONL record)
 
-The harness reuses ``create_default_chain`` directly — same wiring as
-``test_evasion.py`` — so the chain under test is the production chain.
+The harness reuses ``create_default_chain`` directly, matching the smoke
+gate in ``tests/smoke/evasion_gate.py``.
 
 Run: pytest tests/e2e/test_sandbox_agent_loop.py -q
 """

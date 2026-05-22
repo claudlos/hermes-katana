@@ -11,9 +11,9 @@ Resumable: crashing/killing mid-shard loses only the in-flight session.
 Portable: runs on laptop, Mini, Colab, Vast with the same interface.
 
 Usage:
-    python run_shard.py --shard-id 1 --model-id qwen3.5-4b
-    python run_shard.py --shard-id 1 --model-id or-gemma4-31b:free
-    python run_shard.py --shard-id 1 --model-id qwen3.5-9b-ollama --max-sessions 20
+    python -m hermes_katana.proving_ground.run_shard --shard-id 1 --model-id qwen3.5-4b
+    python -m hermes_katana.proving_ground.run_shard --shard-id 1 --model-id or-gemma4-31b:free
+    python -m hermes_katana.proving_ground.run_shard --shard-id 1 --model-id qwen3.5-9b-ollama --max-sessions 20
 """
 
 from __future__ import annotations

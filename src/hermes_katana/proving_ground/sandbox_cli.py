@@ -2,10 +2,10 @@
 """Katana Sandbox — behavioral attack testing in a controlled workspace.
 
 Usage:
-    python sandbox_cli.py run --task code_review --attack-id <id> --model <model>
-    python sandbox_cli.py analyze --session <id>
-    python sandbox_cli.py batch --sample 50 --model qwen3-8b
-    python sandbox_cli.py list-sessions
+    proving-ground run --task code_review --attack-id <id> --model <model>
+    proving-ground analyze --session <id>
+    proving-ground batch --sample 50 --model qwen3-8b
+    proving-ground list-sessions
 """
 
 import argparse

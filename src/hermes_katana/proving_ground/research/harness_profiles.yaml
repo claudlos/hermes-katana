@@ -1,8 +1,7 @@
 schema_version: 1
 
 # Seeded from observed agent_ids in results/agent_shard_runs/ + agent_cli_runner
-# inspection. Edit in-place when new agents land (or let `scripts/harness_matrix.py`
-# propose a stub and flip the fields).
+# inspection. Edit in-place when new agents land.
 #
 # Booleans reflect the harness AS USED in this project's fleet. If a harness
 # is configurable (e.g. Claude Code's permissions can be relaxed via flags),

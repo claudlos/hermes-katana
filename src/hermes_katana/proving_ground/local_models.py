@@ -8,11 +8,11 @@ For Carlos's RTX 3050Ti (4GB VRAM):
 - Nemotron 4B: similar size range
 
 Usage:
-    python local_models.py list          # List available models
-    python local_models.py download <id> # Download a model
-    python local_models.py serve <id>    # Start llama.cpp server
-    python local_models.py stop          # Stop server
-    python local_models.py status        # Check server status
+    python -m hermes_katana.proving_ground.local_models list
+    python -m hermes_katana.proving_ground.local_models download <id>
+    python -m hermes_katana.proving_ground.local_models serve <id>
+    python -m hermes_katana.proving_ground.local_models stop
+    python -m hermes_katana.proving_ground.local_models status
 """
 
 import json
@@ -651,7 +651,7 @@ def serve_model(model_id: str, port: int = DEFAULT_PORT, context: int = 0, ngl: 
 
     if not model_path.exists():
         print(f"[!] Model not downloaded: {model_path}")
-        print(f"    Run: python local_models.py download {model_id}")
+        print(f"    Run: python -m hermes_katana.proving_ground.local_models download {model_id}")
         return
 
     if not server_bin.exists():
@@ -806,13 +806,13 @@ def main():
         list_models()
     elif cmd == "download":
         if len(sys.argv) < 3:
-            print("Usage: python local_models.py download <model_id>")
+            print("Usage: python -m hermes_katana.proving_ground.local_models download <model_id>")
             list_models()
         else:
             download_model(sys.argv[2])
     elif cmd == "serve":
         if len(sys.argv) < 3:
-            print("Usage: python local_models.py serve <model_id> [port] [context]")
+            print("Usage: python -m hermes_katana.proving_ground.local_models serve <model_id> [port] [context]")
         else:
             model_id = sys.argv[2]
             port = int(sys.argv[3]) if len(sys.argv) > 3 else DEFAULT_PORT

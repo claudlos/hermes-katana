@@ -134,7 +134,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--provider", default="openai-codex")
     ap.add_argument("--model", default="gpt-5.5")
     ap.add_argument("--variants", default="base,minilm,v15-deberta")
-    ap.add_argument("--route-mode", choices=("off", "content_only", "balanced", "paranoid"), default="balanced")
+    ap.add_argument("--route-mode", choices=("off", "content_only", "balanced", "max"), default="balanced")
     ap.add_argument("--prompt", action="append", default=[])
     ap.add_argument(
         "--execute", action="store_true", help="Actually run Hermes CLI. Default only writes runnable plan/configs."

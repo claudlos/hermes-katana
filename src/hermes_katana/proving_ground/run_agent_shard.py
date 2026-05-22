@@ -17,9 +17,9 @@ variance between baseline and attack).
 Output per attack: results/agent_shard_runs/shard_NNN_<agent>.jsonl
 
 Usage:
-    python run_agent_shard.py --shard-id 1 --agent-id hermes_mimo_v2_pro
-    python run_agent_shard.py --shard-id 1 --agent-id claude_cli --channel code_comment
-    python run_agent_shard.py --shard-id 1 --agent-id hermes_mimo_v2_pro --matched-pair
+    python -m hermes_katana.proving_ground.run_agent_shard --shard-id 1 --agent-id hermes_mimo_v2_pro
+    python -m hermes_katana.proving_ground.run_agent_shard --shard-id 1 --agent-id claude_cli --channel code_comment
+    python -m hermes_katana.proving_ground.run_agent_shard --shard-id 1 --agent-id hermes_mimo_v2_pro --matched-pair
 """
 
 from __future__ import annotations

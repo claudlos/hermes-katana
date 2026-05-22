@@ -1,12 +1,11 @@
-"""Fleet launcher — parallel run_agent_shard.py workers from a JSON spec.
+"""Fleet launcher — parallel packaged shard workers from a JSON spec.
 
 Usage:
-    python scripts/fleet.py launch                    # auto-generated run_id
-    python scripts/fleet.py launch --spec my.json     # explicit spec
-    python scripts/fleet.py launch --run-id mycam12   # explicit run_id
-    python scripts/fleet.py status                    # list active supervisors
-    python scripts/fleet.py stop                      # SIGINT the sole active supervisor
-    python scripts/fleet.py stop --run-id mycam12     # target a specific run
+    python -m hermes_katana.proving_ground.scripts.fleet launch
+    python -m hermes_katana.proving_ground.scripts.fleet launch --spec my.json
+    python -m hermes_katana.proving_ground.scripts.fleet launch --run-id mycam12
+    python -m hermes_katana.proving_ground.scripts.fleet status
+    python -m hermes_katana.proving_ground.scripts.fleet stop --run-id mycam12
 
 Spec format (JSON):
   {
@@ -31,10 +30,10 @@ Persistent state lives in `results/fleet_runs/<run_id>/`:
     jobs/<tag>.log        — per-worker stdout/stderr (one per Job)
 
 Each run gets a short hex run_id auto-generated on launch unless overridden
-by --run-id. The run_id is threaded down to run_agent_shard.py so every
-JSONL result row carries it (enables `scripts/query.py --run-id <id>`).
+by --run-id. The run_id is threaded down to the agent shard worker so every
+JSONL result row carries it.
 
-Re-running is idempotent — run_agent_shard.py skips already-done attacks
+Re-running is idempotent — the shard worker skips already-done attacks
 in the output JSONL, so an interrupted fleet resumes cleanly.
 """
 
@@ -129,8 +128,9 @@ class Job:
 
     def cmd(self) -> list[str]:
         argv = [
-            str(ROOT / ".venv/bin/python"),
-            str(ROOT / "run_agent_shard.py"),
+            sys.executable,
+            "-m",
+            "hermes_katana.proving_ground.run_agent_shard",
             "--shard-id",
             str(self.shard),
             "--agent-id",

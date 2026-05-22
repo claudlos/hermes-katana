@@ -15,9 +15,9 @@ LLM planner; the planner slot is intentionally open for Phase 2.B.5.
 
 Example:
 
-    python scripts/intern.py play quick-summary
+    python -m hermes_katana.proving_ground.scripts.intern play quick-summary
 
-    python scripts/intern.py play resolve-harness-dominates-model \\
+    python -m hermes_katana.proving_ground.scripts.intern play resolve-harness-dominates-model \\
         --ccli-run-id mycam12 --hermes-run-id hrm-v7
 
 Default `--run-id` is auto-generated per invocation; supply one to keep
@@ -177,7 +177,7 @@ def play_resolve_harness_dominates(k: ResearchKernel, args: argparse.Namespace) 
 
 
 def play_paired_harness_ablation(k: ResearchKernel, args: argparse.Namespace) -> int:
-    """Invokes scripts/harness_ablation.py (McNemar paired analysis) and
+    """Invokes the harness-ablation module (McNemar paired analysis) and
     routes its Claim through the current kernel. This is the rigorous sibling
     of resolve-harness-dominates-model: paired per-attack, per-channel, with
     McNemar p-value + Wilson CIs + Cohen's h.
@@ -191,7 +191,8 @@ def play_paired_harness_ablation(k: ResearchKernel, args: argparse.Namespace) ->
 
     cmd = [
         sys.executable,
-        "scripts/harness_ablation.py",
+        "-m",
+        "hermes_katana.proving_ground.scripts.harness_ablation",
         "--submit-to-kernel",
         "--run-id",
         k.run_id,
