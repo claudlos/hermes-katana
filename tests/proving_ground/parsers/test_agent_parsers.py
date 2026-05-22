@@ -1,8 +1,8 @@
 """Golden-output tests for agent CLI parsers.
 
 The proving-ground harness extracts tool calls from each agent CLI's stdout
-to compute behavioral drift metrics. The 2026-05-04 audit found 5 agent
-drivers with sub-85% parser reliability (see ``LIMITATIONS.md``):
+to compute behavioral drift metrics. The 2026-05-04 parser audit identified
+five agent drivers that need golden-output coverage:
 
     - hermes_or_arcee_spark        (0.0%, empty outputs)
     - hermes_or_deepseek_v3_free   (0.0%, empty outputs)
@@ -15,10 +15,10 @@ collected from real runs. Adding a fixture here means: (1) drop a
 ``fixtures/<driver>/<scenario>.txt`` file with the captured output, (2) add
 the expected tool-call extraction below.
 
-When parser logic changes, run ``pytest tests/parsers/`` to confirm no
-regression. When a real-world output format changes (provider rolls a
-model, CLI version bumps), add a new fixture rather than modifying old ones
-— that preserves the golden-output property.
+When parser logic changes, run ``pytest tests/proving_ground/parsers/`` to
+confirm no regression. When a real-world output format changes (provider rolls
+a model or a CLI version bumps), add a new fixture rather than modifying old
+ones; that preserves the golden-output property.
 """
 
 from __future__ import annotations
@@ -95,8 +95,6 @@ def test_codex_real_fixture(scenario, tmp_path):
     parsers = _get_parsers()
     stdout = _fixture("codex_cli", scenario)
     calls = parsers["codex_cli"](stdout, "", tmp_path)
-    # Replace the assertion below with the expected call list once the
-    # fixture is checked in. For now: asserts parser doesn't raise.
     assert isinstance(calls, list)
 
 
