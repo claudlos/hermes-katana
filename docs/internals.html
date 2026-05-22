@@ -6,7 +6,7 @@
     <title>Hermes Katana Internals</title>
     <meta
       name="description"
-      content="A visual technical map of Hermes Katana internals: entrypoints, middleware, scanners, Scabbard, policy, artifacts, audit, proxy, and release verification."
+      content="A visual technical map of Hermes Katana internals: entrypoints, middleware, scanners, Scabbard, policy, artifacts, audit, proxy, and operator commands."
     >
     <link rel="stylesheet" href="assets/manual.css">
     <style>
@@ -97,8 +97,7 @@
 
       .map-section,
       .function-section,
-      .source-section,
-      .review-section {
+      .source-section {
         padding: clamp(58px, 8vw, 96px) 0;
         border-top: 1px solid var(--line);
       }
@@ -340,7 +339,7 @@
         <a href="#runtime">Runtime</a>
         <a href="#scanners">Scanners</a>
         <a href="#policy">Policy</a>
-        <a href="#release">Release</a>
+        <a href="#commands">Commands</a>
       </nav>
     </header>
 
@@ -352,12 +351,12 @@
           <p class="lede">
             This page maps the repo from public install to runtime enforcement: where text enters,
             how provenance and scanners shape the decision, how YAML policy resolves the action,
-            and how the release gate proves the build before public launch.
+            and which commands expose each part of the system.
           </p>
           <div class="manual-links">
             <a class="button primary" href="#pipeline">Read the Pipeline</a>
             <a class="button" href="#runtime">Runtime Chain</a>
-            <a class="button" href="#source">Source Map</a>
+            <a class="button" href="#commands">Command Reference</a>
           </div>
         </div>
         <aside class="hero-note">
@@ -389,7 +388,7 @@
         <figure class="infographic-frame">
           <img
             src="assets/pipeline-infographic.svg"
-            alt="Hermes Katana pipeline board showing source of truth, package build, Hugging Face artifacts, public launch, ingress, scan, policy, dispatch, evidence, release verification, and user install path"
+            alt="Hermes Katana pipeline board showing source of truth, package build, Hugging Face artifacts, public launch, ingress, scan, policy, dispatch, evidence, verification, and user install path"
           >
         </figure>
       </section>
@@ -604,80 +603,77 @@
         </table>
       </section>
 
-      <section id="source" class="source-section" aria-labelledby="source-title">
+      <section id="commands" class="source-section" aria-labelledby="commands-title">
         <div class="section-split">
           <div>
-            <p class="eyebrow">Source map</p>
-            <h2 id="source-title">Where to look when changing behavior.</h2>
+            <p class="eyebrow">Commands and pipeline reference</p>
+            <h2 id="commands-title">Run the system from the outside in.</h2>
           </div>
           <p>
-            These are the repo areas that matter most for review. If a last-second change feels
-            confusing, start from the box closest to the behavior, then run the focused tests for that layer.
+            These commands are the public control surface. The notes under each command explain which
+            part of the runtime pipeline it exercises, so a new user can connect CLI behavior to the
+            internals shown above.
           </p>
         </div>
         <div class="source-grid">
           <article class="source-card">
-            <h3>Public surface</h3>
+            <h3>Install and inspect</h3>
             <ul>
-              <li><code>cli/main.py</code> exposes <code>katana</code> commands.</li>
-              <li><code>hermes_plugin.py</code> provides the Hermes plugin entry point.</li>
-              <li><code>installer/</code> patches compatible Hermes checkouts and verifies install state.</li>
-              <li><code>docs/</code> is the GitHub Pages manual and operator documentation.</li>
+              <li><code>pip install hermes-katana</code> installs the base package without large local model artifacts.</li>
+              <li><code>katana doctor</code> checks Python, optional dependencies, paths, policy files, and runtime readiness.</li>
+              <li><code>katana status</code> shows the local security configuration and active environment state.</li>
+              <li><code>katana version</code> prints the installed package version for support and troubleshooting.</li>
             </ul>
           </article>
           <article class="source-card">
-            <h3>Runtime enforcement</h3>
+            <h3>Policy and scanner gates</h3>
             <ul>
-              <li><code>middleware/chain.py</code> defines context, decisions, ordering, and short-circuit behavior.</li>
-              <li><code>middleware/integration.py</code> wires the default defense stack.</li>
-              <li><code>taint/</code> carries provenance through string operations and flow checks.</li>
-              <li><code>policy/</code> evaluates YAML rules against tool arguments and taint context.</li>
+              <li><code>katana policy list</code> shows available presets and the currently selected policy set.</li>
+              <li><code>katana policy use balanced</code> selects a runtime preset from the YAML policy source of truth.</li>
+              <li><code>katana scan TEXT</code> runs prompt-injection, secret, Unicode, content, and structural checks on text.</li>
+              <li><code>katana scan-command CMD</code> evaluates terminal intent before a command reaches execution.</li>
             </ul>
           </article>
           <article class="source-card">
-            <h3>Detection layers</h3>
+            <h3>Secrets, audit, and egress</h3>
             <ul>
-              <li><code>scanner/</code> contains deterministic detection for text, bytes, commands, documents, and multimodal carriers.</li>
-              <li><code>scabbard/</code> contains classifier profiles, normalization, features, routing, and fusion.</li>
-              <li><code>proxy/</code> handles optional mitmproxy egress inspection.</li>
-              <li><code>vault/</code> stores secrets outside prompt text.</li>
+              <li><code>katana vault set NAME</code> stores a secret handle outside prompt text.</li>
+              <li><code>katana vault list</code> confirms which handles exist without printing secret values.</li>
+              <li><code>katana audit show</code> reviews allow, deny, escalate, and log-only decisions.</li>
+              <li><code>katana proxy start</code> starts optional HTTPS egress inspection when proxy dependencies are installed.</li>
             </ul>
           </article>
           <article class="source-card">
-            <h3>Evidence and release</h3>
+            <h3>Artifacts and Hermes integration</h3>
             <ul>
-              <li><code>audit/</code> writes hash-chained decision evidence.</li>
-              <li><code>artifacts.py</code> and <code>ml_artifacts.py</code> describe optional Hugging Face assets.</li>
-              <li><code>proving_ground/</code> measures attack effectiveness and model behavior with seeded workspaces.</li>
-              <li><code>scripts/release_gate.sh</code> ties lint, tests, scanner gates, build, artifact status, and gitleaks together.</li>
+              <li><code>katana artifacts status --all</code> reports which optional local model artifacts are present.</li>
+              <li><code>katana artifacts setup --yes</code> downloads the default fast CPU artifact when wanted.</li>
+              <li><code>katana install --target PATH</code> patches a compatible Hermes checkout.</li>
+              <li><code>katana run --target PATH -- ...</code> runs Hermes through the Katana-protected dispatch path.</li>
             </ul>
           </article>
-        </div>
-      </section>
-
-      <section id="release" class="review-section" aria-labelledby="release-title">
-        <div class="section-split">
-          <div>
-            <p class="eyebrow">Pre-public review</p>
-            <h2 id="release-title">The final check should be boring.</h2>
-          </div>
-          <p>
-            A professional launch means the code path, docs, artifacts, and verification story all
-            agree. These are the checks to keep visible before making GitHub and Hugging Face public.
-          </p>
         </div>
         <div class="callout-row">
           <article class="callout-panel">
-            <h3>Run locally</h3>
-            <p><code>pytest</code>, scanner-change gate, false-positive/evasion smoke, release gate, and Pages render review.</p>
+            <h3>Text path</h3>
+            <p>
+              Input enters through CLI, plugin, tool output, file, web, MCP, or retrieved content.
+              Taint labels preserve source context so the same text can be treated differently by origin.
+            </p>
           </article>
           <article class="callout-panel">
-            <h3>Publish together</h3>
-            <p>Code branch, GitHub Pages, and Hugging Face artifacts should switch public only after the gate stays green.</p>
+            <h3>Decision path</h3>
+            <p>
+              Normalizers expose hidden payloads, Scabbard and scanners add risk signals, policy
+              resolves the action, and middleware either blocks, escalates, logs, or allows dispatch.
+            </p>
           </article>
           <article class="callout-panel">
-            <h3>Keep limits honest</h3>
-            <p>Missing private corpora, model artifacts, CUDA checks, and Windows-only tests should remain explicit skips, not hidden claims.</p>
+            <h3>Evidence path</h3>
+            <p>
+              Vault keeps secrets out of prompts, proxy can inspect egress, audit records decisions,
+              and optional artifacts add local classifier capability without bloating the base install.
+            </p>
           </article>
         </div>
       </section>
