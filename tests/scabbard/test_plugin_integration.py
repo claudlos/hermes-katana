@@ -114,10 +114,6 @@ class TestMiddlewareChainIncludesScabbard:
     """integration.py should have KatanaScabbardMiddleware in the default chain."""
 
     def test_middleware_chain_includes_scabbard(self):
-        """KatanaScabbardMiddleware wiring - skip for now."""
-        import pytest
-
-        pytest.skip("middleware not yet wired")
         """create_default_chain() must include KatanaScabbardMiddleware."""
         from hermes_katana.middleware.integration import (
             KatanaScabbardMiddleware,
@@ -128,7 +124,9 @@ class TestMiddlewareChainIncludesScabbard:
 
         # Find all scabbard-related middleware
         scabbard_middlewares = [
-            mw for mw in chain._middlewares if "scabbard" in mw.name.lower() or isinstance(mw, KatanaScabbardMiddleware)
+            mw
+            for mw in chain.list_middleware()
+            if "scabbard" in mw.name.lower() or isinstance(mw, KatanaScabbardMiddleware)
         ]
 
         assert len(scabbard_middlewares) > 0, "KatanaScabbardMiddleware not found in default chain"

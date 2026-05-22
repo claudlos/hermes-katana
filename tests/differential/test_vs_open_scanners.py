@@ -200,7 +200,8 @@ def test_vs_garak():
     detector = AttackRogueString()
 
     def garak_blocks(text: str) -> bool:
-        scores = detector.detect(type("A", (), {"all_outputs": [text]})())
+        attempt = type("A", (), {"all_outputs": [text], "notes": {"trigger": "ignore"}})()
+        scores = detector.detect(attempt)
         return any(s >= 0.5 for s in scores) if scores else False
 
     disagreements: list[dict] = []
