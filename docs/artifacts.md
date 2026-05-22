@@ -18,8 +18,8 @@ for local high-accuracy experiments and is never selected by default.
 
 | Selector | Artifact | Default repo | Default setup |
 | --- | --- | --- | --- |
-| `minilm`, `small` | `katana_v15_distill_minilm_onnx` | `claudlos/hermes-katana-v15-distill-minilm-onnx` | yes |
-| `large`, `v15_large` | `katana_v15_large` | `claudlos/hermes-katana-v15-large` | no |
+| `minilm`, `small` | `katana_v15_distill_minilm_onnx` | `Carlosian/hermes-katana-v15-distill-minilm-onnx` | yes |
+| `large`, `v15_large` | `katana_v15_large` | `Carlosian/hermes-katana-v15-large` | no |
 
 Each Hugging Face repo must include an `artifact_manifest.json`. Katana treats the manifest as part of the artifact and
 refuses to mark the artifact ready when required files are missing, hashes do not match, sizes do not match, or the
@@ -87,7 +87,7 @@ Override the repo or revision:
 ```bash
 katana artifacts download \
   minilm \
-  --repo-id claudlos/hermes-katana-v15-distill-minilm-onnx \
+  --repo-id Carlosian/hermes-katana-v15-distill-minilm-onnx \
   --revision v3.0.0
 ```
 
