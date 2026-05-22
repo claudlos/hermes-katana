@@ -13,10 +13,10 @@ Middleware stack (default order, highest priority first)
    classifier (normaliser + features + fusion).  On BLOCK: short-circuit.
    On FLAG: add taint, continue to downstream scanners.
 2.5. **KatanaProtectAIMiddleware** (pri=88) — ProtectAI DeBERTa binary gate
-   between Scabbard and Sentinel.  INJECTION > block_threshold → DENY,
+   between the primary and secondary Scabbard passes.  INJECTION > block_threshold → DENY,
    INJECTION > flag_threshold → ESCALATE, SAFE > safe_passthrough → fast-path.
-3. **KatanaSentinelMiddleware** (pri=85) — second independent ML classifier
-   for prompt injection.  Runs alongside Scabbard for defence-in-depth.
+3. **KatanaScabbardSecondaryMiddleware** (pri=85) — second Scabbard classifier
+   pass for prompt injection.  Runs alongside the primary Scabbard pass for defence-in-depth.
 4. **KatanaScanMiddleware** (pri=80) — runs the multi-layer scanner on
    inputs and outputs to detect injections, secrets, and dangerous content.
 4b. **KatanaMCPMiddleware** (pri=78) — MCP tool-poisoning detector: rug-pull
@@ -50,7 +50,7 @@ __all__ = [
     "KatanaTaintMiddleware",
     "KatanaScabbardMiddleware",
     "KatanaProtectAIMiddleware",
-    "KatanaSentinelMiddleware",
+    "KatanaScabbardSecondaryMiddleware",
     "KatanaScanMiddleware",
     "KatanaMCPMiddleware",
     "KatanaMultiTurnMiddleware",
@@ -117,8 +117,8 @@ def _profile_defaults(profile: str) -> dict[str, Any]:
             "scabbard.scan_outputs": True,
             "scabbard.audit_routes": True,
             "scabbard.enforce_output_blocks": True,
+            "scabbard.secondary.enabled": False,
             "protectai.enabled": False,
-            "sentinel.enabled": False,
             "scan.enabled": True,
             "scan.route_aware": True,
             "behavioral.enabled": False,
@@ -132,8 +132,8 @@ def _profile_defaults(profile: str) -> dict[str, Any]:
             "scabbard.scan_outputs": True,
             "scabbard.audit_routes": True,
             "scabbard.enforce_output_blocks": True,
+            "scabbard.secondary.enabled": False,
             "protectai.enabled": False,
-            "sentinel.enabled": False,
             "scan.enabled": True,
             "scan.route_aware": True,
             "behavioral.enabled": True,
@@ -147,8 +147,8 @@ def _profile_defaults(profile: str) -> dict[str, Any]:
         "scabbard.scan_outputs": True,
         "scabbard.audit_routes": True,
         "scabbard.enforce_output_blocks": True,
+        "scabbard.secondary.enabled": True,
         "protectai.enabled": True,
-        "sentinel.enabled": True,
         "scan.enabled": True,
         "scan.route_aware": False,
         "scan.enforce_output_findings": True,
@@ -588,23 +588,23 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
 
 
 # ---------------------------------------------------------------------------
-# 3. Sentinel middleware (ML classifier — runs between Scabbard and Scanner)
+# 3. Secondary Scabbard middleware (ML classifier — runs between primary Scabbard and Scanner)
 # ---------------------------------------------------------------------------
 
 
-class KatanaSentinelMiddleware(KatanaMiddleware):
-    """Sentinel multi-signal prompt-injection classifier middleware.
+class KatanaScabbardSecondaryMiddleware(KatanaMiddleware):
+    """Secondary Scabbard prompt-injection classifier middleware.
 
-    Runs the Sentinel pipeline (normaliser -> feature extraction -> fusion)
-    on tool arguments **before** the pattern-based scanner, as a second
-    independent ML signal alongside Scabbard.
+    Runs another Scabbard pipeline (normaliser -> feature extraction -> fusion)
+    on tool arguments **before** the pattern-based scanner, as an overlapping
+    ML signal alongside the primary Scabbard pass.
 
     - **BLOCK**: short-circuit, do not run downstream scanners.
-    - **FLAG**: add ``sentinel_flagged`` hint to *ctx.extras*, continue.
+    - **FLAG**: add ``scabbard_secondary_flagged`` hint to *ctx.extras*, continue.
     - **ALLOW**: continue normally.
 
     Args:
-        config: Optional :class:`SentinelConfig`.  Defaults to ``minimal``
+        config: Optional :class:`ScabbardConfig`.  Defaults to ``minimal``
             profile (zero ML deps).
         enabled: Whether this middleware is active.
     """
@@ -615,13 +615,13 @@ class KatanaSentinelMiddleware(KatanaMiddleware):
         *,
         enabled: bool = True,
     ) -> None:
-        super().__init__(name="katana.sentinel", enabled=enabled, priority=85)
+        super().__init__(name="katana.scabbard_secondary", enabled=enabled, priority=85)
         self._config = config
         self._classifier: Any | None = None
 
     @property
     def classifier(self) -> Any:
-        """Lazy-load the SentinelClassifier to avoid import cost at wire time."""
+        """Lazy-load the secondary Scabbard classifier to avoid import cost at wire time."""
         if self._classifier is None:
             from hermes_katana.scabbard import ScabbardClassifier, ScabbardConfig
 
@@ -630,14 +630,14 @@ class KatanaSentinelMiddleware(KatanaMiddleware):
         return self._classifier
 
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
-        """Run Sentinel on all string arguments.
+        """Run the secondary Scabbard pass on non-empty call arguments.
 
         Populates ``ctx.extras`` with:
 
-        - ``sentinel_result``: :class:`ClassificationResult` dict
-        - ``sentinel_risk_score``: float (highest confidence across args)
+        - ``scabbard_secondary_result``: :class:`ClassificationResult` dict
+        - ``scabbard_secondary_risk_score``: float (highest confidence across args)
         """
-        from hermes_katana.scabbard.fusion import Decision as SentinelDecision
+        from hermes_katana.scabbard.fusion import Decision as ScabbardSecondaryDecision
 
         worst_confidence = 0.0
         worst_result: dict[str, Any] | None = None
@@ -652,19 +652,19 @@ class KatanaSentinelMiddleware(KatanaMiddleware):
                 worst_confidence = result.confidence
                 worst_result = result.to_dict()
 
-            if result.decision == SentinelDecision.BLOCK:
-                ctx.deny(f"Sentinel blocked ({result.top_category}, confidence={result.confidence:.2f})")
-                ctx.extras["sentinel_result"] = result.to_dict()
-                ctx.extras["sentinel_risk_score"] = result.confidence
+            if result.decision == ScabbardSecondaryDecision.BLOCK:
+                ctx.deny(f"Secondary Scabbard blocked ({result.top_category}, confidence={result.confidence:.2f})")
+                ctx.extras["scabbard_secondary_result"] = result.to_dict()
+                ctx.extras["scabbard_secondary_risk_score"] = result.confidence
                 return DispatchDecision.DENY
 
         if worst_result is not None:
-            ctx.extras["sentinel_result"] = worst_result
-            ctx.extras["sentinel_risk_score"] = worst_confidence
+            ctx.extras["scabbard_secondary_result"] = worst_result
+            ctx.extras["scabbard_secondary_risk_score"] = worst_confidence
 
         if worst_confidence >= 0.5:
-            ctx.extras["sentinel_flagged"] = True
-            ctx.escalate(f"Sentinel flagged (confidence={worst_confidence:.2f})")
+            ctx.extras["scabbard_secondary_flagged"] = True
+            ctx.escalate(f"Secondary Scabbard flagged (confidence={worst_confidence:.2f})")
             return DispatchDecision.ESCALATE
 
         return DispatchDecision.ALLOW
@@ -1556,12 +1556,12 @@ def create_default_chain(
             - ``taint.enabled`` (bool, default True)
             - ``scabbard.enabled`` (bool, default True)
             - ``scabbard.config`` (ScabbardConfig instance, optional)
+            - ``scabbard.secondary.enabled`` (bool, default True)
+            - ``scabbard.secondary.config`` (ScabbardConfig instance, optional)
             - ``protectai.enabled`` (bool, default True)
             - ``protectai.block_threshold`` (float, default 0.92)
             - ``protectai.flag_threshold`` (float, default 0.70)
             - ``protectai.safe_passthrough`` (float, default 0.95)
-            - ``sentinel.enabled`` (bool, default True)
-            - ``sentinel.config`` (SentinelConfig instance, optional)
             - ``scan.enabled`` (bool, default True)
             - ``scan.block_threshold`` (float, default 0.7)
             - ``scan.warn_threshold`` (float, default 0.4)
@@ -1621,7 +1621,7 @@ def create_default_chain(
     )
     chain.add(scabbard_mw)
 
-    # 2.5. ProtectAI binary gate (between Scabbard=90 and Sentinel=85, pri=88)
+    # 2.5. ProtectAI binary gate (between primary Scabbard=90 and secondary Scabbard=85, pri=88)
     protectai_mw = KatanaProtectAIMiddleware(
         gate=cfg.get("protectai.gate"),
         block_threshold=cfg.get("protectai.block_threshold", 0.92),
@@ -1631,12 +1631,12 @@ def create_default_chain(
     )
     chain.add(protectai_mw)
 
-    # 3. Sentinel classifier (second independent ML signal, pri=85)
-    sentinel_mw = KatanaSentinelMiddleware(
-        config=cfg.get("sentinel.config"),
-        enabled=cfg.get("sentinel.enabled", True),
+    # 3. Secondary Scabbard classifier (overlapping ML signal, pri=85)
+    scabbard_secondary_mw = KatanaScabbardSecondaryMiddleware(
+        config=cfg.get("scabbard.secondary.config"),
+        enabled=cfg.get("scabbard.secondary.enabled", True),
     )
-    chain.add(sentinel_mw)
+    chain.add(scabbard_secondary_mw)
 
     # 4. Scanner
     scan_mw = KatanaScanMiddleware(
