@@ -57,8 +57,16 @@ katana artifacts status large
 
 ## Guided setup
 
-Prompted setup is the recommended first-run path. It offers the small CPU model by default and asks separately before
-downloading the larger optional model:
+The top-level first-run wizard is the recommended interactive path. It offers
+the small CPU model by default, asks separately before downloading the larger
+optional model, and asks whether to install the optional Proving Ground research
+harness dependencies:
+
+```bash
+katana setup
+```
+
+For model artifacts only:
 
 ```bash
 katana artifacts setup
@@ -71,6 +79,8 @@ katana artifacts setup --yes          # default choices: small model only
 katana artifacts setup --small        # small model only
 katana artifacts setup --large        # larger optional model only
 katana artifacts setup --all          # both registered models
+katana setup --proving-ground         # install Proving Ground dependencies
+katana setup --yes --proving-ground   # small model plus Proving Ground
 ```
 
 ## Direct download

@@ -22,7 +22,8 @@ it is not enough by itself to prevent filename collisions.
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -e ".[proving-ground]"
+.venv/bin/pip install -e ".[security,fast-cpu]"
+.venv/bin/katana setup --proving-ground
 
 .venv/bin/python -m hermes_katana.proving_ground.run_agent_shard \
   --shard-id 1 \

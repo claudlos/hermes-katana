@@ -22,17 +22,18 @@ cd hermes-katana
 
 # 2. Install
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[proving-ground]"
+pip install -e ".[security,fast-cpu]"
+katana setup --proving-ground
 
 # 3. Run a sandbox session against a local model
-proving-ground run \
+katana proving-ground run \
   --task code_review \
   --channel file_content \
   --model qwen3-8b \
   --base-url http://localhost:8080/v1
 ```
 
-The `proving-ground` console script dispatches to the common sandbox subcommands. Run `proving-ground --help` for the full list.
+The `katana proving-ground` command dispatches to the common sandbox subcommands. Run `katana proving-ground --help` for the full list.
 
 ### Path overrides
 
@@ -48,12 +49,12 @@ By default, the harness expects `hermes-katana` to live as a sibling of `katana-
 
 | command | what it does |
 |---|---|
-| `proving-ground run` | single sandbox session against one (model, attack, channel) |
-| `proving-ground batch --sample N` | N sessions, sampled from the corpus |
-| `proving-ground analyze <session-id>` | re-analyze an existing session's behavioral metrics |
-| `proving-ground list-sessions` | list tracked sessions in `results/sandbox_tracking.db` |
-| `proving-ground list-tasks` | show available workspace task templates |
-| `proving-ground synthesize` | generate new variants of confirmed-effective attacks |
+| `katana proving-ground run` | single sandbox session against one (model, attack, channel) |
+| `katana proving-ground batch --sample N` | N sessions, sampled from the corpus |
+| `katana proving-ground analyze <session-id>` | re-analyze an existing session's behavioral metrics |
+| `katana proving-ground list-sessions` | list tracked sessions in `results/sandbox_tracking.db` |
+| `katana proving-ground list-tasks` | show available workspace task templates |
+| `katana proving-ground synthesize` | generate new variants of confirmed-effective attacks |
 
 For fleet-scale runs (multi-model, multi-shard, days at a time), use the packaged module entry points:
 
