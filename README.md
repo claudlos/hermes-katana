@@ -295,6 +295,7 @@ All scanners use precompiled regex patterns loaded at import time where practica
 | Document | Description |
 |----------|-------------|
 | [docs/index.html](docs/index.html) | Visual manual and enhanced README for GitHub Pages |
+| [docs/internals.html](docs/internals.html) | Visual internal architecture map and runtime pipeline breakdown |
 | [docs/quickstart.md](docs/quickstart.md) | Fastest local setup path |
 | [docs/runbook.md](docs/runbook.md) | Day-2 operations and recovery |
 | [docs/compatibility.md](docs/compatibility.md) | Hermes version compatibility |
