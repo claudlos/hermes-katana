@@ -261,19 +261,25 @@ katana version                       Print version
 
 ---
 
-## Performance
+## Benchmarking
 
-All scanners use precompiled regex patterns loaded at import time where practical. Treat these numbers as targets to verify on your hardware and input mix; adversarial inputs and optional ML-backed scanners can be slower.
+Hermes Katana does not publish fixed latency or throughput numbers in this
+README. Scanner cost depends on Python version, CPU, input size, encoding
+depth, enabled model artifacts, and the active policy/profile.
 
-| Operation | Latency | Throughput |
-|-----------|---------|------------|
-| Taint register + flow check | benchmark locally | input-dependent |
-| Injection scan (1KB) | benchmark locally | input-dependent |
-| Secret scan (1KB) | benchmark locally | input-dependent |
-| Command scan | benchmark locally | input-dependent |
-| Policy evaluation | benchmark locally | policy-dependent |
-| Full middleware chain | benchmark locally | profile-dependent |
-| Vault get (AES-256-GCM) | benchmark locally | storage/keyring-dependent |
+Use the benchmark harnesses to measure your own deployment:
+
+```bash
+katana benchmark
+python -m tests.bench.benchmark_scanners
+python -m tests.bench.benchmark_scanners --scanners injection,unicode_spoof,scabbard
+PYTHONPATH=src python scripts/benchmark_hermes_katana_tool_sandbox.py --help
+```
+
+When comparing results, report the hardware, Python version, install extras,
+artifact profile, sample count, input sizes, p50/p95/p99 latency, and
+throughput. The scanner benchmark suite emits JSON results and includes
+CI-friendly regression checks for the scanner stack.
 
 ---
 
