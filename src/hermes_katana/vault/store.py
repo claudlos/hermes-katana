@@ -441,6 +441,14 @@ class Vault:
             self._master_key.close()
         self._master_key = None
 
+    def _owner_pid(self) -> int:
+        """Return this process ID for lock ownership metadata."""
+        return os.getpid()
+
+    def _owner_is_running(self, pid: int) -> bool:
+        """Return True when a lock owner process appears to be live."""
+        return _process_is_running(pid)
+
     def _read_lock_state_unlocked(self) -> dict[str, Any] | None:
         """Read the lock metadata while holding ``self._lock_state_guard``."""
         if not self._lock_path.exists():
@@ -472,7 +480,7 @@ class Vault:
                 return None
 
             pid = state.get("pid")
-            if isinstance(pid, int) and pid > 0 and not _process_is_running(pid):
+            if isinstance(pid, int) and pid > 0 and not self._owner_is_running(pid):
                 self._lock_path.unlink(missing_ok=True)
                 logger.warning("Removed stale vault lock from dead PID %s", pid)
                 return None
@@ -680,14 +688,20 @@ class Vault:
             with self._lock_state_guard:
                 state = self._read_lock_state_unlocked()
                 owner = state.get("pid") if state else None
-                if state is not None and isinstance(owner, int) and owner != os.getpid() and _process_is_running(owner):
+                current_pid = self._owner_pid()
+                if (
+                    state is not None
+                    and isinstance(owner, int)
+                    and owner != current_pid
+                    and self._owner_is_running(owner)
+                ):
                     logger.warning("Vault already locked by PID %s", owner)
                     return
 
                 lock_state = {
                     "version": 1,
                     "reason": "circuit_breaker",
-                    "pid": os.getpid(),
+                    "pid": current_pid,
                     "host": platform.node(),
                     "locked_at": time.time(),
                 }
@@ -707,7 +721,7 @@ class Vault:
                     return
 
                 owner = state.get("pid")
-                if isinstance(owner, int) and owner != os.getpid() and _process_is_running(owner):
+                if isinstance(owner, int) and owner != self._owner_pid() and self._owner_is_running(owner):
                     raise VaultLockedError(
                         f"Vault lock is owned by live PID {owner}; refusing to clear {self._lock_path}."
                     )
