@@ -12,8 +12,15 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Any
+
+try:
+    from enum import StrEnum
+except ImportError:  # pragma: no cover - exercised on Python 3.10
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        """Python 3.10 fallback for enum.StrEnum."""
 
 
 class RouteMode(StrEnum):
