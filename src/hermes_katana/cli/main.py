@@ -245,10 +245,7 @@ def _prompt_install_onnx_runtime(
         return False
 
     missing_text = ", ".join(missing)
-    prompt = (
-        "Install ONNX Runtime CPU dependencies "
-        f"({missing_text}; needed to run the small local ONNX model)?"
-    )
+    prompt = f"Install ONNX Runtime CPU dependencies ({missing_text}; needed to run the small local ONNX model)?"
     return bool(click.confirm(prompt, default=selected_onnx_artifact))
 
 
@@ -293,10 +290,7 @@ def _prompt_install_torch_cpu(
         return False
 
     missing_text = ", ".join(missing)
-    prompt = (
-        "Install PyTorch CPU dependencies "
-        f"({missing_text}; needed for safetensors/checkpoint model runtimes)?"
-    )
+    prompt = f"Install PyTorch CPU dependencies ({missing_text}; needed for safetensors/checkpoint model runtimes)?"
     return bool(click.confirm(prompt, default=selected_torch_artifact))
 
 
@@ -366,7 +360,9 @@ def _run_artifacts_setup(
         pass
     elif not sys.stdin.isatty():
         if not allow_no_artifact_choice:
-            raise click.ClickException("Non-interactive setup requires --yes, --small, --small-torch, --large, or --all")
+            raise click.ClickException(
+                "Non-interactive setup requires --yes, --small, --small-torch, --large, or --all"
+            )
     else:
         console.print("[bold]Katana artifact setup[/bold]\n")
         for spec in specs:
@@ -697,7 +693,9 @@ def doctor(target: str | None) -> None:
         if scabbard["standard_profile_ready"]
         else "; ".join(scabbard_issues[:2]) or "missing profile assets"
     )
-    centroid_note = "centroids experimental/on" if scabbard.get("experimental_centroids_enabled") else "centroids experimental/off"
+    centroid_note = (
+        "centroids experimental/on" if scabbard.get("experimental_centroids_enabled") else "centroids experimental/off"
+    )
     scabbard_details = f"{scabbard_details}; {centroid_note}"
     ml_table.add_row(
         "Scabbard profile",
@@ -895,7 +893,9 @@ def preflight(target: str | None, json_output: bool) -> None:
     is_flag=True,
     help="Skip ONNX Runtime CPU dependencies.",
 )
-@click.option("--torch-cpu", "install_torch_cpu", is_flag=True, help="Install PyTorch CPU dependencies for checkpoint models.")
+@click.option(
+    "--torch-cpu", "install_torch_cpu", is_flag=True, help="Install PyTorch CPU dependencies for checkpoint models."
+)
 @click.option("--no-torch-cpu", is_flag=True, help="Skip PyTorch CPU dependencies.")
 @click.option("--proving-ground", "install_proving_ground", is_flag=True, help="Install Proving Ground extras.")
 @click.option("--no-proving-ground", is_flag=True, help="Skip Proving Ground extras.")
