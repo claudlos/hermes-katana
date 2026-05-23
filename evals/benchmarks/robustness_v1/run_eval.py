@@ -130,7 +130,7 @@ def load_minilm_scorer():
 
     def score(text: str) -> float:
         emb = embedder.encode(text)
-        sims = detector.compute_distances(emb)  # 6-dim
+        sims = detector.compute_distances(emb)
         return float(sims.max())
 
     return score

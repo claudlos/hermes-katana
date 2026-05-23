@@ -3,7 +3,7 @@
 Three profiles trade off latency vs detection capability:
 
 - **minimal**: normalizer + TF-IDF n-grams only (~1 ms, zero ML deps)
-- **standard**: + zvec embeddings + centroids + fusion (~5 ms)
+- **standard**: + zvec embeddings + fusion (~5 ms); centroid features are experimental opt-in
 - **full**: + perplexity analysis + LLM judge (~25 ms + judge)
 - **cascade**: explicit per-tier thresholds for the ScabbardCascadeRouter
 
@@ -16,9 +16,9 @@ The standard/full profiles support three backends:
    ``deberta_model_cls`` is set.  Returns a full ClassificationResult
    (scores + decision) directly — skips the feature-extractor + fusion stages.
 
-2. **zvec** (default): sentence-transformers/all-MiniLM-L6-v2 + learned 128-dim
-   projector.  Fast (~5K rec/s on CPU), small (87MB), trained on attack data.
-   Output: 128-dim L2-normalized.
+2. **zvec** (experimental): sentence-transformers/all-MiniLM-L6-v2 +
+   learned 128-dim projector. Fast (~5K rec/s on CPU), small (87MB),
+   trained on attack data. Output: 128-dim L2-normalized.
 
 3. **deberta** (legacy embedder): microsoft/deberta-v3-large fine-tuned
    classifier used only as an embedder (768-dim [CLS] token) for the
@@ -27,13 +27,16 @@ The standard/full profiles support three backends:
 
 Set ``deberta_model_cls`` to use the DeBERTaClassifier directly.
 Set ``deberta_model`` (legacy) to use DeBERTa as an embedder for zvec pipeline.
-Centroids are auto-detected from the embedder output dim (128 for zvec,
-768 for DeBERTa).
+Centroid artifacts are experimental and not part of the default runtime path.
+Pass ``centroid_path`` explicitly, or set
+``HERMES_KATANA_ENABLE_EXPERIMENTAL_CENTROIDS=1`` to let standard/full profile
+factories auto-discover local centroid files for research runs.
 """
 
 from __future__ import annotations
-import importlib.util
 
+import importlib.util
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -41,7 +44,9 @@ from typing import Optional
 from hermes_katana.artifacts import (
     artifact_status,
     minilm_onnx_spec,
+    minilm_torch_spec,
     resolve_minilm_onnx,
+    resolve_minilm_torch,
     resolve_v15_large,
 )
 
@@ -137,6 +142,11 @@ def _katana_v15_minilm_onnx_artifact_path() -> Path:
     return resolve_minilm_onnx(download=None)
 
 
+def _katana_v15_minilm_torch_artifact_path() -> Path:
+    """Return a verified MiniLM PyTorch artifact path, downloading only if opted in."""
+    return resolve_minilm_torch(download=None)
+
+
 def _katana_v15_large_artifact_path() -> Path:
     """Return a verified large v15 artifact path, downloading only if opted in."""
     return resolve_v15_large(download=None)
@@ -150,8 +160,16 @@ def _path_has_entries(path: Path) -> bool:
     return path.exists() and path.is_dir() and any(path.iterdir())
 
 
+def _experimental_centroids_enabled() -> bool:
+    """Return whether experimental centroid auto-discovery is enabled."""
+    value = os.environ.get("HERMES_KATANA_ENABLE_EXPERIMENTAL_CENTROIDS", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _default_centroid_path(*, use_deberta_embedder: bool = False) -> Optional[str]:
-    """Pick a centroid artifact compatible with the active embedder."""
+    """Pick a centroid artifact only when experimental auto-discovery is enabled."""
+    if not _experimental_centroids_enabled():
+        return None
     if use_deberta_embedder:
         return str(_CENTROIDS_768) if _CENTROIDS_768.exists() else None
     return str(_CENTROIDS_128) if _CENTROIDS_128.exists() else None
@@ -168,9 +186,6 @@ def _standard_runtime_ready(*, use_deberta_embedder: bool = False) -> bool:
     if not all(_module_available(name) for name in required_modules):
         return False
     if not _TFIDF.is_file() or not _FUSION.is_file():
-        return False
-    centroid_path = _default_centroid_path(use_deberta_embedder=use_deberta_embedder)
-    if centroid_path is None:
         return False
     if use_deberta_embedder:
         return True
@@ -235,7 +250,8 @@ class ScabbardConfig:
     zvec_projector_path: Optional[str] = None
     zvec_tokenizer_path: Optional[str] = None
 
-    # Feature model paths
+    # Feature model paths. Centroid auto-discovery is experimental and disabled
+    # unless HERMES_KATANA_ENABLE_EXPERIMENTAL_CENTROIDS=1 is set.
     perplexity_model: Optional[str] = None
     fusion_model: Optional[str] = str(_FUSION) if _FUSION.exists() else None
     centroid_path: Optional[str] = _default_centroid_path()
@@ -326,7 +342,7 @@ class ScabbardConfig:
         if backend == "onnx":
             return artifact_status(minilm_onnx_spec()).present
         if backend == "torch":
-            return (_KATANA_V15_MINILM_BEST / "model.safetensors").is_file()
+            return artifact_status(minilm_torch_spec()).present
         return False
 
     @classmethod
@@ -574,6 +590,8 @@ class ScabbardConfig:
             raise ValueError("katana_v15_distill_minilm ships as fp32 ONNX; INT8 is not configured")
         if backend == "onnx" and model_path is None:
             model_path = str(_katana_v15_minilm_onnx_artifact_path())
+        elif backend == "torch" and model_path is None:
+            model_path = str(_katana_v15_minilm_torch_artifact_path())
         resolved_path = model_path or str(_KATANA_V15_MINILM_BEST)
         return cls(
             profile="standard",
@@ -684,7 +702,8 @@ class ScabbardConfig:
           an embedder for the zvec pipeline (768-dim [CLS]).
         - Default: zvec embedder (MiniLM-L6-v2 + 128-dim projector).
 
-        Centroids are auto-selected to match embedder output dimension.
+        Centroids are experimental. They are used only when ``centroid_path`` is
+        supplied or experimental auto-discovery is enabled via environment.
         """
         use_deberta_embedder = deberta_model is not None
         auto_centroid = (

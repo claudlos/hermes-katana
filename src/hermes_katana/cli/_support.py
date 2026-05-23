@@ -18,6 +18,7 @@ from rich.panel import Panel
 
 VERSION = __version__
 HERMETIC_ML_READY_ENV = "HERMES_KATANA_REQUIRE_ML_READY"
+EXPERIMENTAL_CENTROIDS_ENV = "HERMES_KATANA_ENABLE_EXPERIMENTAL_CENTROIDS"
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
@@ -191,6 +192,7 @@ def _collect_scabbard_status(packages: dict[str, Any]) -> dict[str, Any]:
     centroids_128 = models_dir / "attack_centroids_128d.npz"
     centroids_768 = models_dir / "attack_centroids.npz"
     centroid_path = centroids_128 if centroids_128.exists() else centroids_768 if centroids_768.exists() else None
+    experimental_centroids_enabled = os.environ.get(EXPERIMENTAL_CENTROIDS_ENV, "").strip().lower() in _TRUTHY
 
     zvec_dir = models_dir / "zvec_quantized-20260408T061203Z-3-001" / "zvec_quantized"
     zvec_backbone = zvec_dir / "backbone_fp32"
@@ -202,8 +204,6 @@ def _collect_scabbard_status(packages: dict[str, Any]) -> dict[str, Any]:
         missing.append(f"missing TF-IDF vectorizer at {tfidf_path}")
     if not fusion_path.is_file():
         missing.append(f"missing fusion model at {fusion_path}")
-    if centroid_path is None:
-        missing.append("missing attack centroids under training/models")
     if not _path_has_entries(zvec_backbone):
         missing.append(f"missing zvec backbone at {zvec_backbone}")
     if not zvec_projector.is_file():
@@ -224,6 +224,7 @@ def _collect_scabbard_status(packages: dict[str, Any]) -> dict[str, Any]:
         "tfidf_path": str(tfidf_path),
         "fusion_path": str(fusion_path),
         "centroid_path": str(centroid_path) if centroid_path is not None else None,
+        "experimental_centroids_enabled": experimental_centroids_enabled,
         "zvec_dir": str(zvec_dir),
         "minimal_profile_ready": minimal_profile_ready,
         "standard_profile_ready": standard_profile_ready,

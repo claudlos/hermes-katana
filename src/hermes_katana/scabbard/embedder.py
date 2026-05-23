@@ -410,7 +410,7 @@ class ZvecEmbedder:
 
 
 class DeBERTaClassifier:
-    """DeBERTa-v2-base sequence classifier wired to scabbard's 8 ATTACK_LABELS.
+    """DeBERTa-v2-base sequence classifier wired to Scabbard runtime labels.
 
     Loads the trained ``deberta-scabbard`` model (8 classes) and maps its
     outputs to scabbard's standard label set via the label_map defined in
@@ -431,7 +431,7 @@ class DeBERTaClassifier:
     Attributes
     ----------
     label_map : dict[int, str]
-        Maps the model's 8 class indices (0-7) to scabbard label names.
+        Maps the legacy model's 8 class indices (0-7) to scabbard label names.
 
     Example
     -------
@@ -511,7 +511,7 @@ class DeBERTaClassifier:
     # ------------------------------------------------------------------
 
     def classify(self, text: str) -> dict[str, float]:
-        """Classify text, returning per-label probabilities for all 8 ATTACK_LABELS.
+        """Classify text, returning per-label probabilities for runtime labels.
 
         Returns
         -------
@@ -532,7 +532,8 @@ class DeBERTaClassifier:
 
         probs = torch.softmax(logits, dim=0)
 
-        # Initialize scores dict with all 8 ATTACK_LABELS
+        # Initialize scores dict with all runtime labels. Labels not produced
+        # by the legacy 8-class model remain at 0.0.
         scores: dict[str, float] = {label: 0.0 for label in _ATTACK_LABELS}
 
         # LABEL_0 → clean
@@ -886,6 +887,8 @@ def _get_attack_labels() -> list[str]:
             "exfiltration_attempt",
             "jailbreak",
             "cognitive_state_attack",
+            "encoding_evasion",
+            "persona_jailbreak",
             "unknown_anomaly",
         ]
 

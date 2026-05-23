@@ -14,9 +14,11 @@ import pytest
 from hermes_katana.artifacts import (
     ARTIFACT_MANIFEST,
     MINILM_ONNX_REQUIRED_FILES,
+    MINILM_TORCH_REQUIRED_FILES,
     V15_LARGE_REQUIRED_FILES,
     artifact_path,
     minilm_onnx_spec,
+    minilm_torch_spec,
     v15_large_spec,
 )
 from hermes_katana.scabbard.pipeline import ScabbardConfig, ScabbardClassifier
@@ -39,6 +41,10 @@ def _write_artifact(path, files):
 
 def _write_minilm_artifact(path):
     _write_artifact(path, MINILM_ONNX_REQUIRED_FILES)
+
+
+def _write_minilm_torch_artifact(path):
+    _write_artifact(path, MINILM_TORCH_REQUIRED_FILES)
 
 
 # =============================================================================
@@ -165,11 +171,22 @@ class TestScabbardConfig:
         assert "training/checkpoints" not in cfg.katana_v11_path
         assert ScabbardConfig.katana_v15_minilm_available(backend="onnx")
 
-    def test_katana_v15_minilm_torch_source_checkpoint(self):
+    def test_katana_v15_minilm_torch_uses_artifact_cache(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("KATANA_MINILM_TORCH_DIR", raising=False)
+        monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+        monkeypatch.setenv("KATANA_MINILM_TORCH_HF_REPO_ID", "local/minilm-torch")
+        monkeypatch.setenv("KATANA_MINILM_TORCH_HF_REVISION", "unit-test")
+        artifact_dir = artifact_path(minilm_torch_spec())
+        _write_minilm_torch_artifact(artifact_dir)
+
         cfg = ScabbardConfig.katana_v15_minilm(backend="torch", device="cpu")
-        assert cfg.katana_v11_path.endswith("training/checkpoints/katana_v15_distill_minilm/best")
+
+        assert cfg.katana_v11_path == str(artifact_dir)
+        assert "training/checkpoints" not in cfg.katana_v11_path
         assert cfg.katana_v11_backend == "torch"
         assert cfg.katana_v11_device == "cpu"
+        assert ScabbardConfig.katana_v15_minilm_available(backend="torch")
 
     def test_katana_v15_minilm_int8_rejected(self):
         with pytest.raises(ValueError, match="fp32 ONNX"):
@@ -328,6 +345,8 @@ class TestClassifyBasic:
             "exfiltration",
             "jailbreak",
             "cognitive_state_attack",
+            "encoding_evasion",
+            "persona_jailbreak",
             "unknown_anomaly",
         ]
 

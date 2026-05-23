@@ -358,7 +358,9 @@ class TestMahalanobisCentroidDetector:
         from hermes_katana.scabbard.fusion import MahalanobisCentroidDetector
 
         detector = MahalanobisCentroidDetector()
-        assert len(detector.CATEGORIES) == 6
+        assert len(detector.CATEGORIES) == 8
+        assert "encoding_evasion" in detector.CATEGORIES
+        assert "persona_jailbreak" in detector.CATEGORIES
 
     def test_mahalanobis_output_shape(self):
         from hermes_katana.scabbard.fusion import MahalanobisCentroidDetector
@@ -366,7 +368,7 @@ class TestMahalanobisCentroidDetector:
         detector = MahalanobisCentroidDetector()
         embedding = np.random.randn(768).astype(np.float32)
         distances = detector.compute_distances(embedding)
-        assert distances.shape == (6,)
+        assert distances.shape == (len(detector.CATEGORIES),)
 
     def test_mahalanobis_with_centroids(self):
         from hermes_katana.scabbard.fusion import MahalanobisCentroidDetector
@@ -523,7 +525,7 @@ class TestFusionClassifierMahalanobis:
         clf = FusionClassifier(use_mahalanobis=True)
         embedding = np.random.randn(768).astype(np.float32)
         distances = clf.compute_mahalanobis_distances(embedding)
-        assert distances.shape == (6,)
+        assert distances.shape == (8,)
 
     def test_mahalanobis_with_centroids(self):
         from hermes_katana.scabbard.fusion import FusionClassifier, MahalanobisCentroidDetector
@@ -534,7 +536,7 @@ class TestFusionClassifierMahalanobis:
         detector = MahalanobisCentroidDetector(centroids=centroids)
         clf = FusionClassifier(use_mahalanobis=True, centroid_detector=detector)
         distances = clf.compute_mahalanobis_distances(centroids["content_injection"])
-        assert distances.shape == (6,)
+        assert distances.shape == (len(MahalanobisCentroidDetector.CATEGORIES),)
 
 
 class TestFusionClassifierStacking:

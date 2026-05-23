@@ -25,7 +25,7 @@ class TestCentroidDetector:
         from hermes_katana.scabbard.feature_extractor import CentroidDetector
 
         cd = CentroidDetector.load(str(_centroid_path()))
-        assert len(cd.centroids) == 6
+        assert len(cd.centroids) in (6, len(CentroidDetector.CATEGORIES))
         expected_dim = None
         for name, vec in cd.centroids.items():
             expected_dim = expected_dim or int(vec.shape[0])
@@ -34,7 +34,7 @@ class TestCentroidDetector:
             assert 0.999 < norm < 1.001, f"{name}: not unit norm ({norm})"
 
     def test_compute_distances(self):
-        """compute_distances must return 6-dim cosine similarity array."""
+        """compute_distances must return one cosine similarity per runtime category."""
         from hermes_katana.scabbard.feature_extractor import CentroidDetector
 
         cd = CentroidDetector.load(str(_centroid_path()))
@@ -42,5 +42,5 @@ class TestCentroidDetector:
         dummy_emb = np.random.randn(embedding_dim).astype(np.float32)
         dummy_emb = dummy_emb / np.linalg.norm(dummy_emb)
         dists = cd.compute_distances(dummy_emb)
-        assert dists.shape == (6,), f"Expected (6,), got {dists.shape}"
+        assert dists.shape == (len(CentroidDetector.CATEGORIES),), f"Unexpected shape: {dists.shape}"
         assert all(-1.0 <= d <= 1.0 for d in dists)

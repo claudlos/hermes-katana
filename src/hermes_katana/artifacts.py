@@ -22,6 +22,7 @@ from hermes_katana._version import ARTIFACT_REVISION
 
 DEFAULT_ARTIFACT_MODEL = "minilm"
 DEFAULT_MINILM_ONNX_REPO = "Carlosian/hermes-katana-v15-distill-minilm-onnx"
+DEFAULT_MINILM_TORCH_REPO = "Carlosian/hermes-katana-v15-distill-minilm"
 DEFAULT_V15_LARGE_REPO = "Carlosian/hermes-katana-v15-large"
 DEFAULT_REVISION = ARTIFACT_REVISION
 ARTIFACT_MANIFEST = "artifact_manifest.json"
@@ -38,6 +39,19 @@ MINILM_ONNX_REQUIRED_FILES = (
 )
 
 MINILM_ONNX_ALLOW_PATTERNS = (*MINILM_ONNX_REQUIRED_FILES, "README.md")
+
+MINILM_TORCH_REQUIRED_FILES = (
+    "model.safetensors",
+    "config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "added_tokens.json",
+    "vocab.txt",
+    ARTIFACT_MANIFEST,
+)
+
+MINILM_TORCH_ALLOW_PATTERNS = (*MINILM_TORCH_REQUIRED_FILES, "README.md")
 
 V15_LARGE_REQUIRED_FILES = (
     "model.safetensors",
@@ -123,6 +137,30 @@ _BASE_ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
         requires_confirmation=False,
     ),
     ArtifactSpec(
+        name="katana_v15_distill_minilm_torch",
+        aliases=(
+            "minilm_torch",
+            "small_torch",
+            "torch_minilm",
+            "katana_v15_minilm_torch",
+            "katana_v15_distill_minilm",
+        ),
+        display_name="Katana v15 MiniLM PyTorch",
+        repo_id=DEFAULT_MINILM_TORCH_REPO,
+        repo_type="model",
+        revision=DEFAULT_REVISION,
+        required_files=MINILM_TORCH_REQUIRED_FILES,
+        allow_patterns=MINILM_TORCH_ALLOW_PATTERNS,
+        size_label="~88 MB",
+        role="optional PyTorch CPU/GPU Scabbard classifier checkpoint",
+        profile="torch_cpu",
+        path_env_var="KATANA_MINILM_TORCH_DIR",
+        repo_env_var="KATANA_MINILM_TORCH_HF_REPO_ID",
+        revision_env_var="KATANA_MINILM_TORCH_HF_REVISION",
+        interactive_default=False,
+        requires_confirmation=False,
+    ),
+    ArtifactSpec(
         name="katana_v15_large",
         aliases=("large", "v15_large", "katana_v15_large", "deberta", "teacher"),
         display_name="Katana v15 Large",
@@ -190,6 +228,11 @@ def default_artifact_cache_dir() -> Path:
 def minilm_onnx_spec(repo_id: str | None = None, revision: str | None = None) -> ArtifactSpec:
     """Build the default MiniLM ONNX artifact spec with env overrides."""
     return artifact_spec("minilm", repo_id=repo_id, revision=revision)
+
+
+def minilm_torch_spec(repo_id: str | None = None, revision: str | None = None) -> ArtifactSpec:
+    """Build the optional MiniLM PyTorch artifact spec with env overrides."""
+    return artifact_spec("minilm_torch", repo_id=repo_id, revision=revision)
 
 
 def v15_large_spec(repo_id: str | None = None, revision: str | None = None) -> ArtifactSpec:
@@ -430,6 +473,18 @@ def resolve_minilm_onnx(
     ``KATANA_ARTIFACT_AUTO_DOWNLOAD=1``.
     """
     spec = minilm_onnx_spec(repo_id=repo_id, revision=revision)
+    return resolve_artifact(spec, download=download, target_dir=target_dir)
+
+
+def resolve_minilm_torch(
+    *,
+    download: bool | None = None,
+    repo_id: str | None = None,
+    revision: str | None = None,
+    target_dir: str | Path | None = None,
+) -> Path:
+    """Return a ready MiniLM PyTorch checkpoint artifact directory."""
+    spec = minilm_torch_spec(repo_id=repo_id, revision=revision)
     return resolve_artifact(spec, download=download, target_dir=target_dir)
 
 

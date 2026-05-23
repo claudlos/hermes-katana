@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 # ==============================================================================
 # 1. test_scabbard_classify_attack_returns_block
 # ==============================================================================
@@ -53,18 +51,23 @@ class TestScabbardClassifyClean:
 
 
 class TestScabbardConfigModelDiscovery:
-    """ScabbardConfig.standard() should only point at a compatible centroid artifact."""
+    """ScabbardConfig.standard() should keep centroid features experimental."""
 
-    def test_scabbard_config_auto_discovers_models(self):
-        """Zvec standard mode should use the 128d centroids when they exist."""
+    def test_scabbard_config_does_not_default_centroids(self, monkeypatch):
+        """Zvec standard mode must not auto-enable centroids without opt-in."""
         from hermes_katana.scabbard import ScabbardConfig
 
+        monkeypatch.delenv("HERMES_KATANA_ENABLE_EXPERIMENTAL_CENTROIDS", raising=False)
         config = ScabbardConfig.standard()
-        expected = Path(__file__).resolve().parents[2] / "training" / "models" / "attack_centroids_128d.npz"
-        if expected.exists():
-            assert config.centroid_path == str(expected)
-        else:
-            assert config.centroid_path is None
+        assert config.centroid_path is None
+
+    def test_scabbard_config_accepts_explicit_centroids(self, tmp_path):
+        """Research runs can still opt into centroids with an explicit path."""
+        from hermes_katana.scabbard import ScabbardConfig
+
+        explicit = tmp_path / "attack_centroids_128d.npz"
+        config = ScabbardConfig.standard(centroid_path=str(explicit))
+        assert config.centroid_path == str(explicit)
 
 
 # ==============================================================================

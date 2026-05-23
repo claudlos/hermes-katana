@@ -26,13 +26,13 @@ class TestFeatureVector:
             text_embedding=np.ones(768),
             context_embedding=np.ones(768) * 0.5,
             intent_divergence=0.7,
-            centroid_distances=np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]),
+            centroid_distances=np.arange(len(CentroidDetector.CATEGORIES), dtype=np.float32) / 10,
             perplexity_features=np.array([1.0, 2.0, 3.0]),
             ngram_features=np.array([0.0, 1.0, 0.0] * 6 + [0.0, 0.0]),
             encoding_flags=np.array([0.0, 0.0, 1.0, 0.0, 0.0]),
         )
         arr = fv.to_array()
-        assert len(arr) == 768 + 768 + 1 + 6 + 3 + 20 + 5
+        assert len(arr) == 768 + 768 + 1 + len(CentroidDetector.CATEGORIES) + 3 + 20 + 5
 
     def test_to_array_partial_signals(self):
         fv = FeatureVector(
@@ -48,9 +48,9 @@ class TestFeatureVector:
         assert len(arr) == 1  # just intent_divergence (0.0)
 
     def test_dimension_property(self):
-        fv = FeatureVector(centroid_distances=np.ones(6))
-        # to_array includes intent_divergence (1) + centroid_distances (6) = 7
-        assert fv.dimension == 7
+        fv = FeatureVector(centroid_distances=np.ones(len(CentroidDetector.CATEGORIES)))
+        # to_array includes intent_divergence (1) + centroid distances.
+        assert fv.dimension == 1 + len(CentroidDetector.CATEGORIES)
 
 
 # =============================================================================
@@ -106,7 +106,7 @@ class TestCentroidDetector:
         detector = CentroidDetector()
         emb = np.ones(768)
         dists = detector.compute_distances(emb)
-        assert len(dists) == 6
+        assert len(dists) == len(CentroidDetector.CATEGORIES)
         assert all(d == 0.0 for d in dists)
 
     def test_compute_distances_with_centroids(self):
@@ -122,7 +122,9 @@ class TestCentroidDetector:
         assert dists[0] > 0.0
 
     def test_categories_length(self):
-        assert len(CentroidDetector.CATEGORIES) == 6
+        assert len(CentroidDetector.CATEGORIES) == 8
+        assert "encoding_evasion" in CentroidDetector.CATEGORIES
+        assert "persona_jailbreak" in CentroidDetector.CATEGORIES
 
     def test_load_nonexistent_file_raises(self):
         import pytest
@@ -337,7 +339,7 @@ class TestFeatureExtractor:
         extractor = FeatureExtractor()
         fv = extractor.extract("Some text to analyze")
         assert fv.centroid_distances is not None
-        assert len(fv.centroid_distances) == 6
+        assert len(fv.centroid_distances) == len(CentroidDetector.CATEGORIES)
 
     def test_extract_encoding_flags_default_zeros(self):
         extractor = FeatureExtractor()
