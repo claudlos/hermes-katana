@@ -185,12 +185,10 @@ class TestVaultCircuitBreaker:
         assert not vault._lock_path.exists()
 
     def test_unlock_refuses_live_foreign_lock(self, vault):
-        vault._lock_path.write_text(json.dumps({"pid": 424242, "reason": "circuit_breaker"}), encoding="utf-8")
+        foreign_pid = os.getpid() + 1
+        vault._lock_path.write_text(json.dumps({"pid": foreign_pid, "reason": "circuit_breaker"}), encoding="utf-8")
 
-        with (
-            patch("hermes_katana.vault.store._process_is_running", return_value=True),
-            patch("hermes_katana.vault.store.os.getpid", return_value=123456),
-        ):
+        with patch("hermes_katana.vault.store._process_is_running", return_value=True):
             with pytest.raises(VaultLockedError):
                 vault.unlock()
 
