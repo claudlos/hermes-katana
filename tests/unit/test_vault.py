@@ -179,7 +179,7 @@ class TestVaultCircuitBreaker:
     def test_stale_lock_is_removed(self, vault):
         vault._lock_path.write_text(json.dumps({"pid": 999999, "reason": "circuit_breaker"}), encoding="utf-8")
 
-        with patch("hermes_katana.vault.store._process_is_running", return_value=False):
+        with patch.object(vault, "_owner_is_running", return_value=False):
             assert vault.is_locked() is False
 
         assert not vault._lock_path.exists()
@@ -188,7 +188,10 @@ class TestVaultCircuitBreaker:
         foreign_pid = os.getpid() + 1
         vault._lock_path.write_text(json.dumps({"pid": foreign_pid, "reason": "circuit_breaker"}), encoding="utf-8")
 
-        with patch("hermes_katana.vault.store._process_is_running", return_value=True):
+        with (
+            patch.object(vault, "_owner_pid", return_value=os.getpid()),
+            patch.object(vault, "_owner_is_running", return_value=True),
+        ):
             with pytest.raises(VaultLockedError):
                 vault.unlock()
 
