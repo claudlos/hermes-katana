@@ -1,0 +1,193 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1060" role="img" aria-labelledby="title desc">
+  <title id="title">Hermes Katana V3 End-to-End Pipeline</title>
+  <desc id="desc">A hermetic style pipeline diagram showing release inputs, runtime enforcement, artifact distribution, verification gates, and public launch.</desc>
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#8ef0a0" stop-opacity="0.85"/>
+      <stop offset="45%" stop-color="#3b9c66" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#050706" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#182017"/>
+      <stop offset="1" stop-color="#070b08"/>
+    </linearGradient>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8ef0a0"/>
+    </marker>
+    <style>
+      .bg { fill: #050706; }
+      .grid { stroke: rgba(240,229,207,0.10); stroke-width: 1; }
+      .line { stroke: #8ef0a0; stroke-width: 4; fill: none; marker-end: url(#arrow); filter: url(#softGlow); }
+      .thin { stroke: rgba(240,229,207,0.34); stroke-width: 2; fill: none; }
+      .gold { stroke: #d7a849; }
+      .red { stroke: #d25c4e; }
+      .node { fill: url(#panel); stroke: rgba(240,229,207,0.56); stroke-width: 2; rx: 18; }
+      .nodeHot { stroke: #8ef0a0; filter: url(#softGlow); }
+      .nodeWarn { stroke: #d7a849; }
+      .nodeStop { stroke: #d25c4e; }
+      .seal { fill: rgba(142,240,160,0.09); stroke: #8ef0a0; stroke-width: 3; filter: url(#softGlow); }
+      .title { fill: #f0e5cf; font: 800 42px Inter, Arial, sans-serif; letter-spacing: 0; }
+      .subtitle { fill: #cdbf9d; font: 500 20px Inter, Arial, sans-serif; }
+      .label { fill: #f0e5cf; font: 800 21px Inter, Arial, sans-serif; letter-spacing: 0; }
+      .small { fill: #cdbf9d; font: 500 15px Inter, Arial, sans-serif; }
+      .tiny { fill: #9f947d; font: 500 13px Inter, Arial, sans-serif; }
+      .code { fill: #8ef0a0; font: 600 14px ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .step { fill: #050706; font: 900 16px Inter, Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="1060"/>
+  <rect width="1600" height="1060" fill="url(#glow)" opacity="0.45"/>
+  <g opacity="0.22">
+    <path class="grid" d="M80 0 V1060 M160 0 V1060 M240 0 V1060 M320 0 V1060 M400 0 V1060 M480 0 V1060 M560 0 V1060 M640 0 V1060 M720 0 V1060 M800 0 V1060 M880 0 V1060 M960 0 V1060 M1040 0 V1060 M1120 0 V1060 M1200 0 V1060 M1280 0 V1060 M1360 0 V1060 M1440 0 V1060 M1520 0 V1060"/>
+    <path class="grid" d="M0 80 H1600 M0 160 H1600 M0 240 H1600 M0 320 H1600 M0 400 H1600 M0 480 H1600 M0 560 H1600 M0 640 H1600 M0 720 H1600 M0 800 H1600 M0 880 H1600 M0 960 H1600"/>
+  </g>
+
+  <g opacity="0.26">
+    <circle class="thin gold" cx="210" cy="180" r="86"/>
+    <circle class="thin gold" cx="210" cy="180" r="124"/>
+    <path class="thin gold" d="M210 56 L322 245 H98 Z M86 180 H334 M210 56 V304"/>
+    <circle class="thin" cx="1400" cy="830" r="112"/>
+    <circle class="thin" cx="1400" cy="830" r="78"/>
+    <path class="thin" d="M1312 830 H1488 M1400 742 V918 M1344 774 L1456 886 M1456 774 L1344 886"/>
+  </g>
+
+  <text class="title" x="80" y="78">Hermes Katana V3 Pipeline</text>
+  <text class="subtitle" x="80" y="112">From release assets to runtime enforcement, audit evidence, and public launch.</text>
+
+  <g transform="translate(80,170)">
+    <rect class="node nodeWarn" width="250" height="142"/>
+    <circle class="seal" cx="34" cy="34" r="19"/>
+    <text class="step" x="29" y="40">1</text>
+    <text class="label" x="66" y="36">Source Of Truth</text>
+    <text class="small" x="24" y="72">policies/*.yaml</text>
+    <text class="small" x="24" y="96">src/hermes_katana</text>
+    <text class="small" x="24" y="120">README docs generated</text>
+  </g>
+
+  <g transform="translate(400,170)">
+    <rect class="node nodeHot" width="250" height="142"/>
+    <circle class="seal" cx="34" cy="34" r="19"/>
+    <text class="step" x="29" y="40">2</text>
+    <text class="label" x="66" y="36">Package Build</text>
+    <text class="small" x="24" y="72">wheel includes policy YAML</text>
+    <text class="small" x="24" y="96">version 3.0.0</text>
+    <text class="small" x="24" y="120">console script: katana</text>
+  </g>
+
+  <g transform="translate(720,170)">
+    <rect class="node nodeHot" width="250" height="142"/>
+    <circle class="seal" cx="34" cy="34" r="19"/>
+    <text class="step" x="29" y="40">3</text>
+    <text class="label" x="66" y="36">HF Artifacts</text>
+    <text class="small" x="24" y="72">minilm ONNX default</text>
+    <text class="small" x="24" y="96">large v15 optional</text>
+    <text class="code" x="24" y="120">revision v3.0.0</text>
+  </g>
+
+  <g transform="translate(1040,170)">
+    <rect class="node nodeWarn" width="250" height="142"/>
+    <circle class="seal" cx="34" cy="34" r="19"/>
+    <text class="step" x="29" y="40">4</text>
+    <text class="label" x="66" y="36">Public Launch</text>
+    <text class="small" x="24" y="72">GitHub branch push</text>
+    <text class="small" x="24" y="96">HF repos public</text>
+    <text class="small" x="24" y="120">Pages manual live</text>
+  </g>
+
+  <path class="line" d="M330 240 H392"/>
+  <path class="line" d="M650 240 H712"/>
+  <path class="line" d="M970 240 H1032"/>
+
+  <g transform="translate(80,420)">
+    <rect class="node" width="250" height="162"/>
+    <circle class="seal" cx="34" cy="34" r="19"/>
+    <text class="step" x="29" y="40">A</text>
+    <text class="label" x="66" y="36">Ingress</text>
+    <text class="small" x="24" y="72">user input</text>
+    <text class="small" x="24" y="96">tool output</text>
+    <text class="small" x="24" y="120">web, file, MCP, agent</text>
+    <text class="tiny" x="24" y="146">Every string gets provenance.</text>
+  </g>
+
+  <g transform="translate(400,420)">
+    <rect class="node nodeHot" width="250" height="162"/>
+    <circle class="seal" cx="34" cy="34" r="19"/>
+    <text class="step" x="29" y="40">B</text>
+    <text class="label" x="66" y="36">Normalize And Scan</text>
+    <text class="small" x="24" y="72">decode hidden payloads</text>
+    <text class="small" x="24" y="96">injection, secret, command</text>
+    <text class="small" x="24" y="120">RAG, MCP, structural</text>
+    <text class="tiny" x="24" y="146">Hidden text is exposed first.</text>
+  </g>
+
+  <g transform="translate(720,420)">
+    <rect class="node nodeWarn" width="250" height="162"/>
+    <circle class="seal" cx="34" cy="34" r="19"/>
+    <text class="step" x="29" y="40">C</text>
+    <text class="label" x="66" y="36">Policy Gate</text>
+    <text class="small" x="24" y="72">max, balanced, permissive</text>
+    <text class="small" x="24" y="96">tool pattern + taint</text>
+    <text class="small" x="24" y="120">allow, deny, escalate, log</text>
+    <text class="tiny" x="24" y="146">YAML drives runtime behavior.</text>
+  </g>
+
+  <g transform="translate(1040,420)">
+    <rect class="node nodeStop" width="250" height="162"/>
+    <circle class="seal" cx="34" cy="34" r="19"/>
+    <text class="step" x="29" y="40">D</text>
+    <text class="label" x="66" y="36">Dispatch Decision</text>
+    <text class="small" x="24" y="72">deny stops execution</text>
+    <text class="small" x="24" y="96">escalate asks human</text>
+    <text class="small" x="24" y="120">allow reaches tool</text>
+    <text class="tiny" x="24" y="146">Audit records every path.</text>
+  </g>
+
+  <path class="line" d="M330 501 H392"/>
+  <path class="line" d="M650 501 H712"/>
+  <path class="line" d="M970 501 H1032"/>
+
+  <g transform="translate(240,700)">
+    <rect class="node nodeHot" width="300" height="166"/>
+    <text class="label" x="24" y="38">Evidence And Operations</text>
+    <text class="small" x="24" y="74">hash-chained audit trail</text>
+    <text class="small" x="24" y="100">vault secret storage</text>
+    <text class="small" x="24" y="126">HTTPS proxy scrubber</text>
+    <text class="tiny" x="24" y="150">Post-incident proof, not vibes.</text>
+  </g>
+
+  <g transform="translate(650,700)">
+    <rect class="node nodeWarn" width="300" height="166"/>
+    <text class="label" x="24" y="38">Release Verification</text>
+    <text class="small" x="24" y="74">ruff, pytest, scanner gate</text>
+    <text class="small" x="24" y="100">0 false positives / evasions</text>
+    <text class="small" x="24" y="126">wheel smoke + Pages check</text>
+    <text class="tiny" x="24" y="150">Failures block the launch.</text>
+  </g>
+
+  <g transform="translate(1060,700)">
+    <rect class="node nodeHot" width="300" height="166"/>
+    <text class="label" x="24" y="38">User Install Path</text>
+    <text class="code" x="24" y="76">pip install hermes-katana</text>
+    <text class="code" x="24" y="104">katana artifacts setup</text>
+    <text class="code" x="24" y="132">katana policy use balanced</text>
+    <text class="tiny" x="24" y="154">Base install works without models.</text>
+  </g>
+
+  <path class="line" d="M1165 582 C1165 648 795 630 795 694"/>
+  <path class="line" d="M1165 582 C1165 648 391 630 391 694"/>
+  <path class="line" d="M1165 582 C1165 648 1210 636 1210 694"/>
+
+  <g transform="translate(82,930)">
+    <path class="thin gold" d="M0 0 H1438"/>
+    <text class="small" x="0" y="38">Launch rule: GitHub code, GitHub Pages, and Hugging Face artifacts should become public together, after release gate and wheel smoke stay green.</text>
+    <text class="tiny" x="0" y="66">Last-second change targets: preset names, artifact visibility, README wording, Pages layout, policy examples, and operator commands.</text>
+  </g>
+</svg>

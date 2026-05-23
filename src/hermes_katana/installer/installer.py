@@ -41,6 +41,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from hermes_katana._version import __version__
 from hermes_katana.installer.patches import (
     CURRENT_CORE_PATCHES,
     LEGACY_CORE_PATCHES,
@@ -95,7 +96,7 @@ DEFAULT_CONFIG_TEMPLATE = """\
 
 version: "1.0"
 
-# Policy preset: paranoid | balanced | permissive
+# Policy preset: max | balanced | permissive
 policy:
   preset: balanced
   custom_dir: null  # Path to custom policy YAML directory
@@ -920,7 +921,7 @@ class KatanaInstaller:
         marker = target / KATANA_INSTALL_MARKER
         data = {
             "installed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "installer_version": "2.0.0",
+            "installer_version": __version__,
             "patches": {r.name: {"status": r.status.value, "message": r.message} for r in results},
             "target": str(target),
         }

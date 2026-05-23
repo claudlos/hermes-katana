@@ -7,21 +7,36 @@ Get from zero to protected agent in under 5 minutes.
 ## Step 1: Install
 
 ```bash
-pip install hermes-katana
-```
-
-Or from source (with dev tools):
-
-```bash
 git clone https://github.com/claudlos/hermes-katana.git
 cd hermes-katana
-pip install -e ".[dev]"
+pip install -e ".[security]"
+```
+
+The base install is the smallest path and does not download model artifacts. To
+enable optional local ML artifacts and first-run extras:
+
+```bash
+pip install -e ".[fast-cpu]"
+katana setup
+```
+
+`katana setup` prompts for the default MiniLM artifact, the larger optional
+model, and the Proving Ground research harness. Use `katana setup --yes` for
+the default unattended path: small model only, no larger model, no Proving
+Ground dependencies.
+
+When a PyPI release exists, the equivalent install commands are:
+
+```bash
+pip install hermes-katana
+pip install "hermes-katana[fast-cpu]"
+katana setup
 ```
 
 **Expected output:**
 
 ```
-Successfully installed hermes-katana-2.0.0
+Successfully installed hermes-katana-3.0.0
 ```
 
 ---
@@ -34,27 +49,18 @@ katana doctor
 
 **Expected output:**
 
-```
-HermesKatana Doctor
-  Python .............. 3.12.3 OK
-  pydantic ............ 2.x    OK
-  cryptography ........ 43.x   OK
-  keyring ............. 25.x   OK
-  click ............... 8.x    OK
-  rich ................ 13.x   OK
-  pyyaml .............. 6.x    OK
-  mitmdump ............ 10.x   OK (optional -- needed for proxy)
-
-  Config path ......... ~/.hermes-katana/config.yaml
-  Vault path .......... ~/.config/hermes-katana/vault.json
-  Audit path .......... ~/.config/hermes-katana/audit/audit.jsonl
-
-All checks passed.
-```
+`katana doctor` prints a Rich status report. Exact optional-component status
+depends on installed extras, local model artifacts, and whether a Hermes target
+checkout has been installed.
 
 > **Note:** `mitmdump` is only required if you plan to use the HTTPS proxy
-> feature.  Install it with `pip install mitmproxy>=10.0` or
-> `pip install hermes-katana[proxy]`.
+> feature.  Install it with `pip install mitmproxy>=10.0` or the `proxy` extra.
+>
+> `katana doctor` and `katana status` also show ML runtime readiness,
+> including artifact discovery, Scabbard asset state, and semantic backend
+> readiness. Optional model artifacts are downloaded explicitly with
+> `katana setup`, `katana artifacts setup`, or `katana artifacts download`; see
+> [`docs/artifacts.md`](artifacts.md).
 
 ---
 
@@ -75,9 +81,12 @@ Three built-in presets are available:
 
 | Preset       | Philosophy                                         |
 |--------------|----------------------------------------------------|
-| `paranoid`   | Deny everything untrusted, escalate even clean ops |
+| `max`   | Deny everything untrusted, escalate even clean ops |
 | `balanced`   | Smart defaults -- block tainted, allow clean       |
 | `permissive` | Log only, still blocks exfiltration                |
+
+V3 renamed the previous strict preset to `max`. If an older install or config
+references `paranoid`, reinstall or upgrade and run `katana policy use max`.
 
 See all policies:
 
@@ -213,7 +222,7 @@ katana proxy stop
 - **Write custom policies** -- see the [Policy System](../README.md#policy-system) section
 - **Day-2 operations** -- see [docs/runbook.md](runbook.md)
 - **Full API reference** -- see [docs/API.md](API.md)
-- **Architecture deep dive** -- see [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+- **Architecture overview** -- see the [README architecture section](../README.md#architecture)
 
 ---
 
@@ -235,7 +244,7 @@ is on `$PATH` (e.g. `~/.local/bin`).
 Install the proxy extra:
 
 ```bash
-pip install hermes-katana[proxy]
+pip install -e ".[proxy]"
 ```
 
 Or install mitmproxy separately: `pip install mitmproxy>=10.0`.

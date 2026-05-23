@@ -9,26 +9,32 @@ Demonstrates:
 
 Run:  python3 examples/taint_tracking.py
 """
-import sys, os
+
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from hermes_katana.taint import (
-    TaintedStr, Source, TaintLabel, FlowAnalyzer, FlowDecision,
-    TaintTracker, collect_sources,
+    FlowAnalyzer,
+    Source,
+    TaintedStr,
+    TaintedValue,
+    collect_sources,
 )
 
 # 1. Create tainted strings from different sources
 print("=== Creating Tainted Strings ===")
 user_input = TaintedStr("hello", sources=frozenset({Source.user()}))
 web_data = TaintedStr(" world", sources=frozenset({Source.web(url="https://example.com")}))
-print(f"  user_input labels: {[l.name for l in user_input.labels]}")
-print(f"  web_data labels:   {[l.name for l in web_data.labels]}")
+print(f"  user_input labels: {[label.name for label in user_input.labels]}")
+print(f"  web_data labels:   {[label.name for label in web_data.labels]}")
 
 # 2. Concatenation merges taint from both sources
 print("\n=== Taint Merging via Concatenation ===")
 combined = user_input + web_data
 print(f"  combined = {str(combined)!r}")
-print(f"  labels:   {sorted(l.name for l in combined.labels)}")
+print(f"  labels:   {sorted(label.name for label in combined.labels)}")
 print(f"  trusted?  {combined.is_trusted()}  (mixed sources = untrusted)")
 
 # 3. Flow analysis — can this data reach a terminal?
@@ -36,7 +42,6 @@ print("\n=== Flow Decisions ===")
 analyzer = FlowAnalyzer()
 
 # User input -> terminal: typically allowed
-from hermes_katana.taint import TaintedValue
 user_val = TaintedValue(value="ls -la", sources=frozenset({Source.user()}))
 analysis = analyzer.analyze(user_val, "terminal")
 print(f"  user -> terminal:  {analysis.decision.name}")
@@ -55,7 +60,7 @@ print("\n=== Character-Level Taint ===")
 ts = TaintedStr("AB", sources=frozenset({Source.user()}))
 web_part = TaintedStr("CD", sources=frozenset({Source.web(url="http://x.com")}))
 merged = ts + web_part
-if hasattr(merged, 'char_taint') and merged.char_taint:
+if hasattr(merged, "char_taint") and merged.char_taint:
     for i in range(len(str(merged))):
         ch = str(merged)[i]
         srcs = merged.char_taint.get(i)
@@ -71,7 +76,7 @@ original = TaintedStr("HELLO world", sources=frozenset({Source.web(url="http://x
 lower = original.lower()
 split = original.split(" ")
 sliced = original[:5]
-print(f"  .lower()  labels: {[l.name for l in lower.labels]}")
-print(f"  .split()  pieces: {len(split)}, first labels: {[l.name for l in split[0].labels]}")
-print(f"  [:5]      labels: {[l.name for l in sliced.labels]}")
+print(f"  .lower()  labels: {[label.name for label in lower.labels]}")
+print(f"  .split()  pieces: {len(split)}, first labels: {[label.name for label in split[0].labels]}")
+print(f"  [:5]      labels: {[label.name for label in sliced.labels]}")
 print("  Taint is never lost — it propagates through every string operation.")

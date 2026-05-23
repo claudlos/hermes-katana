@@ -141,7 +141,8 @@ class TestEnsembleClassifier:
             assert model_path.exists()
 
             clf2 = EnsembleClassifier()
-            clf2.load(model_path)
+            digest = model_path.with_suffix(".pkl.sha256").read_text(encoding="utf-8")
+            clf2.load(model_path, expected_sha256=digest)
             assert clf2._trained
 
             # Predictions should be similar

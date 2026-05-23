@@ -92,9 +92,19 @@ class RateTracker:
             if violations > 0 and len(window) < effective_limit // 2:
                 self._violations[client_id] = max(0, violations - 1)
 
-            # Evict stale clients when tracking too many
+            # Evict stale clients when tracking too many.
+            # Codex audit finding #6 (MED, 2026-05-07): the previous
+            # implementation only removed clients whose window was already
+            # empty. But ``check()`` only popleft's the *current* client's
+            # window, so clients that hit the limit and never came back kept
+            # stale-but-non-empty windows forever and slipped past eviction.
+            # The fix: prune *every* tracked window's stale entries against
+            # the time cutoff before deciding which to delete.
             if len(self._windows) > self._MAX_CLIENTS:
-                # Remove clients with empty windows (already pruned)
+                for k in list(self._windows.keys()):
+                    w = self._windows[k]
+                    while w and w[0] < cutoff:
+                        w.popleft()
                 stale = [k for k, v in self._windows.items() if not v]
                 for k in stale:
                     del self._windows[k]
@@ -187,6 +197,40 @@ class KatanaAddon:
             return False  # Unlimited
         return len(body) > self.config.max_body_scan_size
 
+    @staticmethod
+    def _needs_binary_scan(data: bytes, content_type: str = "") -> bool:
+        """Return true for file-like bodies that should not be treated as UTF-8 text."""
+        lower_type = content_type.lower()
+        if any(
+            marker in lower_type
+            for marker in (
+                "application/pdf",
+                "application/zip",
+                "application/x-zip-compressed",
+                "application/octet-stream",
+                "openxmlformats-officedocument",
+                "macroenabled",
+                "vnd.ms-word",
+                "vnd.ms-excel",
+                "vnd.ms-powerpoint",
+                "image/",
+            )
+        ):
+            return True
+        stripped = data.lstrip()
+        if stripped.startswith((b"%PDF-", b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
+            return True
+        if stripped.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"RIFF")):
+            return True
+        sample = data[:4096]
+        if b"\x00" in sample:
+            return True
+        try:
+            sample.decode("utf-8")
+        except UnicodeDecodeError:
+            return True
+        return False
+
     def _scan_text(
         self,
         text: str,
@@ -217,6 +261,7 @@ class KatanaAddon:
                 check_secrets=modes.secrets,
                 check_unicode=modes.unicode,
                 check_content=modes.content,
+                security_level=self.config.scanner_security_level,
             )
         else:
             # Response scanning includes indirect injection detection
@@ -237,6 +282,40 @@ class KatanaAddon:
             "summary": result.summary,
         }
 
+    def _scan_bytes(
+        self,
+        data: bytes,
+        direction: str = "request",
+        content_type: str = "",
+    ) -> dict[str, Any]:
+        """Run the scanner on raw request/response body bytes."""
+        from hermes_katana.scanner import scan_bytes
+
+        modes = self.config.scan_modes
+        with self._vault_values_lock:
+            vault_vals = self._vault_values
+
+        result = scan_bytes(
+            data,
+            content_type=content_type,
+            direction="output" if direction == "response" else "input",
+            vault_values=vault_vals,
+            check_injection=modes.injection,
+            check_secrets=modes.secrets,
+            check_unicode=modes.unicode,
+            check_content=modes.content,
+            check_content_harm=True,
+            check_prompt_leak=True,
+            security_level=self.config.scanner_security_level,
+        )
+        return {
+            "verdict": result.verdict.value,
+            "risk_score": result.risk_score,
+            "is_blocked": result.is_blocked,
+            "finding_count": result.finding_count,
+            "summary": result.summary,
+        }
+
     def _args_hash(self, *args: str) -> str:
         """Compute a deterministic hash of arguments for audit logging."""
         combined = "|".join(args)
@@ -245,6 +324,100 @@ class KatanaAddon:
     # ------------------------------------------------------------------
     # mitmproxy hooks
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _content_length(headers: Any) -> Optional[int]:
+        """Best-effort parse of a Content-Length header. Returns None on miss."""
+        if headers is None:
+            return None
+        try:
+            raw = headers.get("Content-Length") or headers.get("content-length")
+        except AttributeError:
+            return None
+        if raw is None:
+            return None
+        try:
+            return int(str(raw).strip())
+        except (TypeError, ValueError):
+            return None
+
+    def requestheaders(self, flow: Any) -> None:
+        """Pre-buffer size gate for requests.
+
+        Closes Codex audit finding #1 (HIGH): without this hook, mitmproxy
+        fully buffers the body before ``request()`` runs, so a hostile peer
+        could allocate ``max_request_body_size`` worth of memory before
+        Katana ever gets to reject. By rejecting on ``Content-Length`` here,
+        we never buffer oversized bodies in the first place.
+        """
+        try:
+            content_length = self._content_length(flow.request.headers)
+        except AttributeError:
+            return
+        limit = getattr(self.config, "max_request_body_size", 0) or 0
+        if limit > 0 and content_length is not None and content_length > limit:
+            try:
+                host = flow.request.host
+            except AttributeError:
+                host = "unknown"
+            self._increment_stat("requests_blocked_pre_buffer")
+            logger.warning(
+                "Request body Content-Length=%d exceeds max_request_body_size=%d for %s; rejecting before buffer",
+                content_length,
+                limit,
+                host,
+            )
+            flow.response = _make_block_response(
+                413,
+                f"Request body exceeds proxy limit ({content_length} > {limit} bytes).",
+            )
+            self._log_audit(
+                "SCAN_RESULT",
+                f"requestheaders_size:{host}",
+                "deny",
+                f"Content-Length {content_length} exceeds max_request_body_size {limit} (pre-buffer)",
+            )
+
+    def responseheaders(self, flow: Any) -> None:
+        """Pre-buffer size gate for responses (Codex audit #1, HIGH).
+
+        Same rationale as requestheaders, but for responses returning to the
+        agent. Replaces an oversized response with a 502 before the body is
+        buffered.
+        """
+        try:
+            content_length = self._content_length(flow.response.headers)
+            host = flow.request.host
+        except AttributeError:
+            return
+        limit = getattr(self.config, "max_response_body_size", 0) or 0
+        if limit > 0 and content_length is not None and content_length > limit:
+            self._increment_stat("responses_blocked_pre_buffer")
+            logger.warning(
+                "Response Content-Length=%d exceeds max_response_body_size=%d from %s; rejecting before buffer",
+                content_length,
+                limit,
+                host,
+            )
+            try:
+                flow.response.set_content(
+                    f"[HermesKatana] Response exceeds proxy limit "
+                    f"({content_length} > {limit} bytes); rejected before buffer.".encode()
+                )
+                flow.response.status_code = 502
+                if self.config.add_scanned_header:
+                    flow.response.headers["X-Katana-Scanned"] = "blocked"
+            except AttributeError:
+                flow.response = _make_block_response(
+                    502,
+                    f"Response exceeds proxy limit ({content_length} > {limit} bytes).",
+                )
+            self._log_audit(
+                "SCAN_RESULT",
+                f"responseheaders_size:{host}",
+                "deny",
+                f"Content-Length {content_length} exceeds max_response_body_size {limit} (pre-buffer)",
+            )
 
     def request(self, flow: Any) -> None:
         """mitmproxy request hook.
@@ -298,6 +471,7 @@ class KatanaAddon:
             return
 
         # Credential injection
+        pre_injection_headers = _normalise_header_values(flow.request.headers)
         if self.config.inject_credentials and self.vault is not None:
             provider_name = inject_credentials(flow, self.vault)
             if provider_name:
@@ -305,13 +479,18 @@ class KatanaAddon:
                 logger.debug("Injected credentials for %s", provider_name)
 
         # --- Scan request URL, headers, query params, cookies (GAP 3.1) ---
-        # Collect injected header keys so we can skip them during scanning
+        # Collect only headers actually added/changed by the injector so
+        # user-supplied Authorization values remain in scope for scanning.
         _injected_headers: set[str] = set()
         if self.config.inject_credentials and self.vault is not None:
-            # The injector may have added Authorization or api-key headers
-            for hdr in ("authorization", "api-key", "x-api-key", "x-goog-api-key"):
-                if hdr in {k.lower() for k in flow.request.headers}:
-                    _injected_headers.add(hdr)
+            post_injection_headers = _normalise_header_values(flow.request.headers)
+            credential_header_names = {"authorization", "api-key", "x-api-key", "x-goog-api-key"}
+            _injected_headers = {
+                name
+                for name in credential_header_names
+                if name in post_injection_headers
+                and post_injection_headers.get(name) != pre_injection_headers.get(name)
+            }
 
         # Scan URL path segments
         try:
@@ -324,7 +503,8 @@ class KatanaAddon:
                     self._log_audit("SCAN_RESULT", f"url_scan:{host}", "deny", url_result["summary"])
                     return
         except Exception as exc:
-            logger.debug("URL scan error: %s", exc)
+            self._fail_request_scan(flow, host, "url", exc)
+            return
 
         # Scan request headers (skip injected ones — GAP 3.8)
         try:
@@ -338,7 +518,8 @@ class KatanaAddon:
                     self._log_audit("SCAN_RESULT", f"header_scan:{host}:{hdr_name}", "deny", hdr_result["summary"])
                     return
         except Exception as exc:
-            logger.debug("Header scan error: %s", exc)
+            self._fail_request_scan(flow, host, "header", exc)
+            return
 
         # Scan query parameters
         try:
@@ -351,7 +532,8 @@ class KatanaAddon:
                         self._log_audit("SCAN_RESULT", f"query_scan:{host}:{qname}", "deny", q_result["summary"])
                         return
         except Exception as exc:
-            logger.debug("Query param scan error: %s", exc)
+            self._fail_request_scan(flow, host, "query", exc)
+            return
 
         # Scan cookie values
         try:
@@ -367,15 +549,22 @@ class KatanaAddon:
                             self._log_audit("SCAN_RESULT", f"cookie_scan:{host}", "deny", c_result["summary"])
                             return
         except Exception as exc:
-            logger.debug("Cookie scan error: %s", exc)
+            self._fail_request_scan(flow, host, "cookie", exc)
+            return
 
         # Request body scanning (GAP 3.5 — scan prefix of oversized bodies)
         body = flow.request.get_content()
         if body:
             scan_body = body
-            if self._body_too_large(body):
+            oversized = self._body_too_large(body)
+            if oversized:
+                oversize_action = (
+                    "scanning first %d bytes then blocking"
+                    if self._fail_closed_active()
+                    else "scanning first %d bytes; unscanned tail may pass in permissive mode"
+                )
                 logger.warning(
-                    "Oversized request body (%d bytes) from %s to %s — scanning first %d bytes",
+                    "Oversized request body (%d bytes) from %s to %s — " + oversize_action,
                     len(body),
                     client_id,
                     host,
@@ -384,8 +573,12 @@ class KatanaAddon:
                 scan_body = body[: self.config.max_body_scan_size]
                 self._increment_stat("requests_oversized")
             try:
-                text = scan_body.decode("utf-8", errors="replace")
-                scan_result = self._scan_text(text, direction="request")
+                content_type = flow.request.headers.get("content-type", "")
+                if self._needs_binary_scan(scan_body, content_type):
+                    scan_result = self._scan_bytes(scan_body, direction="request", content_type=content_type)
+                else:
+                    text = scan_body.decode("utf-8", errors="replace")
+                    scan_result = self._scan_text(text, direction="request")
 
                 if scan_result["is_blocked"]:
                     self._increment_stat("requests_blocked_scan")
@@ -413,8 +606,33 @@ class KatanaAddon:
                         "warn",
                         scan_result["summary"],
                     )
+
+                if oversized:
+                    if not self._fail_closed_active():
+                        self._increment_stat("requests_allowed_oversized")
+                        self._log_audit(
+                            "SCAN_RESULT",
+                            f"request_scan:{host}",
+                            "allow",
+                            "Request body exceeds scan limit; unscanned tail allowed (permissive mode)",
+                        )
+                        self._increment_stat("requests_passed")
+                    else:
+                        self._increment_stat("requests_blocked_oversized")
+                        flow.response = _make_block_response(
+                            413,
+                            "Request body exceeds scan limit and cannot be safely forwarded unscanned.",
+                        )
+                        self._log_audit(
+                            "SCAN_RESULT",
+                            f"request_scan:{host}",
+                            "deny",
+                            "Request body exceeds scan limit; unscanned tail blocked",
+                        )
+                    return
             except Exception as exc:
-                logger.debug("Request body scan error: %s", exc)
+                self._fail_request_scan(flow, host, "body", exc)
+                return
 
         self._increment_stat("requests_passed")
 
@@ -438,6 +656,8 @@ class KatanaAddon:
 
         # Scan response body
         scanned = False
+        oversized_response = False  # tracked for Codex audit #2: differentiate
+        # X-Katana-Scanned: true vs partial.
         try:
             body = flow.response.get_content()
         except AttributeError:
@@ -459,13 +679,21 @@ class KatanaAddon:
                     )
                     return
         except Exception as exc:
-            logger.debug("Response header scan error: %s", exc)
+            self._fail_response_scan(flow, host, "header", exc)
+            return
 
         if body:
             scan_body = body
-            if self._body_too_large(body):
+            oversized = self._body_too_large(body)
+            if oversized:
+                oversized_response = True
+                oversize_action = (
+                    "scanning first %d bytes then blocking"
+                    if self._fail_closed_active()
+                    else "scanning first %d bytes; unscanned tail may pass in permissive mode"
+                )
                 logger.warning(
-                    "Oversized response body (%d bytes) from %s — scanning first %d bytes",
+                    "Oversized response body (%d bytes) from %s — " + oversize_action,
                     len(body),
                     host,
                     self.config.max_body_scan_size,
@@ -473,8 +701,12 @@ class KatanaAddon:
                 scan_body = body[: self.config.max_body_scan_size]
                 self._increment_stat("responses_oversized")
             try:
-                text = scan_body.decode("utf-8", errors="replace")
-                scan_result = self._scan_text(text, direction="response")
+                content_type = flow.response.headers.get("content-type", "")
+                if self._needs_binary_scan(scan_body, content_type):
+                    scan_result = self._scan_bytes(scan_body, direction="response", content_type=content_type)
+                else:
+                    text = scan_body.decode("utf-8", errors="replace")
+                    scan_result = self._scan_text(text, direction="response")
                 scanned = True
 
                 if scan_result["is_blocked"]:
@@ -508,17 +740,124 @@ class KatanaAddon:
                         "warn",
                         scan_result["summary"],
                     )
-            except Exception as exc:
-                logger.debug("Response body scan error: %s", exc)
 
-        # Inject X-Katana-Scanned header (opt-in — GAP 3.7)
+                if oversized:
+                    if not self._fail_closed_active():
+                        self._increment_stat("responses_allowed_oversized")
+                        self._log_audit(
+                            "SCAN_RESULT",
+                            f"response_scan:{host}",
+                            "allow",
+                            "Response body exceeds scan limit; unscanned tail allowed (permissive mode)",
+                        )
+                    else:
+                        self._increment_stat("responses_blocked_oversized")
+                        flow.response.set_content(
+                            b"[HermesKatana] Response body exceeds scan limit; unscanned tail blocked."
+                        )
+                        flow.response.status_code = 502
+                        self._log_audit(
+                            "SCAN_RESULT",
+                            f"response_scan:{host}",
+                            "deny",
+                            "Response body exceeds scan limit; unscanned tail blocked",
+                        )
+                        if self.config.add_scanned_header:
+                            try:
+                                flow.response.headers["X-Katana-Scanned"] = "blocked"
+                            except AttributeError:
+                                pass
+                        return
+            except Exception as exc:
+                self._fail_response_scan(flow, host, "body", exc)
+                return
+
+        # Inject X-Katana-Scanned header (opt-in — GAP 3.7).
+        # Codex audit finding #2 (HIGH): when scanning a partial body (oversized
+        # in permissive mode), we used to mark the response as fully scanned.
+        # Set "partial" instead so downstream consumers know the tail wasn't
+        # examined.
         if self.config.add_scanned_header:
+            if not scanned:
+                value = "passthrough"
+            elif oversized_response:
+                value = "partial"
+            else:
+                value = "true"
             try:
-                flow.response.headers["X-Katana-Scanned"] = "true" if scanned else "passthrough"
+                flow.response.headers["X-Katana-Scanned"] = value
             except AttributeError:
                 pass
 
         self._increment_stat("responses_passed")
+
+    def _fail_closed_active(self) -> bool:
+        """Whether the proxy is configured to fail closed on scan errors."""
+        return getattr(self.config, "mode", "strict") in ("strict", "max")
+
+    def _fail_request_scan(self, flow: Any, host: str, scope: str, exc: Exception) -> None:
+        """Block the request fail-closed in strict/max; log-and-allow in permissive."""
+        self._increment_stat("requests_scan_errors")
+        if not self._fail_closed_active():
+            logger.warning(
+                "Request %s scan failed for %s; allowing in permissive mode: %s",
+                scope,
+                host,
+                exc,
+            )
+            self._log_audit(
+                "SCAN_RESULT",
+                f"request_{scope}_scan:{host}",
+                "allow",
+                f"Scanner failure ({type(exc).__name__}); request allowed (permissive mode)",
+            )
+            return
+        logger.warning("Request %s scan failed for %s; blocking fail-closed: %s", scope, host, exc)
+        flow.response = _make_block_response(
+            502,
+            "HermesKatana scanner failed; request blocked fail-closed.",
+        )
+        self._log_audit(
+            "SCAN_RESULT",
+            f"request_{scope}_scan:{host}",
+            "deny",
+            f"Scanner failure ({type(exc).__name__}); request blocked fail-closed",
+        )
+
+    def _fail_response_scan(self, flow: Any, host: str, scope: str, exc: Exception) -> None:
+        """Block the response fail-closed in strict/max; log-and-allow in permissive."""
+        self._increment_stat("responses_scan_errors")
+        if not self._fail_closed_active():
+            logger.warning(
+                "Response %s scan failed for %s; allowing in permissive mode: %s",
+                scope,
+                host,
+                exc,
+            )
+            self._log_audit(
+                "SCAN_RESULT",
+                f"response_{scope}_scan:{host}",
+                "allow",
+                f"Scanner failure ({type(exc).__name__}); response allowed (permissive mode)",
+            )
+            return
+        logger.warning("Response %s scan failed for %s; blocking fail-closed: %s", scope, host, exc)
+        try:
+            flow.response.set_content(b"[HermesKatana] Scanner failed; response blocked fail-closed.")
+            flow.response.status_code = 502
+            if self.config.add_scanned_header:
+                flow.response.headers["X-Katana-Scanned"] = "blocked"
+        except AttributeError:
+            flow.response = _make_block_response(
+                502,
+                "HermesKatana scanner failed; response blocked fail-closed.",
+            )
+        self._log_audit(
+            "SCAN_RESULT",
+            f"response_{scope}_scan:{host}",
+            "deny",
+            f"Scanner failure ({type(exc).__name__}); response blocked fail-closed",
+        )
 
     def _log_audit(
         self,
@@ -550,6 +889,13 @@ class KatanaAddon:
         """mitmproxy WebSocket message hook (GAP 3.3).
 
         Scans WebSocket message content through the same pipeline.
+
+        Codex audit finding #7 (LOW, 2026-05-07): WebSocket scanning previously
+        had no size cap, so a peer could send arbitrarily-large frames and
+        force expensive decode + scanner work. We now enforce
+        ``max_body_scan_size`` on raw bytes before decode; oversized frames are
+        replaced with a block marker (or, in permissive mode, scanned in
+        prefix-only mode).
         """
         try:
             msg = flow.websocket.messages[-1]
@@ -559,14 +905,37 @@ class KatanaAddon:
 
         self._increment_stat("ws_messages_total")
 
-        if isinstance(content, bytes):
-            text = content.decode("utf-8", errors="replace")
-        else:
-            text = str(content)
+        # Codex #7: pre-decode size gate.
+        cap = getattr(self.config, "max_body_scan_size", 0) or 0
+        if cap > 0 and isinstance(content, (bytes, bytearray)) and len(content) > cap:
+            self._increment_stat("ws_messages_oversized")
+            if self._fail_closed_active():
+                logger.warning(
+                    "WebSocket message %d bytes exceeds max_body_scan_size %d; blocking fail-closed",
+                    len(content),
+                    cap,
+                )
+                msg.content = b"[HermesKatana] WebSocket message exceeds size limit; blocked fail-closed."
+                self._log_audit(
+                    "SCAN_RESULT",
+                    "websocket_size",
+                    "deny",
+                    f"WebSocket message {len(content)} bytes exceeds max_body_scan_size {cap} (fail-closed)",
+                )
+                return
+            # Permissive mode: scan only the prefix.
+            content = bytes(content[:cap])
 
         try:
             direction = "request" if getattr(msg, "from_client", True) else "response"
-            scan_result = self._scan_text(text, direction=direction)
+            if isinstance(content, bytes):
+                if self._needs_binary_scan(content):
+                    scan_result = self._scan_bytes(content, direction=direction)
+                else:
+                    text = content.decode("utf-8", errors="replace")
+                    scan_result = self._scan_text(text, direction=direction)
+            else:
+                scan_result = self._scan_text(str(content), direction=direction)
 
             if scan_result["is_blocked"]:
                 self._increment_stat("ws_messages_blocked")
@@ -587,12 +956,30 @@ class KatanaAddon:
                     scan_result["summary"],
                 )
         except Exception as exc:
-            logger.debug("WebSocket scan error: %s", exc)
+            self._increment_stat("ws_messages_scan_errors")
+            if not self._fail_closed_active():
+                logger.warning("WebSocket scan failed; allowing in permissive mode: %s", exc)
+                self._log_audit(
+                    "SCAN_RESULT",
+                    "websocket_scan",
+                    "allow",
+                    f"Scanner failure ({type(exc).__name__}); websocket message allowed (permissive mode)",
+                )
+                return
+            logger.warning("WebSocket scan failed; blocking fail-closed: %s", exc)
+            self._increment_stat("ws_messages_blocked")
+            msg.content = b"[HermesKatana] Scanner failed; WebSocket message blocked fail-closed."
+            self._log_audit(
+                "SCAN_RESULT",
+                "websocket_scan",
+                "deny",
+                f"Scanner failure ({type(exc).__name__}); websocket message blocked fail-closed",
+            )
 
     def get_stats(self) -> dict[str, Any]:
         """Return addon statistics."""
         with self._stats_lock:
-            stats = dict(self._stats)
+            stats: dict[str, Any] = dict(self._stats)
         stats["rate_tracker"] = self._rate_tracker.get_stats()
         return stats
 
@@ -602,10 +989,18 @@ class KatanaAddon:
 # ------------------------------------------------------------------
 
 
+def _normalise_header_values(headers: Any) -> dict[str, str]:
+    """Return lowercase header names mapped to string values."""
+    try:
+        return {str(name).lower(): str(value) for name, value in headers.items()}
+    except AttributeError:
+        return {}
+
+
 def _get_client_id(flow: Any) -> str:
     """Extract a client identifier from a flow."""
     try:
-        return flow.client_conn.peername[0]
+        return str(flow.client_conn.peername[0])
     except (AttributeError, IndexError, TypeError):
         return "unknown"
 

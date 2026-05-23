@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import secrets
 from unittest.mock import patch
@@ -174,3 +175,24 @@ class TestVaultCircuitBreaker:
 
     def test_is_locked_initially_false(self, vault):
         assert vault.is_locked() is False
+
+    def test_stale_lock_is_removed(self, vault):
+        vault._lock_path.write_text(json.dumps({"pid": 999999, "reason": "circuit_breaker"}), encoding="utf-8")
+
+        with patch.object(vault, "_owner_is_running", return_value=False):
+            assert vault.is_locked() is False
+
+        assert not vault._lock_path.exists()
+
+    def test_unlock_refuses_live_foreign_lock(self, vault):
+        foreign_pid = os.getpid() + 1
+        vault._lock_path.write_text(json.dumps({"pid": foreign_pid, "reason": "circuit_breaker"}), encoding="utf-8")
+
+        with (
+            patch.object(vault, "_owner_pid", return_value=os.getpid()),
+            patch.object(vault, "_owner_is_running", return_value=True),
+        ):
+            with pytest.raises(VaultLockedError):
+                vault.unlock()
+
+        assert vault._lock_path.exists()

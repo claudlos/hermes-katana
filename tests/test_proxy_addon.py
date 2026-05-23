@@ -178,6 +178,21 @@ class TestRateTracker:
         # Violation should have decayed
 
 
+class TestProxyConfigScannerSecurityLevel:
+    def test_permissive_mode_defaults_to_low_scanner_security(self):
+        assert ProxyConfig(mode="permissive").scanner_security_level == "low"
+
+    def test_strict_mode_defaults_to_medium_scanner_security(self):
+        assert ProxyConfig(mode="strict").scanner_security_level == "medium"
+
+    def test_max_mode_defaults_to_high_scanner_security(self):
+        assert ProxyConfig(mode="max").scanner_security_level == "high"
+
+    def test_explicit_scanner_security_level_is_preserved(self):
+        cfg = ProxyConfig(mode="max", scanner_security_level="medium")
+        assert cfg.scanner_security_level == "medium"
+
+
 # ---------------------------------------------------------------------------
 # KatanaAddon tests
 # ---------------------------------------------------------------------------
@@ -265,6 +280,26 @@ class TestKatanaAddon:
             },
         ):
             addon.request(flow)
+        assert addon._stats.get("requests_blocked_scan", 0) >= 1
+
+    def test_request_pdf_body_uses_binary_scan(self):
+        addon = self._make_addon()
+        flow = MockFlow(host="example.com", headers={"content-type": "application/pdf"}, body=b"%PDF-1.7\n%%EOF\n")
+        clean = {"verdict": "pass", "risk_score": 0, "is_blocked": False, "finding_count": 0, "summary": ""}
+        blocked = {
+            "verdict": "block",
+            "risk_score": 100,
+            "is_blocked": True,
+            "finding_count": 1,
+            "summary": "pdf issue",
+        }
+        with (
+            patch.object(addon, "_scan_text", return_value=clean),
+            patch.object(addon, "_scan_bytes", return_value=blocked) as scan_bytes,
+        ):
+            addon.request(flow)
+
+        scan_bytes.assert_called_once()
         assert addon._stats.get("requests_blocked_scan", 0) >= 1
 
     def test_request_body_warned(self):
@@ -380,6 +415,38 @@ class TestKatanaAddon:
         ):
             addon.websocket_message(flow)
         assert addon._stats.get("ws_messages_total", 0) == 1
+
+    def test_websocket_scan_error_blocks_fail_closed(self):
+        addon = self._make_addon(mode="strict")
+        msg = MagicMock()
+        msg.content = b"hello ws"
+        msg.from_client = True
+        flow = MagicMock()
+        flow.request.host = "example.com"
+        flow.websocket.messages = [msg]
+
+        with patch.object(addon, "_scan_text", side_effect=RuntimeError("scanner crashed")):
+            addon.websocket_message(flow)
+
+        assert msg.content == b"[HermesKatana] Scanner failed; WebSocket message blocked fail-closed."
+        assert addon._stats.get("ws_messages_scan_errors", 0) == 1
+        assert addon._stats.get("ws_messages_blocked", 0) == 1
+
+    def test_websocket_scan_error_allows_only_in_permissive_mode(self):
+        addon = self._make_addon(mode="permissive")
+        msg = MagicMock()
+        msg.content = b"hello ws"
+        msg.from_client = True
+        flow = MagicMock()
+        flow.request.host = "example.com"
+        flow.websocket.messages = [msg]
+
+        with patch.object(addon, "_scan_text", side_effect=RuntimeError("scanner crashed")):
+            addon.websocket_message(flow)
+
+        assert msg.content == b"hello ws"
+        assert addon._stats.get("ws_messages_scan_errors", 0) == 1
+        assert addon._stats.get("ws_messages_blocked", 0) == 0
 
     def test_websocket_no_messages(self):
         addon = self._make_addon()

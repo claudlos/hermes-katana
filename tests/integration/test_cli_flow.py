@@ -166,7 +166,7 @@ class TestCLIGoldenPath:
         assert "Runtime State" in stdout
         assert "Target Checkout" in stdout
 
-        result, stdout, _ = _invoke(runner, monkeypatch, ["policy", "use", "paranoid"])
+        result, stdout, _ = _invoke(runner, monkeypatch, ["policy", "use", "max"])
         assert result.exit_code == 0
         assert config_file.exists()
         assert "Saved to:" in stdout

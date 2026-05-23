@@ -1,0 +1,31 @@
+{
+  "_comment": "v2 run — fully on subscription quotas. Teacher Opus 4.7 via Claude Max CLI, Critic A gpt-5.5 via Codex CLI, Critic B gpt-5.4 via Codex CLI. Earlier run hit 'Credit balance is too low' because ANTHROPIC_API_KEY in the env caused Claude Code to use API auth (with $0 balance) instead of Max OAuth — fixed by stripping that env var in the subprocess. Taxonomy (189 nodes / 162 leaves) reused via resume.",
+  "run_id": "katana_synth_v2_opus_elite",
+  "checkpoint_dir": "synthdata/checkpoints",
+  "teacher": {
+    "model": "opus",
+    "provider": "claude_cli",
+    "temperature": 0.8,
+    "max_tokens": 1500
+  },
+  "critic_a": {
+    "model": "gpt-5.5",
+    "provider": "codex_cli",
+    "temperature": 0.2,
+    "max_tokens": 400
+  },
+  "critic_b": {
+    "model": "gpt-5.4",
+    "provider": "codex_cli",
+    "temperature": 0.2,
+    "max_tokens": 400
+  },
+  "seed_corpus": "results/elite_attacks_n5.jsonl",
+  "seeds_per_label": 3,
+  "max_depth": 3,
+  "n_candidates_per_split": 7,
+  "scenarios_per_leaf": 5,
+  "texts_per_scenario": 3,
+  "complexify_fraction": 0.3,
+  "ops_budget": [1, 2]
+}

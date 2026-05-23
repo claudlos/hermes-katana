@@ -30,7 +30,6 @@ import hashlib
 import json
 import logging
 import os
-import platform
 import shutil
 import threading
 from datetime import datetime, timezone
@@ -39,6 +38,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from pydantic import BaseModel, Field
+from hermes_katana._files import AdvisoryFileLock
 
 logger = logging.getLogger(__name__)
 
@@ -50,72 +50,6 @@ _DEFAULT_MAX_SIZE = 10 * 1024 * 1024
 
 # Maximum number of rotated files to keep
 _DEFAULT_MAX_ROTATIONS = 10
-
-
-# ---------------------------------------------------------------------------
-# Cross-platform file locking
-# ---------------------------------------------------------------------------
-
-
-class _FileLock:
-    """Cross-platform advisory file lock.
-
-    Uses fcntl on Unix/macOS and msvcrt on Windows.
-    Supports context manager protocol.
-    """
-
-    def __init__(self, path: Path) -> None:
-        self._lock_path = path.with_suffix(path.suffix + ".lock")
-        self._fp: Any = None
-
-    def acquire(self) -> None:
-        """Acquire the file lock."""
-        self._fp = open(self._lock_path, "w")
-        try:
-            if platform.system() == "Windows":
-                import msvcrt
-
-                msvcrt.locking(self._fp.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX)
-        except (OSError, BlockingIOError):
-            # If non-blocking lock fails, try blocking
-            try:
-                if platform.system() != "Windows":
-                    import fcntl
-
-                    fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX)
-            except Exception:
-                pass
-
-    def release(self) -> None:
-        """Release the file lock."""
-        if self._fp is not None:
-            try:
-                if platform.system() == "Windows":
-                    import msvcrt
-
-                    msvcrt.locking(self._fp.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(self._fp.fileno(), fcntl.LOCK_UN)
-            except (OSError, BlockingIOError):
-                pass
-            try:
-                self._fp.close()
-            except Exception:
-                pass
-            self._fp = None
-
-    def __enter__(self) -> "_FileLock":
-        self.acquire()
-        return self
-
-    def __exit__(self, *args: Any) -> None:
-        self.release()
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +96,9 @@ class AuditEventType(str, Enum):
 
     SESSION_END = "session_end"
     """An agent session ended."""
+
+    TRAIL_CLEARED = "trail_cleared"
+    """The audit trail was explicitly cleared or reset."""
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +242,7 @@ class AuditTrail:
         self._path = path or _default_audit_path()
         self._max_size = max_size
         self._max_rotations = max_rotations
-        self._file_lock = _FileLock(self._path)
+        self._file_lock = AdvisoryFileLock(self._path)
         self._rlock = threading.RLock()
 
         # O(1) last-hash cache — this is the key improvement over aegis
@@ -381,6 +318,14 @@ class AuditTrail:
                 # Re-read the actual last hash from disk under lock
                 # (another process may have appended since our last write)
                 actual_last_hash = self._read_last_hash_from_file()
+                if (
+                    actual_last_hash == _GENESIS_HASH
+                    and self._last_hash != _GENESIS_HASH
+                    and (not self._path.exists() or self._path.stat().st_size == 0)
+                ):
+                    # After rotation the active file is intentionally empty, but
+                    # the next entry must continue from the rotated file's head.
+                    actual_last_hash = self._last_hash
                 if actual_last_hash != self._last_hash:
                     self._last_hash = actual_last_hash
 
@@ -428,6 +373,17 @@ class AuditTrail:
             return last_hash
         except Exception:
             return _GENESIS_HASH
+
+    def _chain_files(self) -> list[Path]:
+        """Return rotated audit logs followed by the active log."""
+        if not self._path.parent.exists():
+            return [self._path] if self._path.exists() else []
+        pattern = f"{self._path.stem}_*{self._path.suffix}"
+        rotated_files = sorted(self._path.parent.glob(pattern), key=lambda p: p.name)
+        files = [p for p in rotated_files if p.is_file()]
+        if self._path.exists():
+            files.append(self._path)
+        return files
 
     def _maybe_rotate(self) -> None:
         """Check if the log file needs rotation and rotate if so."""
@@ -497,6 +453,70 @@ class AuditTrail:
 
         Returns:
             True if the chain is valid, False if tampered.
+        """
+        files = self._chain_files()
+        if not files:
+            return True
+
+        prev_hash = _GENESIS_HASH
+        try:
+            for audit_file in files:
+                with open(audit_file, "r", encoding="utf-8") as fp:
+                    for line_num, line in enumerate(fp, 1):
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        try:
+                            data = json.loads(line)
+                        except json.JSONDecodeError:
+                            logger.error(
+                                "Chain verification failed: invalid JSON at %s:%d",
+                                audit_file,
+                                line_num,
+                            )
+                            return False
+
+                        # Check prev_hash linkage
+                        stored_prev = data.get("prev_hash", "")
+                        if stored_prev != prev_hash:
+                            logger.error(
+                                "Chain verification failed at %s:%d: prev_hash mismatch (expected %s..., got %s...)",
+                                audit_file,
+                                line_num,
+                                prev_hash[:12],
+                                stored_prev[:12],
+                            )
+                            return False
+
+                        # Recompute the entry hash
+                        stored_hash = data.get("entry_hash", "")
+                        entry = AuditEntry(**{k: v for k, v in data.items() if k != "entry_hash"})
+                        expected_hash = entry.compute_hash()
+
+                        if stored_hash != expected_hash:
+                            logger.error(
+                                "Chain verification failed at %s:%d: entry_hash mismatch (expected %s..., got %s...)",
+                                audit_file,
+                                line_num,
+                                expected_hash[:12],
+                                stored_hash[:12],
+                            )
+                            return False
+
+                        prev_hash = stored_hash
+
+            return True
+
+        except Exception as exc:
+            logger.error("Chain verification error: %s", exc)
+            return False
+
+    def verify_active_file(self) -> bool:
+        """Verify only the active audit file.
+
+        This is retained for diagnostics. Security checks should use
+        :meth:`verify_chain`, which verifies rotated logs and inter-file links.
         """
         if not self._path.exists():
             return True
@@ -668,22 +688,19 @@ class AuditTrail:
         return result
 
     def clear(self, *, include_rotations: bool = False) -> None:
-        """Clear the current audit trail and optionally rotated files."""
+        """Record a clear request without destroying hash-chain history."""
         with self._rlock:
-            with self._file_lock:
-                if self._path.exists():
-                    self._path.unlink()
-
-            if include_rotations and self._path.parent.exists():
-                pattern = f"{self._path.stem}_*{self._path.suffix}"
-                for rotated_path in self._path.parent.glob(pattern):
-                    try:
-                        rotated_path.unlink()
-                    except OSError:
-                        logger.debug("Could not delete rotated log %s", rotated_path, exc_info=True)
-
-            self._last_hash = _GENESIS_HASH
-            self._entry_count = 0
+            details = "Audit clear requested; log history preserved for chain integrity" + (
+                "; include_rotations requested but destructive deletion is disabled" if include_rotations else ""
+            )
+            self.log(
+                AuditEntry(
+                    event_type=AuditEventType.TRAIL_CLEARED,
+                    tool_name="audit.clear",
+                    decision="preserve_history",
+                    details=details,
+                )
+            )
 
     @property
     def path(self) -> Path:

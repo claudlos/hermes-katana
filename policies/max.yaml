@@ -1,0 +1,207 @@
+# HermesKatana built-in policy preset: max
+# Source of truth for PolicyEngine.with_defaults(); keep in sync via tests.
+
+name: max
+version: 1.0.0
+description: 'Maximum security: deny all side-effecting tool calls when any argument carries untrusted
+  taint.  Read-only tools are escalated.'
+author: HermesKatana
+metadata:
+  security_level: maximum
+  recommended_for: production
+policies:
+- name: max_terminal_tainted
+  description: Block terminal execution when any argument is tainted.
+  tool_pattern: terminal
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - critical
+- name: max_terminal_clean
+  description: Escalate even clean terminal calls for human review.
+  tool_pattern: terminal
+  conditions: []
+  action: escalate
+  priority: 50
+  tags:
+  - side-effect
+  - critical
+- name: max_write_file_tainted
+  description: Block file writes with tainted content.
+  tool_pattern: write_file
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - filesystem
+- name: max_patch_tainted
+  description: Block file patches with tainted content.
+  tool_pattern: patch
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - filesystem
+- name: max_send_message_tainted
+  description: Block outbound messages containing tainted data.
+  tool_pattern: send_message
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - exfiltration
+- name: max_memory_write_tainted
+  description: Block memory mutations (add/replace/remove) with taint.
+  tool_pattern: memory
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - persistence
+- name: max_skill_manage_tainted
+  description: Block skill installation/modification with tainted data.
+  tool_pattern: skill_manage
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - code-execution
+- name: max_delegate_tainted
+  description: Block task delegation when instructions are tainted.
+  tool_pattern: delegate_task
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - lateral-movement
+- name: max_cronjob_tainted
+  description: Block cron job creation with tainted payloads.
+  tool_pattern: cronjob
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - persistence
+- name: max_browser_click_tainted
+  description: Block browser click when arguments carry taint.
+  tool_pattern: browser_click*
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - browser
+- name: max_browser_type_tainted
+  description: Block browser type when arguments carry taint.
+  tool_pattern: browser_type*
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - browser
+- name: max_browser_press_tainted
+  description: Block browser press when arguments carry taint.
+  tool_pattern: browser_press*
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - browser
+- name: max_browser_navigate_tainted
+  description: Block browser navigate when arguments carry taint.
+  tool_pattern: browser_navigate*
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - browser
+- name: max_readonly_tainted
+  description: Escalate read-only tools when arguments are tainted.
+  tool_pattern: read_file
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: escalate
+  priority: 90
+  tags:
+  - read-only
+- name: max_search_tainted
+  description: Escalate search_files with tainted patterns (info recon).
+  tool_pattern: search_files
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: escalate
+  priority: 90
+  tags:
+  - read-only
+- name: max_catchall_tainted
+  description: Deny any remaining tool with tainted arguments.
+  tool_pattern: '*'
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: deny
+  priority: 10
+  tags:
+  - catchall
+- name: max_catchall_clean
+  description: "Deny all remaining calls \u2014 max denies unknown tools."
+  tool_pattern: '*'
+  conditions: []
+  action: deny
+  priority: 1
+  tags:
+  - catchall
+  - unknown-tool

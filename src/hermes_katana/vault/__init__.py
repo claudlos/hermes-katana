@@ -7,7 +7,7 @@ Provides hardened secret storage with:
 - Individual value encryption with per-value nonces
 - HMAC integrity verification over all entries
 - Key rotation mechanism (re-encrypt all values with new key)
-- Circuit breaker (vault.lock sentinel file)
+- Circuit breaker (vault.lock scabbard file)
 - Atomic writes via temp file + rename
 - Secret migration from env vars, config files, .env files
 

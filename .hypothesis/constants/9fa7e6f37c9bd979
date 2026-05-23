@@ -1,4 +1,0 @@
-# file: /usr/lib/python3/dist-packages/attr/_config.py
-# hypothesis_version: 6.151.10
-
-["'run' must be bool.", 'get_run_validators', 'set_run_validators']

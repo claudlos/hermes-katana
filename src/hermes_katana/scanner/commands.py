@@ -21,7 +21,9 @@ Performance: <1ms for typical command strings. All patterns precompiled.
 
 from __future__ import annotations
 
+import ipaddress
 import re
+import shlex
 import unicodedata
 from dataclasses import dataclass
 from enum import Enum
@@ -149,6 +151,12 @@ class CommandCategory(str, Enum):
     INFORMATION_GATHERING = "information_gathering"
     """Reconnaissance and information gathering."""
 
+    LATERAL_MOVEMENT = "lateral_movement"
+    """Techniques for moving between hosts/systems."""
+
+    PERSISTENCE = "persistence"
+    """Establishing persistent access or backdoors."""
+
 
 @dataclass(frozen=True, slots=True)
 class CommandFinding:
@@ -207,10 +215,34 @@ def _cp(
 
 _cp(
     "rm_rf_root",
-    r"\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*)\s+(/|\$\{?HOME\}?|~|\.\.|/etc|/var|/usr|/boot|/sys|/proc|\*)",
+    r"\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*)\s+(?:/\*|/(?=(?:\s|$|[;&|)\]]|['\"]))|\$\{?HOME\}?|~|\.\.|/(?:etc|var|usr|boot|sys|proc)(?=/|\s|$|[;&|)\]]|['\"])|\*)",
     CommandCategory.FILESYSTEM_DESTRUCTION,
     CommandSeverity.CRITICAL,
     "Recursive force deletion of critical directory. Can destroy entire filesystem.",
+)
+
+_cp(
+    "rm_recursive_force_critical_path",
+    r"\brm\b(?=[^;&|]*(?:--recursive|-r|-R))(?=[^;&|]*(?:--force|-f))[^;&|]*\s(?:--\s+)?(?:/\*|/(?=(?:\s|$|[;&|)\]]|['\"]))|\$\{?HOME\}?|~|\.\.|/(?:etc|var|usr|boot|sys|proc)(?=/|\s|$|[;&|)\]]|['\"])|\*)",
+    CommandCategory.FILESYSTEM_DESTRUCTION,
+    CommandSeverity.CRITICAL,
+    "Recursive force deletion of a critical path using long or split options.",
+)
+
+_cp(
+    "rm_root_explicit",
+    r"\brm\b[^;&|]*\s(?:--\s+)?/(?=(?:\s|$|[;&|)\]]|['\"]))",
+    CommandCategory.FILESYSTEM_DESTRUCTION,
+    CommandSeverity.CRITICAL,
+    "Explicit attempt to remove filesystem root.",
+)
+
+_cp(
+    "rm_recursive_directory",
+    r"\brm\b(?=[^;&|]*(?:--recursive|-r|-R))[^;&|]*(?:/tmp/|/var/|/usr/|/etc/|/home/|~|\.\.)",
+    CommandCategory.FILESYSTEM_DESTRUCTION,
+    CommandSeverity.HIGH,
+    "Recursive deletion of a directory using long or split options.",
 )
 
 _cp(
@@ -531,6 +563,78 @@ _cp(
     "Cgroup/proc-based container escape technique.",
 )
 
+_cp(
+    "iptables_flush",
+    r"\b(?:iptables|ip6tables|nft)\b.*\s(?:-F|--flush|-X)\b",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Firewall flush/disable - removes all network filtering rules, exposing services.",
+)
+
+_cp(
+    "firewall_cmd_flush",
+    r"\bfirewall-cmd\s+--(?:flush-all|reload|panic)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.HIGH,
+    "Firewalld flush or panic mode - disables network filtering.",
+)
+
+_cp(
+    "sysrq_trigger",
+    r"/proc/sysrq-trigger",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "SysRq trigger access - can crash/reboot host from container.",
+)
+
+_cp(
+    "sysrq_echo",
+    r"\becho\s+[bco]\s*>.*sysrq",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "SysRq command injection - forces host reboot (b), crash (c), or poweroff (o).",
+)
+
+_cp(
+    "nsenter_cmd_substitution",
+    r"\bnsenter\s+(?:-[a-zA-Z]*t|--target)\s+\$\(",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "nsenter with dynamic PID target via command substitution - container escape.",
+)
+
+_cp(
+    "docker_sock_curl",
+    r"(?:--unix-socket|socket=)\s*/var/run/docker\.sock",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Docker socket accessed via HTTP (curl/requests) - full host Docker control.",
+)
+
+_cp(
+    "k8s_api_access",
+    r"\bkubernetes\.default\.svc\b",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Kubernetes API server access from within cluster - potential lateral movement.",
+)
+
+_cp(
+    "k8s_service_token",
+    r"/var/run/secrets/kubernetes\.io/serviceaccount/token",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Kubernetes service account token access - credential theft for cluster access.",
+)
+
+_cp(
+    "k8s_kubelet_api",
+    r"(?:curl|wget).*10250\b",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Kubelet API direct access - can exec into pods and access node resources.",
+)
+
 # ============================
 # PRIVILEGE ESCALATION
 # ============================
@@ -581,6 +685,30 @@ _cp(
     CommandCategory.PRIVILEGE_ESCALATION,
     CommandSeverity.HIGH,
     "LD_PRELOAD injection - can hijack library loading for privesc.",
+)
+
+_cp(
+    "ld_audit",
+    r"\bLD_AUDIT\s*=\s*\S+",
+    CommandCategory.PRIVILEGE_ESCALATION,
+    CommandSeverity.HIGH,
+    "LD_AUDIT injection - audit library loading hijack for privesc.",
+)
+
+_cp(
+    "suid_discovery",
+    r"\bfind\s+\S+\s+.*-perm\s+-(?:4000|2000|u=s|g=s)",
+    CommandCategory.PRIVILEGE_ESCALATION,
+    CommandSeverity.HIGH,
+    "SUID/SGID binary discovery - reconnaissance for privilege escalation via GTFOBins.",
+)
+
+_cp(
+    "suid_binary_exploit",
+    r"(?:/usr/bin/)?(?:find|vim|vi|nmap|awk|perl|python|less|more|man|git)\b.*(?:-exec|!/bin/|-c\s.*system|BEGIN\s*\{system)",
+    CommandCategory.PRIVILEGE_ESCALATION,
+    CommandSeverity.CRITICAL,
+    "SUID binary exploitation pattern - GTFOBins privilege escalation.",
 )
 
 _cp(
@@ -655,6 +783,30 @@ _cp(
     "Base64 encoding piped to network tool - encoded data exfiltration.",
 )
 
+_cp(
+    "tar_ssh_exfil",
+    r"\btar\s+\S+\s+.*\|\s*(?:ssh|scp)\s+",
+    CommandCategory.DATA_STAGING,
+    CommandSeverity.CRITICAL,
+    "Archive creation piped to SSH - data exfiltration over encrypted channel.",
+)
+
+_cp(
+    "tar_nc_exfil",
+    r"\btar\s+\S+\s+.*\|\s*(?:nc|ncat|netcat)\s+",
+    CommandCategory.DATA_STAGING,
+    CommandSeverity.CRITICAL,
+    "Archive creation piped to netcat - raw data exfiltration.",
+)
+
+_cp(
+    "find_tar_exfil",
+    r"\bfind\s+.*\|\s*tar\s+",
+    CommandCategory.DATA_STAGING,
+    CommandSeverity.HIGH,
+    "Find results piped to tar - selective file exfiltration staging.",
+)
+
 # ============================
 # REVERSE SHELL
 # ============================
@@ -697,6 +849,22 @@ _cp(
     CommandCategory.REVERSE_SHELL,
     CommandSeverity.CRITICAL,
     "Named pipe with netcat - reverse shell technique.",
+)
+
+_cp(
+    "ruby_reverse_shell",
+    r"\bruby\s+.*-rsocket.*(?:TCPSocket|TCPServer|connect)",
+    CommandCategory.REVERSE_SHELL,
+    CommandSeverity.CRITICAL,
+    "Ruby reverse shell via socket library - remote access backdoor.",
+)
+
+_cp(
+    "powershell_reverse_shell",
+    r"\b(?:powershell|pwsh)\s+.*(?:IEX|Invoke-Expression|DownloadString|Net\.WebClient|TCPClient)",
+    CommandCategory.REVERSE_SHELL,
+    CommandSeverity.CRITICAL,
+    "PowerShell reverse shell or download-execute cradle.",
 )
 
 # ============================
@@ -788,6 +956,14 @@ _cp(
 )
 
 _cp(
+    "eval_base64_decode",
+    r"\b(?:eval|bash\s+-c|sh\s+-c)\b.*base64\s+(?:-d|--decode)",
+    CommandCategory.PIPE_TO_SHELL,
+    CommandSeverity.CRITICAL,
+    "Eval/bash wrapper decodes base64 content for execution.",
+)
+
+_cp(
     "xxd_hex_to_shell",
     r"xxd.*-r.*\|\s*(?:ba)?sh\b",
     CommandCategory.PIPE_TO_SHELL,
@@ -873,6 +1049,282 @@ _cp(
 )
 
 # ============================
+# CONTAINER ESCAPE (extended)
+# ============================
+
+_cp(
+    "docker_api_create_container",
+    r"(?:curl|wget|http)\s+.*(?:containers/create|exec/\w+/start|images/create)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Docker API container creation/exec via HTTP - host takeover via Docker socket.",
+)
+
+_cp(
+    "mount_host_filesystem",
+    r"\bmount\b.*(?:/dev/(?:sd|hd|nvme|vd|xvd)\w+|/dev/mapper/|--bind\s+/(?:etc|root|home|var))\s+",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Mounting host filesystem device or directory - container escape via mount.",
+)
+
+_cp(
+    "chroot_escape",
+    r"\bchroot\s+/(?:host|mnt|proc/\d+/root|sys)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Chroot to host filesystem path - container breakout via chroot.",
+)
+
+_cp(
+    "kubectl_exec_pod",
+    r"\bkubectl\s+(?:exec|run|create|apply|attach)\b.*(?:--\s*(?:bash|sh|/bin)|--command|--image\b.*--restart=Never)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "kubectl exec/run with shell - lateral movement within Kubernetes cluster.",
+)
+
+_cp(
+    "k8s_secret_access",
+    r"\bkubectl\s+(?:get|describe)\s+(?:secrets?|configmaps?)\b",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.HIGH,
+    "Kubernetes secret/configmap access - credential theft from cluster.",
+)
+
+_cp(
+    "k8s_pod_escape_hostpid",
+    r"\bkubectl\s+.*(?:hostPID|hostNetwork|hostIPC)\s*:\s*true",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Kubernetes pod spec with host namespace access - container escape.",
+)
+
+_cp(
+    "containerd_ctr_exec",
+    r"\b(?:ctr|crictl|nerdctl)\s+.*(?:exec|run)\b.*(?:--privileged|--net-host|--pid-host|--mount\s+type=bind)",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "containerd/crictl privileged container exec - container escape.",
+)
+
+_cp(
+    "proc_pid1_root",
+    r"/proc/1/root/",
+    CommandCategory.CONTAINER_ESCAPE,
+    CommandSeverity.CRITICAL,
+    "Access PID 1 root filesystem via /proc - direct host filesystem access from container.",
+)
+
+# ============================
+# LATERAL MOVEMENT
+# ============================
+
+_cp(
+    "nmap_scan",
+    r"\bnmap\s+(?:.*-s[STPUACWMOLFN]|.*-p[\s-]|.*--script\b|.*-O\b|.*-A\b|.*-sV\b)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Nmap network scanning - reconnaissance for lateral movement.",
+)
+
+_cp(
+    "masscan_scan",
+    r"\bmasscan\s+.*(?:-p\s*\d|--rate\s*\d|--ports?\b)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Masscan high-speed port scanning - reconnaissance for lateral movement.",
+)
+
+_cp(
+    "internal_net_scan",
+    r"\b(?:ping|arping|fping)\s+(?:-[a-zA-Z]*c\s+\d+\s+)?(?:10\.\d|172\.(?:1[6-9]|2\d|3[01])\.\d|192\.168\.\d)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.MEDIUM,
+    "Internal network host discovery - lateral movement recon.",
+)
+
+_cp(
+    "ssh_key_reuse",
+    r"\bssh\s+(?:.*-i\s+(?:/tmp|/dev/shm|/var/tmp)\S+|.*-o\s+StrictHostKeyChecking=no\b.*-o\s+UserKnownHostsFile=/dev/null)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "SSH with stolen key or security checks disabled - lateral movement.",
+)
+
+_cp(
+    "pass_the_hash",
+    r"\b(?:pth-\w+|evil-winrm|wmiexec|smbexec|psexec|atexec|dcomexec)\b",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.CRITICAL,
+    "Pass-the-hash or remote execution toolkit - lateral movement.",
+)
+
+_cp(
+    "impacket_tools",
+    r"\b(?:impacket-\w+|secretsdump|ntlmrelayx|responder|msfconsole|meterpreter)\b",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.CRITICAL,
+    "Impacket/Metasploit toolkit - offensive lateral movement tool.",
+)
+
+_cp(
+    "crackmapexec_lateral",
+    r"\b(?:crackmapexec|cme|netexec|nxc)\s+(?:smb|ssh|winrm|ldap|mssql)\b",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.CRITICAL,
+    "CrackMapExec/NetExec lateral movement tool.",
+)
+
+_cp(
+    "ansible_shell_injection",
+    r"\bansible\b.*(?:-m\s+(?:shell|command|raw)\s+-a|--extra-vars\b.*(?:;|&&|\||`)\b)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Ansible shell/command module abuse - remote execution across hosts.",
+)
+
+_cp(
+    "proxychains_tunnel",
+    r"\bproxychains\b.*(?:ssh|nmap|curl|wget|nc|netcat|crackmapexec)",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Proxychains with offensive tool - pivoting through compromised hosts.",
+)
+
+_cp(
+    "chisel_tunnel",
+    r"\b(?:chisel|ligolo|revsocks)\s+(?:server|client)\b",
+    CommandCategory.LATERAL_MOVEMENT,
+    CommandSeverity.HIGH,
+    "Chisel/Ligolo tunneling tool - pivot through network boundaries.",
+)
+
+# ============================
+# PERSISTENCE
+# ============================
+
+_cp(
+    "systemd_service_create",
+    r"(?:\bsystemctl\s+(?:enable|start)\s+\S+|/etc/systemd/system/\S+\.service|/usr/lib/systemd/system/\S+\.service)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Systemd service creation/enable - persistent backdoor.",
+)
+
+_cp(
+    "initd_script",
+    r"(?:/etc/init\.d/\S+|update-rc\.d\s+\S+\s+(?:defaults|enable)|chkconfig\s+\S+\s+on)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Init.d script creation/enable - persistent backdoor via legacy init.",
+)
+
+_cp(
+    "bashrc_profile_inject",
+    r"(?:>>?\s*(?:~/\.(?:bash(?:rc|_profile)|profile|zshrc|zprofile|zshenv)|/etc/(?:profile|bash\.bashrc|environment))\b|(?:echo|printf|cat)\s+.*>>?\s*\S*(?:\.bashrc|\.bash_profile|\.profile|\.zshrc))",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Shell profile modification - persistence via login/shell startup.",
+)
+
+_cp(
+    "authorized_keys_inject",
+    r"(?:>>?\s*\S*\.ssh/authorized_keys\b|ssh-(?:keygen|copy-id)\b.*(?:>>|tee\s+-a))",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "SSH authorized_keys modification - persistent SSH backdoor.",
+)
+
+_cp(
+    "kernel_module_load",
+    r"\b(?:insmod|modprobe)\s+\S+|/lib/modules/.*\.ko\b",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "Kernel module loading - rootkit/persistent kernel-level backdoor.",
+)
+
+_cp(
+    "udev_rules_inject",
+    r"/etc/udev/rules\.d/\S+\.rules",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Udev rule creation - persistence via device event triggers.",
+)
+
+_cp(
+    "xdg_autostart",
+    r"(?:~/.config/autostart/|/etc/xdg/autostart/)\S+\.desktop",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "XDG autostart entry - persistence via desktop login.",
+)
+
+_cp(
+    "git_hook_inject",
+    r"(?:>>?\s*\S*\.git/hooks/(?:pre-commit|post-commit|pre-push|post-receive|pre-receive|update)\b|chmod\s+\+x\s+\S*\.git/hooks/)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Git hook injection - persistence/code execution via repository hooks.",
+)
+
+_cp(
+    "ld_so_preload",
+    r"(?:>>?\s*/etc/ld\.so\.preload|/etc/ld\.so\.preload)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "/etc/ld.so.preload modification - system-wide library injection persistence.",
+)
+
+_cp(
+    "pam_module_inject",
+    r"/etc/pam\.d/\S+|/lib/(?:x86_64-linux-gnu/|aarch64-linux-gnu/)?security/pam_\S+\.so",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "PAM module creation/modification - authentication backdoor.",
+)
+
+_cp(
+    "webshell_deploy",
+    r"(?:(?:echo|printf|cat)\s+.*(?:<?php|eval\s*\(|exec\s*\(|system\s*\(|passthru|shell_exec)\s*.*>\s*(?:/var/www|/srv/www|/opt/lampp|public_html)|cp\s+.*\.php\s+(?:/var/www|/srv/www|public_html))",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.CRITICAL,
+    "Webshell deployment - persistent web-based backdoor.",
+)
+
+_cp(
+    "timer_service_create",
+    r"(?:/etc/systemd/system/\S+\.timer|systemctl\s+enable\s+\S+\.timer)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Systemd timer creation - persistence via scheduled execution.",
+)
+
+_cp(
+    "xinetd_service",
+    r"/etc/xinetd\.d/\S+",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "Xinetd service creation - persistence via network daemon.",
+)
+
+_cp(
+    "motd_inject",
+    r"(?:>>?\s*/etc/update-motd\.d/\S+|/etc/update-motd\.d/\S+)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "MOTD script injection - code execution on user login.",
+)
+
+_cp(
+    "rc_local_inject",
+    r"(?:>>?\s*/etc/rc\.local|chmod\s+\+x\s+/etc/rc\.local)",
+    CommandCategory.PERSISTENCE,
+    CommandSeverity.HIGH,
+    "rc.local modification - persistence via boot script.",
+)
+
+# ============================
 # PIPE CHAIN TO SHELL
 # ============================
 
@@ -894,6 +1346,14 @@ _cp(
     CommandCategory.PIPE_TO_SHELL,
     CommandSeverity.CRITICAL,
     "Process substitution feeding downloaded content to shell.",
+)
+
+_cp(
+    "bash_herestring_cmd_sub",
+    r"\b(?:bash|sh|zsh|dash|ksh)\s*<<<\s*\$\(",
+    CommandCategory.PIPE_TO_SHELL,
+    CommandSeverity.CRITICAL,
+    "Shell herestring feeding command-substitution output — hidden code execution via $(...) | shell.",
 )
 
 # ============================
@@ -926,7 +1386,10 @@ _cp(
 # ---------------------------------------------------------------------------
 
 _RE_BACKTICK = re.compile(r"`([^`]+)`")
+_RE_DOLLAR_PAREN = re.compile(r"\$\(([^()]*)\)")
+_RE_ANSI_C_QUOTE = re.compile(r"\$'((?:\\.|[^'])*)'")
 _RE_PATH_PREFIX = re.compile(r"(?:/usr)?(?:/local)?/s?bin/")
+_RE_VAR_ASSIGN = re.compile(r"(?:^|[;\s])([A-Za-z_][A-Za-z0-9_]*)=([^;\s|&]+)")
 
 
 def _strip_shell_quotes(cmd: str) -> str:
@@ -948,6 +1411,120 @@ def _strip_shell_quotes(cmd: str) -> str:
     # Strip path prefixes so /usr/bin/wget -> wget, /bin/bash -> bash
     cmd = _RE_PATH_PREFIX.sub("", cmd)
     return cmd
+
+
+def _decode_ansi_c_quotes(cmd: str) -> str:
+    """Decode simple bash ANSI-C quoted strings like ``$'\\x72m'``."""
+
+    def repl(match: re.Match[str]) -> str:
+        body = match.group(1)
+        try:
+            return bytes(body, "utf-8").decode("unicode_escape")
+        except UnicodeDecodeError:
+            return body
+
+    return _RE_ANSI_C_QUOTE.sub(repl, cmd)
+
+
+def _expand_basic_shell_vars(cmd: str) -> str:
+    """Expand simple same-line shell variables used for scanner evasion."""
+    assignments = {name: value.strip("\"'") for name, value in _RE_VAR_ASSIGN.findall(cmd)}
+    assignments.setdefault("IFS", " ")
+
+    def repl(match: re.Match[str]) -> str:
+        braced, bare = match.group(1), match.group(2)
+        name = braced or bare
+        return assignments.get(name, match.group(0))
+
+    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)", repl, cmd)
+
+
+def _shell_evasion_variants(cmd: str) -> tuple[str, ...]:
+    """Return normalized variants for common shell-level evasions."""
+    variants: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        if value not in seen:
+            variants.append(value)
+            seen.add(value)
+
+    add(cmd)
+    decoded = _decode_ansi_c_quotes(cmd)
+    add(decoded)
+    expanded = _expand_basic_shell_vars(decoded)
+    add(expanded)
+    stripped = _strip_shell_quotes(expanded)
+    add(stripped)
+    return tuple(variants)
+
+
+_NMAP_VALUE_OPTIONS = {
+    "-p",
+    "--top-ports",
+    "--exclude",
+    "--excludefile",
+    "-iL",
+    "-oA",
+    "-oG",
+    "-oN",
+    "-oX",
+    "--script",
+    "--script-args",
+}
+_NMAP_LOCAL_HIGH_RISK_OPTIONS = {"-A", "-O", "--script"}
+
+
+def _is_loopback_target(token: str) -> bool:
+    cleaned = token.strip("[]")
+    if cleaned.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(cleaned).is_loopback
+    except ValueError:
+        pass
+    try:
+        return ipaddress.ip_network(cleaned, strict=False).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_only_nmap(cmd: str) -> bool:
+    """Allow benign local port checks without weakening remote nmap detection."""
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        tokens = cmd.split()
+
+    try:
+        nmap_index = next(i for i, token in enumerate(tokens) if token == "nmap")
+    except StopIteration:
+        return False
+
+    targets: list[str] = []
+    index = nmap_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _NMAP_LOCAL_HIGH_RISK_OPTIONS or any(
+            token.startswith(f"{opt}=") for opt in _NMAP_LOCAL_HIGH_RISK_OPTIONS
+        ):
+            return False
+        if token in _NMAP_VALUE_OPTIONS:
+            index += 2
+            continue
+        if any(token.startswith(f"{opt}=") for opt in _NMAP_VALUE_OPTIONS):
+            index += 1
+            continue
+        if token.startswith("-p") and len(token) > 2:
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        targets.append(token)
+        index += 1
+
+    return bool(targets) and all(_is_loopback_target(target) for target in targets)
 
 
 # ---------------------------------------------------------------------------
@@ -997,15 +1574,14 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
     if not cmd:
         return []
 
-    # Shell quote/backslash stripping to defeat string-splitting evasions
-    stripped = _strip_shell_quotes(cmd)
-
     findings: list[CommandFinding] = []
 
-    # Scan both original and quote-stripped versions
-    for variant in (cmd, stripped) if stripped != cmd else (cmd,):
+    # Scan original plus quote/variable/ANSI-C normalized variants.
+    for variant in _shell_evasion_variants(cmd):
         for name, pattern, category, severity, description in _COMMAND_PATTERNS:
             for match in pattern.finditer(variant):
+                if name == "nmap_scan" and _is_loopback_only_nmap(variant):
+                    continue
                 findings.append(
                     CommandFinding(
                         pattern_name=name,
@@ -1017,7 +1593,7 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
                     )
                 )
 
-    # Backtick substitution: extract and recursively scan backtick content
+    # Backtick substitution: extract and recursively scan backtick content.
     for bt_match in _RE_BACKTICK.finditer(cmd):
         content = bt_match.group(1)
         sub_findings = detect_dangerous_command(content)
@@ -1037,14 +1613,33 @@ def detect_dangerous_command(cmd: str) -> list[CommandFinding]:
                 )
             )
 
-    # Replace backtick expressions with a dangerous placeholder so the
-    # surrounding command is checked in full, e.g. "rm -rf `echo /`" -> "rm -rf /"
-    if _RE_BACKTICK.search(cmd):
-        cmd_expanded = _RE_BACKTICK.sub("/", cmd)
-        expanded_stripped = _strip_shell_quotes(cmd_expanded)
-        for exp_variant in (cmd_expanded, expanded_stripped) if expanded_stripped != cmd_expanded else (cmd_expanded,):
+    # Dollar-parentheses command substitution: same execution semantics as
+    # backticks, but this is the common modern form.
+    for dp_match in _RE_DOLLAR_PAREN.finditer(cmd):
+        content = dp_match.group(1)
+        sub_findings = detect_dangerous_command(content)
+        findings.extend(sub_findings)
+        if not sub_findings and re.search(r"\b(?:curl|wget)\s+", content):
+            findings.append(
+                CommandFinding(
+                    pattern_name="dollar_paren_download_exec",
+                    severity=CommandSeverity.CRITICAL,
+                    matched_text=dp_match.group(),
+                    category=CommandCategory.PIPE_TO_SHELL,
+                    position=(dp_match.start(), dp_match.end()),
+                    description="Download command inside $() substitution - downloaded content is executed.",
+                )
+            )
+
+    # Replace command-substitution expressions with a dangerous placeholder so
+    # the surrounding command is checked in full, e.g. "rm -rf $(echo /)".
+    cmd_expanded = _RE_DOLLAR_PAREN.sub("/", _RE_BACKTICK.sub("/", cmd))
+    if cmd_expanded != cmd:
+        for exp_variant in _shell_evasion_variants(cmd_expanded):
             for name, pattern, category, severity, description in _COMMAND_PATTERNS:
                 for match in pattern.finditer(exp_variant):
+                    if name == "nmap_scan" and _is_loopback_only_nmap(exp_variant):
+                        continue
                     findings.append(
                         CommandFinding(
                             pattern_name=name,

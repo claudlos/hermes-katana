@@ -2,34 +2,58 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main, master, "release/**"]
   pull_request:
-    branches: [master]
+    branches: [main, master, "release/**"]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
 
 jobs:
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,security,fast-cpu,proving-ground]"
       - name: Ruff lint
         run: ruff check src/ tests/
       - name: Ruff format check
         run: ruff format --check src/ tests/
-      - name: Mypy type check
-        run: mypy src/hermes_katana/ --ignore-missing-imports --no-error-summary || true
+      - name: Generated policy assets check
+        run: python scripts/generate_policy_assets.py --check
+      - name: Mypy security/core smoke
+        run: >
+          mypy
+          src/hermes_katana/_version.py
+          src/hermes_katana/artifacts.py
+          src/hermes_katana/ml_artifacts.py
+          src/hermes_katana/runtime_artifacts.py
+          src/hermes_katana/policy/defaults.py
+          src/hermes_katana/policy/yaml_loader.py
+          src/hermes_katana/taint/codecs.py
+          --ignore-missing-imports
+          --no-error-summary
 
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -40,7 +64,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,security,fast-cpu,proving-ground]"
       - name: Run tests with coverage
         run: |
           pytest tests/ \

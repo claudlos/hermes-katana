@@ -71,11 +71,11 @@ def balanced_engine():
 
 
 @pytest.fixture
-def paranoid_engine():
-    """PolicyEngine with paranoid preset."""
+def max_engine():
+    """PolicyEngine with max preset."""
     from hermes_katana.policy.engine import PolicyEngine
 
-    return PolicyEngine.with_defaults("paranoid")
+    return PolicyEngine.with_defaults("max")
 
 
 @pytest.fixture

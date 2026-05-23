@@ -1,7 +1,7 @@
 """Tests for unknown tool handling across all policy presets.
 
 Verifies that unknown/new tools are handled securely:
-- PARANOID: deny unknown tools (both clean and tainted)
+- MAX: deny unknown tools (both clean and tainted)
 - BALANCED: escalate tainted unknown, allow clean (catch-all)
 - PERMISSIVE: log_only for unknown tools
 - Flow analyzer: defaults to ASK_USER for unknown flows
@@ -52,11 +52,11 @@ HIGH_TAINT_CTX: dict = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-class TestParanoidUnknownTools:
-    """PARANOID preset must deny all unknown tools."""
+class TestMaxUnknownTools:
+    """MAX preset must deny all unknown tools."""
 
     def setup_method(self):
-        self.engine = PolicyEngine.with_defaults("paranoid")
+        self.engine = PolicyEngine.with_defaults("max")
 
     def test_unknown_tool_clean_is_denied(self):
         result = self.engine.evaluate(FAKE_TOOL, {"arg": "hello"}, NO_TAINT)
@@ -136,8 +136,8 @@ class TestKnownToolsUnchanged:
         result = engine.evaluate("read_file", {"path": "/tmp/x"}, NO_TAINT)
         assert result.action == PolicyResult.ALLOW
 
-    def test_paranoid_tainted_terminal_denied(self):
-        engine = PolicyEngine.with_defaults("paranoid")
+    def test_max_tainted_terminal_denied(self):
+        engine = PolicyEngine.with_defaults("max")
         result = engine.evaluate("terminal", {"command": "ls"}, TAINTED_CTX)
         assert result.action == PolicyResult.DENY
 
@@ -201,8 +201,8 @@ class TestFlowAnalyzerDefaults:
 class TestEnginePresetDefaults:
     """Engine.with_defaults sets appropriate default_action per preset."""
 
-    def test_paranoid_default_deny(self):
-        engine = PolicyEngine.with_defaults("paranoid")
+    def test_max_default_deny(self):
+        engine = PolicyEngine.with_defaults("max")
         assert engine.default_action == PolicyResult.DENY
 
     def test_balanced_default_escalate(self):
@@ -213,9 +213,9 @@ class TestEnginePresetDefaults:
         engine = PolicyEngine.with_defaults("permissive")
         assert engine.default_action == PolicyResult.LOG_ONLY
 
-    def test_custom_engine_default_allow(self):
+    def test_custom_engine_default_deny(self):
         engine = PolicyEngine()
-        assert engine.default_action == PolicyResult.ALLOW
+        assert engine.default_action == PolicyResult.DENY
 
     def test_invalid_preset_raises(self):
         with pytest.raises(ValueError, match="Unknown preset"):

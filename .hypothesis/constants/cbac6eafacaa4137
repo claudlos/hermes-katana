@@ -1,4 +1,0 @@
-# file: /home/user/Documents/Code/hermes-katana/src/hermes_katana/middleware/chain.py
-# hypothesis_version: 6.151.10
-
-[0.0, 1000, 'Tool %r raised: %s', 'allow', 'deny', 'disabled', 'enabled', 'escalate', 'no reason']

@@ -137,6 +137,26 @@ def _sp(
     )
 
 
+# Canary/honeytoken echoes (synthetic values planted by Katana that should never
+# appear in model/tool output). Match both full and redacted forms used in evals.
+_sp(
+    "katana_canary_echo",
+    r"\bHKCANARY(?:_[A-Z0-9]+)*(?:\.\.\.[A-Z0-9]+)?\b",
+    SecretCategory.TOKEN,
+    SecretSeverity.CRITICAL,
+    "HermesKatana canary/honeytoken value echoed back — indicates exfiltration or memory bleed.",
+    re.IGNORECASE,
+)
+
+_sp(
+    "redacted_secret_parameter",
+    r"\b(?:api[_-]?key|token|auth[_-]?token|session[_-]?id|password|secret)\s*[=:]\s*(?:\*{3,}|HKCANARY[A-Z0-9_\.]+)",
+    SecretCategory.TOKEN,
+    SecretSeverity.CRITICAL,
+    "Redacted or canary secret assigned to a sensitive parameter.",
+    re.IGNORECASE,
+)
+
 # AWS Access Key ID (starts with AKIA, 20 chars)
 _sp(
     "aws_access_key",

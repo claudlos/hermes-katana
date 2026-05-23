@@ -1,0 +1,33 @@
+{
+  "_comment": "v3 — gap-fill for the 6 katana labels v2 never expanded (behavioral_control, exfiltration_attempt, jailbreak, cognitive_state_attack, encoding_evasion, persona_jailbreak). Same models/providers as v2; resumes from v2's taxonomy with the 6 gap labels properly recursed (via synthdata.expand_gap_labels). Smaller per-leaf scope to stay within ~80% of weekly Max Opus quota.",
+  "run_id": "katana_synth_v3_gap6",
+  "checkpoint_dir": "synthdata/checkpoints",
+  "teacher": {
+    "model": "opus",
+    "provider": "claude_cli",
+    "temperature": 0.8,
+    "max_tokens": 1500
+  },
+  "critic_a": {
+    "model": "MiniMax-M2.7",
+    "provider": "hermes_cli",
+    "base_url": "minimax",
+    "temperature": 0.1,
+    "max_tokens": 400
+  },
+  "critic_b": {
+    "model": "MiniMax-M2.5",
+    "provider": "hermes_cli",
+    "base_url": "minimax",
+    "temperature": 0.3,
+    "max_tokens": 400
+  },
+  "seed_corpus": "results/elite_attacks_n5.jsonl",
+  "seeds_per_label": 3,
+  "max_depth": 3,
+  "n_candidates_per_split": 5,
+  "scenarios_per_leaf": 3,
+  "texts_per_scenario": 2,
+  "complexify_fraction": 0.20,
+  "ops_budget": [1, 2]
+}

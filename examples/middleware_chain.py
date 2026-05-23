@@ -9,19 +9,25 @@ Demonstrates:
 
 Run:  python3 examples/middleware_chain.py
 """
-import sys, os
+
+import sys
+import os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from hermes_katana.middleware import MiddlewareChain, CallContext, DispatchDecision, KatanaMiddleware
 
+
 # --- Custom middleware: scan for injection in tool args ---
 class ScannerMiddleware(KatanaMiddleware):
     """Scans tool arguments for prompt injection and dangerous commands."""
+
     def __init__(self):
         super().__init__("scanner", priority=10)
 
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         from hermes_katana.scanner import scan_input, scan_command
+
         # Scan all string args
         for key, val in ctx.args.items():
             if isinstance(val, str):
@@ -37,9 +43,11 @@ class ScannerMiddleware(KatanaMiddleware):
                         return DispatchDecision.DENY
         return DispatchDecision.ALLOW
 
+
 # --- Custom middleware: log all calls ---
 class AuditMiddleware(KatanaMiddleware):
     """Logs every tool call for audit purposes."""
+
     def __init__(self):
         super().__init__("audit", priority=100)
         self.log = []
@@ -51,6 +59,7 @@ class AuditMiddleware(KatanaMiddleware):
     def post_dispatch(self, ctx: CallContext) -> None:
         status = "DENIED" if ctx.is_denied else "OK"
         self.log.append(f"POST {ctx.tool_name} -> {status}")
+
 
 # 1. Build the chain
 print("=== Building Middleware Chain ===")

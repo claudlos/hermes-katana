@@ -168,9 +168,17 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         \"\"\"
         {sentinel}
         # --- Katana middleware interception ---
+        _katana_chain = None
         try:
             from hermes_katana.middleware import MiddlewareChain, CallContext, DispatchDecision
             _katana_chain = getattr(self, '_katana_chain', None)
+            _katana_failed = getattr(self, '_katana_bootstrap_failed', False)
+            _katana_discovered = getattr(self, '_katana_checkout_discovered', False)
+            _katana_failed_err = getattr(self, '_katana_bootstrap_error', None) or 'unknown error'
+            if _katana_failed or (_katana_discovered and _katana_chain is None):
+                return json.dumps({{
+                    "error": f"Katana security bootstrap failed; refusing to dispatch tool '{{name}}': {{_katana_failed_err}}"
+                }})
             if _katana_chain is not None:
                 _katana_ctx = CallContext(tool_name=name, args=args)
                 _katana_decision = _katana_chain.execute_pre(_katana_ctx)
@@ -193,8 +201,10 @@ CURRENT_CORE_PATCHES: list[Patch] = [
                         return json.dumps({{
                             "error": f"Katana escalation denied for '{{name}}'"
                         }})
-        except ImportError:
-            _katana_chain = None
+        except Exception as _katana_exc:
+            return json.dumps({{
+                "error": f"Katana security bootstrap failed; blocking tool '{{name}}': {{type(_katana_exc).__name__}}: {{_katana_exc}}"
+            }})
         # --- End Katana middleware ---
         entry = self._tools.get(name)
         if not entry:
@@ -210,6 +220,7 @@ CURRENT_CORE_PATCHES: list[Patch] = [
                 if _katana_chain is not None:
                     _katana_ctx.tool_output = result
                     _katana_chain.execute_post(_katana_ctx)
+                    result = _katana_ctx.tool_output
             except (NameError, Exception):
                 pass
             # --- End Katana post-dispatch ---
@@ -240,10 +251,12 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         {sentinel}
         # --- Katana bootstrap ---
         try:
-            from hermes_katana.bootstrap import ensure_dispatcher_bootstrap
-            ensure_dispatcher_bootstrap(self)
-        except Exception:
-            pass
+            from hermes_katana.bootstrap import bootstrap_dispatcher_failsafe
+            bootstrap_dispatcher_failsafe(self)
+        except Exception as _katana_bootstrap_exc:
+            self._katana_bootstrap_failed = True
+            self._katana_bootstrap_error = f"{{type(_katana_bootstrap_exc).__name__}}: {{_katana_bootstrap_exc}}"
+            self._katana_checkout_discovered = True
         # --- End Katana bootstrap ---""".format(sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap"),
         sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap",
         critical=True,
@@ -455,9 +468,23 @@ LEGACY_CORE_PATCHES: list[Patch] = [
         \"\"\"Dispatch a tool call.\"\"\"
         {sentinel}
         # --- Katana middleware interception ---
+        _katana_chain = None
+        _katana_ctx = None
         try:
             from hermes_katana.middleware import MiddlewareChain, CallContext, DispatchDecision
+        except ImportError as _katana_import_exc:
+            raise PermissionError(
+                f"Katana middleware unavailable; refusing to dispatch tool '{{tool_name}}': {{_katana_import_exc}}"
+            )
+        try:
             _katana_chain = getattr(self, '_katana_chain', None)
+            _katana_failed = getattr(self, '_katana_bootstrap_failed', False)
+            _katana_discovered = getattr(self, '_katana_checkout_discovered', False)
+            _katana_failed_err = getattr(self, '_katana_bootstrap_error', None) or 'unknown error'
+            if _katana_failed or (_katana_discovered and _katana_chain is None):
+                raise PermissionError(
+                    f"Katana security bootstrap failed; refusing to dispatch tool '{{tool_name}}': {{_katana_failed_err}}"
+                )
             if _katana_chain is not None:
                 _katana_ctx = CallContext(tool_name=tool_name, args=args)
                 _katana_decision = _katana_chain.execute_pre(_katana_ctx)
@@ -471,18 +498,23 @@ LEGACY_CORE_PATCHES: list[Patch] = [
                         raise PermissionError(
                             f"Katana escalation denied for '{{tool_name}}'"
                         )
-        except ImportError:
-            pass
+        except PermissionError:
+            raise
+        except Exception as _katana_exc:
+            raise PermissionError(
+                f"Katana security bootstrap failed; blocking tool '{{tool_name}}': {{type(_katana_exc).__name__}}: {{_katana_exc}}"
+            )
         # --- End Katana middleware ---
         tool = self.get_tool(tool_name)
         result = await tool.execute(**args)
         # --- Katana post-dispatch ---
-        try:
-            if _katana_chain is not None:
+        if _katana_chain is not None and _katana_ctx is not None:
+            try:
                 _katana_ctx.tool_output = result
                 _katana_chain.execute_post(_katana_ctx)
-        except (ImportError, NameError):
-            pass
+                result = _katana_ctx.tool_output
+            except Exception:
+                pass
         # --- End Katana post-dispatch ---
         return result""".format(sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook"),
         sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook",
@@ -500,10 +532,12 @@ LEGACY_CORE_PATCHES: list[Patch] = [
         replace_text="""\
             {sentinel}
             try:
-                from hermes_katana.bootstrap import ensure_dispatcher_bootstrap
-                ensure_dispatcher_bootstrap(self)
-            except Exception:
-                pass
+                from hermes_katana.bootstrap import bootstrap_dispatcher_failsafe
+                bootstrap_dispatcher_failsafe(self)
+            except Exception as _katana_bootstrap_exc:
+                self._katana_bootstrap_failed = True
+                self._katana_bootstrap_error = f"{{type(_katana_bootstrap_exc).__name__}}: {{_katana_bootstrap_exc}}"
+                self._katana_checkout_discovered = True
             _katana_chain = getattr(self, '_katana_chain', None)""".format(
             sentinel=f"{_SENTINEL_PREFIX} dispatcher_bootstrap"
         ),

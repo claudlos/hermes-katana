@@ -16,6 +16,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from hermes_katana.taint.labels import Source, TrustLevel
 from hermes_katana.taint.tracker import TaintTracker
@@ -58,7 +59,7 @@ def taint_user_input(
     """
     source = Source.user(origin=source_id, **metadata)
     tracker = _get_tracker()
-    return tracker.register(text, source)
+    return cast(TaintedStr, tracker.register(text, source))
 
 
 def taint_tool_output(
@@ -80,7 +81,7 @@ def taint_tool_output(
     """
     source = Source.tool(tool_name=tool_name, trust=trust, **metadata)
     tracker = _get_tracker()
-    return tracker.register(result, source)
+    return cast(TaintedStr, tracker.register(result, source))
 
 
 def taint_web_content(
@@ -100,7 +101,7 @@ def taint_web_content(
     """
     source = Source.web(url=url, **metadata)
     tracker = _get_tracker()
-    return tracker.register(content, source)
+    return cast(TaintedStr, tracker.register(content, source))
 
 
 def taint_file_content(
@@ -122,7 +123,7 @@ def taint_file_content(
     """
     source = Source.file(path=path, trust=trust, **metadata)
     tracker = _get_tracker()
-    return tracker.register(content, source)
+    return cast(TaintedStr, tracker.register(content, source))
 
 
 def taint_mcp_result(
@@ -144,7 +145,7 @@ def taint_mcp_result(
     """
     source = Source.mcp_tool_result(server=server_name, tool_name=tool_name, **metadata)
     tracker = _get_tracker()
-    return tracker.register(result, source)
+    return cast(TaintedStr, tracker.register(result, source))
 
 
 def taint_mcp_description(
@@ -166,7 +167,7 @@ def taint_mcp_description(
     """
     source = Source.mcp_tool_description(server=server_name, tool_name=tool_name, **metadata)
     tracker = _get_tracker()
-    return tracker.register(description, source)
+    return cast(TaintedStr, tracker.register(description, source))
 
 
 def taint_llm_response(
@@ -186,7 +187,7 @@ def taint_llm_response(
     """
     source = Source.agent(model=model, **metadata)
     tracker = _get_tracker()
-    return tracker.register(content, source)
+    return cast(TaintedStr, tracker.register(content, source))
 
 
 def taint_memory(
@@ -208,7 +209,7 @@ def taint_memory(
     """
     source = Source.memory(key=key, trust=trust, **metadata)
     tracker = _get_tracker()
-    return tracker.register(content, source)
+    return cast(TaintedStr, tracker.register(content, source))
 
 
 def taint_delegated(
@@ -228,4 +229,4 @@ def taint_delegated(
     """
     source = Source.agent_delegated(task_id=task_id, **metadata)
     tracker = _get_tracker()
-    return tracker.register(content, source)
+    return cast(TaintedStr, tracker.register(content, source))

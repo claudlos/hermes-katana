@@ -1,4 +1,0 @@
-# file: /usr/lib/python3/dist-packages/gi/_option.py
-# hypothesis_version: 6.151.10
-
-[b'\x00', ' - ', '%prog', '--', 'BadOptionError', 'GLib', 'OptParseError', 'Option', 'OptionConflictError', 'OptionError', 'OptionGroup', 'OptionParser', 'OptionValueError', 'error', 'filename', 'help_enabled', 'hidden', 'in_main', 'make_option', 'option_class', 'optional_arg', 'utf-8']

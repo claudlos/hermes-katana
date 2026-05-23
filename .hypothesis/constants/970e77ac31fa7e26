@@ -1,4 +1,0 @@
-# file: /home/user/Documents/Code/hermes-katana/src/hermes_katana/taint/flow.py
-# hypothesis_version: 6.151.10
-
-[100, 105, 110, 1000, '*', ', ', 'api_call', 'bash', 'browser_click', 'browser_type', 'cronjob', 'delegate_task', 'eval', 'exec', 'execute', 'fetch', 'file_write', 'http_request', 'mcp_patch', 'memory_delete', 'memory_update', 'memory_write', 'os.system', 'patch', 'run_command', 'send_email', 'send_message', 'shell', 'skill_manage', 'skill_view', 'skills_list', 'subprocess', 'terminal', 'text_to_speech', 'write_file']

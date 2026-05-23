@@ -33,9 +33,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
 
-from hermes_katana.taint import Source, TaintedStr
+from hermes_katana.taint import Source, TaintedBytes, TaintedStr, TaintedValue
 
-from .defaults import BUILTIN_POLICY_SETS
+from .defaults import BUILTIN_POLICY_SETS, load_builtin_policy_set
 from .models import (
     Condition,
     ConditionOperator,
@@ -118,6 +118,8 @@ BENIGN_COMMANDS: set[str] = {
 }
 
 # Git subcommands that are read-only / safe
+# NOTE: "stash" is intentionally excluded — it writes to the stash ref and
+# modifies the working tree, making it a side-effecting operation.
 BENIGN_GIT_SUBCOMMANDS: set[str] = {
     "status",
     "log",
@@ -126,7 +128,6 @@ BENIGN_GIT_SUBCOMMANDS: set[str] = {
     "branch",
     "tag",
     "remote",
-    "stash",
     "describe",
     "shortlog",
     "reflog",
@@ -425,8 +426,9 @@ class PolicyEngine:
     policy whose *all* conditions are satisfied determines the result.
 
     If no policy matches, the engine returns a configurable default action
-    (``ALLOW`` by default — explicit-deny is recommended via catch-all
-    policies in the loaded policy set).
+    (``DENY`` when constructed directly; ``ESCALATE`` when loaded from a file
+    or directory — explicit catch-all policies in the loaded policy set are
+    always preferred over relying on this fallback).
 
     Thread safety: all mutations are protected by a reentrant lock so the
     engine can be shared across threads and updated via hot-reload.
@@ -451,7 +453,7 @@ class PolicyEngine:
         self,
         policies: Sequence[Policy] | None = None,
         *,
-        default_action: PolicyResult = PolicyResult.ALLOW,
+        default_action: PolicyResult = PolicyResult.DENY,
     ):
         """
         Args:
@@ -475,7 +477,7 @@ class PolicyEngine:
         """Create an engine pre-loaded with a built-in policy set.
 
         Args:
-            preset: One of ``paranoid``, ``balanced``, ``permissive``.
+            preset: One of ``max``, ``balanced``, ``permissive``.
 
         Returns:
             A new PolicyEngine with the built-in policies loaded.
@@ -483,15 +485,16 @@ class PolicyEngine:
         Raises:
             ValueError: If *preset* is not a known built-in name.
         """
-        raw = BUILTIN_POLICY_SETS.get(preset)
-        if raw is None:
+        try:
+            raw = load_builtin_policy_set(preset)
+        except KeyError as exc:
             available = ", ".join(sorted(BUILTIN_POLICY_SETS))
-            raise ValueError(f"Unknown preset '{preset}'. Available: {available}")
+            raise ValueError(f"Unknown preset '{preset}'. Available: {available}") from exc
 
         ps = PolicySet.model_validate(raw)
         # Use preset-appropriate default action instead of blanket ALLOW
         _preset_defaults = {
-            "paranoid": PolicyResult.DENY,
+            "max": PolicyResult.DENY,
             "balanced": PolicyResult.ESCALATE,
             "permissive": PolicyResult.LOG_ONLY,
         }
@@ -516,7 +519,9 @@ class PolicyEngine:
             A new PolicyEngine with the file's policies loaded.
         """
         ps = load_policy_file(path)
-        engine = cls(policies=ps.policies)
+        # Default to ESCALATE (not ALLOW) so custom files without a catch-all
+        # don't silently permit every unmatched tool call.
+        engine = cls(policies=ps.policies, default_action=PolicyResult.ESCALATE)
         engine._policy_set_name = ps.name
         return engine
 
@@ -545,7 +550,9 @@ class PolicyEngine:
             all_policies.extend(ps.policies)
             name_parts.append(ps.name)
 
-        engine = cls(policies=all_policies)
+        # Default to ESCALATE (not ALLOW) so a directory without a catch-all
+        # doesn't silently permit every unmatched tool call.
+        engine = cls(policies=all_policies, default_action=PolicyResult.ESCALATE)
         engine._policy_set_name = "+".join(name_parts) if name_parts else "empty"
 
         if watch:
@@ -568,6 +575,11 @@ class PolicyEngine:
         This function canonicalizes:
           * ``TaintedStr``    -> ("tainted_str", content, sorted_label_ids,
                                   sorted_source_fingerprints)
+          * ``TaintedBytes``  -> ("tainted_bytes", bytes, sorted_label_ids,
+                                  sorted_source_fingerprints)
+          * ``TaintedValue``  -> ("tainted_value", wrapped value fingerprint,
+                                  sorted_label_ids, sorted_source_fingerprints,
+                                  sorted_reader_fingerprints)
           * ``Source``         -> ("source", label, origin, trust_level)
                                   (timestamp INTENTIONALLY omitted; including
                                    it would make cache misses the norm and
@@ -590,6 +602,38 @@ class PolicyEngine:
                 )
             )
             return ("tainted_str", str.__str__(obj), label_names, source_fps)
+        if isinstance(obj, TaintedBytes):
+            label_names = tuple(sorted(getattr(lab, "name", repr(lab)) for lab in obj.labels))
+            source_fps = tuple(
+                sorted(
+                    (repr(PolicyEngine._canonical_taint_fingerprint(s)) for s in (getattr(obj, "sources", None) or ()))
+                )
+            )
+            reader_fps = tuple(
+                sorted(
+                    (repr(PolicyEngine._canonical_taint_fingerprint(r)) for r in (getattr(obj, "readers", None) or ()))
+                )
+            )
+            return ("tainted_bytes", bytes(obj), label_names, source_fps, reader_fps)
+        if isinstance(obj, TaintedValue):
+            label_names = tuple(sorted(getattr(lab, "name", repr(lab)) for lab in obj.labels))
+            source_fps = tuple(
+                sorted(
+                    (repr(PolicyEngine._canonical_taint_fingerprint(s)) for s in (getattr(obj, "sources", None) or ()))
+                )
+            )
+            reader_fps = tuple(
+                sorted(
+                    (repr(PolicyEngine._canonical_taint_fingerprint(r)) for r in (getattr(obj, "readers", None) or ()))
+                )
+            )
+            return (
+                "tainted_value",
+                PolicyEngine._canonical_taint_fingerprint(obj.value),
+                label_names,
+                source_fps,
+                reader_fps,
+            )
         if isinstance(obj, Source):
             return (
                 "source",
@@ -666,7 +710,8 @@ class PolicyEngine:
 
     def invalidate_cache(self) -> None:
         """Clear the evaluation cache (called on policy mutations)."""
-        self._eval_cache.clear()
+        with self._lock:
+            self._eval_cache.clear()
 
     def evaluate(
         self,
@@ -767,12 +812,13 @@ class PolicyEngine:
 
     def _cache_put(self, key: str, result: EvaluationResult) -> None:
         """Insert into cache, evicting oldest if over limit."""
-        if len(self._eval_cache) >= self._EVAL_CACHE_MAX:
-            # Evict ~25% of oldest entries
-            keys = list(self._eval_cache.keys())
-            for k in keys[: len(keys) // 4]:
-                self._eval_cache.pop(k, None)
-        self._eval_cache[key] = result
+        with self._lock:
+            if len(self._eval_cache) >= self._EVAL_CACHE_MAX:
+                # Evict ~25% of oldest entries
+                keys = list(self._eval_cache.keys())
+                for k in keys[: len(keys) // 4]:
+                    self._eval_cache.pop(k, None)
+            self._eval_cache[key] = result
 
     def evaluate_batch(
         self,
