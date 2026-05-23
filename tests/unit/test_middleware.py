@@ -59,6 +59,18 @@ class RecordingMiddleware(KatanaMiddleware):
         self.record.append(f"post:{self.name}")
 
 
+class TestKatanaTaintMiddleware:
+    def test_find_tainted_checks_dict_keys(self):
+        from hermes_katana.middleware.taint_middleware import KatanaTaintMiddleware
+        from hermes_katana.taint import Source, TaintTracker
+
+        tainted_key = TaintTracker().register("attacker_key", Source.web("https://example.invalid"))
+
+        found = KatanaTaintMiddleware._find_tainted({tainted_key: "value"})
+
+        assert found == [tainted_key]
+
+
 # ======================================================================
 # Chain execution order
 # ======================================================================
@@ -328,9 +340,19 @@ class TestCreateDefaultChain:
 
         chain = create_default_chain()
         names = {mw.name for mw in chain.list_middleware()}
-        # Should have at least taint, scan, policy, audit
+        # Core middleware
         assert "katana.taint" in names
+        assert "katana.scabbard" in names
+        assert "katana.protectai" in names
+        assert "katana.scabbard_secondary" in names
         assert "katana.scan" in names
+        # New scanners (mcp, multiturn, rag_injection)
+        assert "katana.mcp" in names
+        assert "katana.multiturn" in names
+        assert "katana.rag_injection" in names
+        # Structural, behavioral, policy, audit
+        assert "katana.structural" in names
+        assert "katana.behavioral" in names
         assert "katana.policy" in names
         assert "katana.audit" in names
 

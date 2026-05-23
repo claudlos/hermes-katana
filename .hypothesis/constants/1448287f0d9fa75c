@@ -1,4 +1,0 @@
-# file: /usr/lib/python3/dist-packages/dbus/mainloop/glib.py
-# hypothesis_version: 6.151.10
-
-['DBusGMainLoop', 'threads_init']

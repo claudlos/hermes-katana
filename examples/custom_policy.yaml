@@ -9,7 +9,7 @@ version: "1.0"
 description: "Example policy extending balanced defaults with stricter terminal rules"
 author: security-team
 
-# Inherit from a built-in preset (paranoid / balanced / permissive)
+# Inherit from a built-in preset (max / balanced / permissive)
 extends: balanced
 
 policies:

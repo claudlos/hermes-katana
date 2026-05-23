@@ -1,0 +1,438 @@
+schema_version: 1
+
+# Seeded from observed agent_ids in results/agent_shard_runs/ + agent_cli_runner
+# inspection. Edit in-place when new agents land.
+#
+# Booleans reflect the harness AS USED in this project's fleet. If a harness
+# is configurable (e.g. Claude Code's permissions can be relaxed via flags),
+# the profile reflects what OUR runner actually invoked. See
+# sandbox/agent_cli_runner.py for the CLI flags per agent.
+
+agents:
+
+  # ---------------- Claude (Anthropic) ----------------
+  claude_cli:
+    model_family: claude
+    model_size: large         # default Claude Code model (often Sonnet)
+    harness_type: cli_coding_agent
+    instruction_hier: true
+    bash_allowlist: strict    # tool approval gates by default
+    untrusted_marker: true
+    permission_gate: true     # --dangerously-skip-permissions OFF in our default runs
+    scanner_layer: false
+    tool_auto_exec: false
+    multi_turn: false         # we invoke --print (non-interactive one-shot)
+    notes: "Claude Code CLI default (model auto-selected)"
+  claude_cli_sonnet:
+    model_family: claude
+    model_size: large
+    harness_type: cli_coding_agent
+    instruction_hier: true
+    bash_allowlist: strict
+    untrusted_marker: true
+    permission_gate: false    # we pass --dangerously-skip-permissions for fleet runs
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: false
+    notes: "Claude Code CLI pinned to Sonnet; --dangerously-skip-permissions for fleet throughput"
+  claude_cli_haiku:
+    model_family: claude
+    model_size: small
+    harness_type: cli_coding_agent
+    instruction_hier: true
+    bash_allowlist: strict
+    untrusted_marker: true
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: false
+    notes: "Claude Code CLI pinned to Haiku; permissions skipped for fleet"
+
+  hermes_claude_haiku:
+    model_family: claude
+    model_size: small
+    harness_type: hermes_agent
+    instruction_hier: false     # Hermes has flatter system prompt
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "Claude-Haiku accessed through Hermes agent harness (flat tool registry)"
+
+  hermes_or_claude_sonnet_4_6:
+    model_family: claude
+    model_size: large
+    harness_type: openrouter_relay
+    instruction_hier: false
+    bash_allowlist: none
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "Claude Sonnet via OpenRouter → Hermes; no Claude Code permission layer"
+
+  # ---------------- OpenAI ----------------
+  hermes_openai_codex:
+    model_family: codex
+    model_size: medium
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  hermes_or_gpt4o_mini:
+    model_family: openai
+    model_size: small
+    harness_type: openrouter_relay
+    instruction_hier: false
+    bash_allowlist: none
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  codex_cli:
+    model_family: openai
+    model_size: medium
+    harness_type: codex_cli
+    instruction_hier: true
+    bash_allowlist: loose
+    untrusted_marker: true
+    permission_gate: true
+    scanner_layer: false
+    tool_auto_exec: false
+    multi_turn: true
+    notes: "OpenAI Codex CLI"
+
+  # ---------------- Gemini ----------------
+  gemini_cli:
+    model_family: gemini
+    model_size: medium
+    harness_type: gemini_cli
+    instruction_hier: true
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  gemini_cli_2_5_flash:
+    model_family: gemini
+    model_size: small
+    harness_type: gemini_cli
+    instruction_hier: true
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  hermes_or_gemma4_31b_free:
+    model_family: gemma
+    model_size: medium
+    harness_type: openrouter_relay
+    instruction_hier: false
+    bash_allowlist: none
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+
+  # ---------------- Qwen / Nous / Others ----------------
+  hermes_mimo_v2_pro:
+    model_family: mimo
+    model_size: medium
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  hermes_nous_qwen3_coder_plus:
+    model_family: qwen
+    model_size: medium
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  hermes_nous_hermes4_70b:
+    model_family: llama
+    model_size: large
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  hermes_or_nemotron_super:
+    model_family: nemotron
+    model_size: large
+    harness_type: openrouter_relay
+    instruction_hier: false
+    bash_allowlist: none
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  hermes_or_deepseek_v3_free:
+    model_family: deepseek
+    model_size: large
+    harness_type: openrouter_relay
+    instruction_hier: false
+    bash_allowlist: none
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  hermes_or_arcee_spark:
+    model_family: arcee
+    model_size: small
+    harness_type: openrouter_relay
+    instruction_hier: false
+    bash_allowlist: none
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+
+  # ---------------- MiniMax ----------------
+  hermes_minimax_m2_7:
+    model_family: minimax
+    model_size: medium
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+  hermes_minimax_m2_5:
+    model_family: minimax
+    model_size: medium
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+
+  # ---------------- Katana-defended twins (Thread 1 / H-20260423) ----------------
+  # Same harness + model as the base agent; only scanner_layer flips true.
+  # Used for paired A/B resolution of H-20260423-scanner-in-harness-protects.
+  # _katana   = Hermes Katana @ threshold 0.5 (preregistered primary)
+  # _katana07 = Hermes Katana @ threshold 0.7 (preregistered secondary)
+  claude_cli_haiku_katana:
+    model_family: claude
+    model_size: small
+    harness_type: cli_coding_agent
+    instruction_hier: true
+    bash_allowlist: strict
+    untrusted_marker: true
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: false
+    notes: "claude_cli_haiku + Hermes Katana scanner @ 0.5 (refuse)"
+  claude_cli_haiku_katana07:
+    model_family: claude
+    model_size: small
+    harness_type: cli_coding_agent
+    instruction_hier: true
+    bash_allowlist: strict
+    untrusted_marker: true
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: false
+    notes: "claude_cli_haiku + Hermes Katana scanner @ 0.7 (refuse)"
+  claude_cli_sonnet_katana:
+    model_family: claude
+    model_size: large
+    harness_type: cli_coding_agent
+    instruction_hier: true
+    bash_allowlist: strict
+    untrusted_marker: true
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: false
+    notes: "claude_cli_sonnet + Hermes Katana scanner @ 0.5 (refuse)"
+  claude_cli_sonnet_katana07:
+    model_family: claude
+    model_size: large
+    harness_type: cli_coding_agent
+    instruction_hier: true
+    bash_allowlist: strict
+    untrusted_marker: true
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: false
+    notes: "claude_cli_sonnet + Hermes Katana scanner @ 0.7 (refuse)"
+  hermes_claude_haiku_katana:
+    model_family: claude
+    model_size: small
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_claude_haiku + Hermes Katana scanner @ 0.5 (refuse)"
+  hermes_claude_haiku_katana07:
+    model_family: claude
+    model_size: small
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_claude_haiku + Hermes Katana scanner @ 0.7 (refuse)"
+  hermes_nous_qwen3_coder_plus_katana:
+    model_family: qwen
+    model_size: medium
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_nous_qwen3_coder_plus + Hermes Katana scanner @ 0.5 (refuse)"
+  hermes_nous_qwen3_coder_plus_katana07:
+    model_family: qwen
+    model_size: medium
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_nous_qwen3_coder_plus + Hermes Katana scanner @ 0.7 (refuse)"
+
+  # Cross-provider katana twins (v14 scaling — spread load across budgets)
+  hermes_minimax_m2_7_katana:
+    model_family: minimax
+    model_size: medium
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_minimax_m2_7 + Hermes Katana scanner @ 0.5 (refuse)"
+  hermes_or_gpt4o_mini_katana:
+    model_family: openai
+    model_size: small
+    harness_type: openrouter_relay
+    instruction_hier: false
+    bash_allowlist: none
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_or_gpt4o_mini + Hermes Katana scanner @ 0.5 (refuse)"
+  hermes_nous_hermes4_70b_katana:
+    model_family: llama
+    model_size: large
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_nous_hermes4_70b + Hermes Katana scanner @ 0.5 (refuse)"
+  hermes_or_deepseek_v3_free_katana:
+    model_family: deepseek
+    model_size: large
+    harness_type: openrouter_relay
+    instruction_hier: false
+    bash_allowlist: none
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_or_deepseek_v3_free + Hermes Katana scanner @ 0.5 (refuse)"
+  hermes_nous_step_flash:
+    model_family: stepfun
+    model_size: large       # 196B total / 11B active MoE
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "StepFun Step-3.5-Flash via Nous Portal (free, MoE, 262k ctx)"
+  hermes_nous_step_flash_katana:
+    model_family: stepfun
+    model_size: large
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_nous_step_flash + Hermes Katana scanner @ 0.5 (refuse)"
+  hermes_nous_kimi_k2_6:
+    model_family: kimi
+    model_size: large
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: false
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "Moonshot Kimi K2.6 via Nous Portal (free, 256k ctx)"
+  hermes_nous_kimi_k2_6_katana:
+    model_family: kimi
+    model_size: large
+    harness_type: hermes_agent
+    instruction_hier: false
+    bash_allowlist: loose
+    untrusted_marker: false
+    permission_gate: false
+    scanner_layer: true
+    tool_auto_exec: true
+    multi_turn: true
+    notes: "hermes_nous_kimi_k2_6 + Hermes Katana scanner @ 0.5 (refuse)"

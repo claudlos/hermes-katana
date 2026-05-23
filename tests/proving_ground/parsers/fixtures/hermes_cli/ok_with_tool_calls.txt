@@ -1,0 +1,3 @@
+Starting run.
+[tool] read_file({"path":"README.md"})
+1 tool call

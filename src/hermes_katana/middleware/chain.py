@@ -306,6 +306,8 @@ class MiddlewareChain:
     def __init__(self) -> None:
         self._middleware: list[KatanaMiddleware] = []
         self._lock = threading.RLock()
+        self.active_profile: str | None = None
+        self.resolved_config: dict[str, Any] = {}
 
     # -- Mutation -----------------------------------------------------------
 
@@ -379,6 +381,10 @@ class MiddlewareChain:
         with self._lock:
             chain = list(self._middleware)
 
+        active_profile = getattr(self, "active_profile", None) or getattr(self, "profile", None)
+        if active_profile is not None:
+            ctx.extras.setdefault("active_profile", active_profile)
+
         for mw in chain:
             if not mw.enabled:
                 continue
@@ -394,6 +400,8 @@ class MiddlewareChain:
 
             elapsed_ms = (time.monotonic() - start) * 1000
             ctx.timestamps.append((mw.name, elapsed_ms))
+            ctx.extras.setdefault("middleware_latency_ms", {})[mw.name] = elapsed_ms
+            ctx.extras["middleware_total_ms"] = ctx.total_middleware_ms
 
             if decision == DispatchDecision.DENY:
                 logger.info(
@@ -432,6 +440,8 @@ class MiddlewareChain:
 
             elapsed_ms = (time.monotonic() - start) * 1000
             ctx.timestamps.append((f"{mw.name}:short", elapsed_ms))
+            ctx.extras.setdefault("middleware_latency_ms", {})[f"{mw.name}:short"] = elapsed_ms
+            ctx.extras["middleware_total_ms"] = ctx.total_middleware_ms
 
     def execute_post(self, ctx: CallContext) -> None:
         """Run post-dispatch hooks on all middleware in reverse order.
@@ -457,6 +467,8 @@ class MiddlewareChain:
 
             elapsed_ms = (time.monotonic() - start) * 1000
             ctx.timestamps.append((f"{mw.name}:post", elapsed_ms))
+            ctx.extras.setdefault("middleware_latency_ms", {})[f"{mw.name}:post"] = elapsed_ms
+            ctx.extras["middleware_total_ms"] = ctx.total_middleware_ms
 
     def execute(
         self,

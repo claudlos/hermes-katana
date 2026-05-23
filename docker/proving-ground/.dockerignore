@@ -1,0 +1,20 @@
+# Never send secrets/runtime data to Docker build context
+.env
+.env.*
+auth.json
+*.db
+*.sqlite
+*.sqlite3
+*.log
+results/
+sessions/
+batch/
+shards/
+synthdata/incoming/
+synthdata/checkpoints/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.git/

@@ -1,0 +1,129 @@
+---
+# Origin Taxonomy — pinned trust tiers (PLAN_B / bet #2: provenance firewall)
+#
+# Authoritative source for the 6 input origins recognized across the eval and
+# training stack. Worker B2 owns this file. Worker B5 reads it to derive the
+# `[ORIGIN=...]` special tokens added to the canonical trainer.
+#
+# Each tier declares:
+#   - id              stable identifier (also the special-token suffix)
+#   - trust_level     ordinal (1 = highest trust → 5 = lowest)
+#   - description     plain-language definition of where the bytes came from
+#   - default_threshold the default deny threshold the policy engine should use
+#                       for this origin if no per-tool override is configured
+#   - scanner_stack   ordered list of scanner profiles that MUST run for this
+#                     origin (cheapest gates first)
+#   - notes           context the policy engine and reviewers need
+#
+# DO NOT reorder ids or rename them — the tokenizer (worker B5) and the
+# eval harness (training/eval_origin_aware.py) both index by these strings.
+
+version: 1
+schema: katana.origin_taxonomy/v1
+
+origins:
+  - id: user_input
+    trust_level: 1
+    description: >
+      Bytes typed (or pasted) directly by the human operator into the agent's
+      primary chat surface in the current turn. Highest trust tier — the user
+      is presumed to consent to whatever they themselves submit.
+    default_threshold: 0.85
+    scanner_stack:
+      - injection
+      - jailbreak
+      - dangerous_command
+    notes: >
+      Threshold is intentionally permissive: the user can ask the agent to
+      "ignore previous instructions" legitimately during debugging.
+
+  - id: retrieved_web
+    trust_level: 4
+    description: >
+      Content fetched from the public web (HTTP body, scraped HTML, search
+      result snippets, RSS feed contents). The user did not author it; it
+      may be attacker-controlled. Treat as hostile until proven otherwise.
+    default_threshold: 0.55
+    scanner_stack:
+      - injection
+      - jailbreak
+      - dangerous_command
+      - exfiltration
+      - homoglyph
+      - encoding
+    notes: >
+      Indirect prompt-injection's primary attack surface. Imperative phrasing
+      ("ignore previous", "your new task is") that would be allowed from
+      user_input must be denied here.
+
+  - id: mcp_tool_description
+    trust_level: 3
+    description: >
+      The `description` field on an MCP tool advertised to the agent during
+      tool discovery. Comes from a third-party MCP server, not the user, and
+      is read into the model's context as authoritative metadata.
+    default_threshold: 0.45
+    scanner_stack:
+      - injection
+      - jailbreak
+      - exfiltration
+      - canary
+      - tool_description_poison
+    notes: >
+      The "rug pull" surface — descriptions can change between sessions.
+      Lowest threshold among textual origins because the agent treats them
+      with implicit trust during planning.
+
+  - id: mcp_tool_result
+    trust_level: 4
+    description: >
+      Output returned by an MCP tool invocation (stdout, JSON payload,
+      structured response body). Even from a tool the user explicitly called,
+      the *contents* may be attacker-controlled (e.g. the tool fetched a URL).
+    default_threshold: 0.50
+    scanner_stack:
+      - injection
+      - jailbreak
+      - dangerous_command
+      - exfiltration
+      - canary
+    notes: >
+      A payload that's a benign question from user_input becomes an injection
+      attempt when arriving via mcp_tool_result. Cross-origin tests in
+      adversarial_origin_cases.yaml exercise this asymmetry.
+
+  - id: prior_session_memory
+    trust_level: 3
+    description: >
+      Persisted state recalled from a previous session — agent memory store,
+      saved scratchpad, vector-database notes. Comes from "the user" but at
+      an earlier time, possibly under different threat assumptions, and may
+      have been silently tampered with at rest.
+    default_threshold: 0.55
+    scanner_stack:
+      - injection
+      - jailbreak
+      - canary
+      - memory_replay
+    notes: >
+      Memory-replay attacks plant a payload in one session and trigger it
+      in the next. Canary entries echoed back here are a runtime-compromise
+      signal (bet #3).
+
+  - id: delegated_agent_output
+    trust_level: 2
+    description: >
+      Output produced by a sub-agent or delegated tool-using agent that the
+      primary agent invoked. Trusted higher than tool results because the
+      sub-agent ran the same scanner stack itself, but still untrusted
+      because a compromised sub-agent will lie about what it observed.
+    default_threshold: 0.65
+    scanner_stack:
+      - injection
+      - jailbreak
+      - exfiltration
+      - canary
+    notes: >
+      Defense-in-depth: even if the sub-agent's own scanners passed the
+      payload, the parent re-scans on receipt. Echoed canary tokens here
+      indicate the sub-agent itself was compromised mid-run.

@@ -13,13 +13,15 @@ __all__ = [
 ]
 
 
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # 1 MB default body scan limit
 _DEFAULT_MAX_BODY_SCAN_SIZE = 1_048_576
+
+ProxyMode = Literal["permissive", "strict", "max"]
 
 
 class ScanModes(BaseModel):
@@ -100,6 +102,14 @@ class ProxyConfig(BaseModel):
         default_factory=ScanModes,
         description="Active scanning modes.",
     )
+    scanner_security_level: Literal["low", "medium", "high"] = Field(
+        default=None,  # type: ignore[assignment]
+        description=(
+            "Security level passed to scanner.scan_input for proxy request surfaces. "
+            "When omitted, the level follows proxy mode: permissive=low, "
+            "strict=medium, max=high."
+        ),
+    )
     rate_limit_requests: int = Field(
         default=50,
         ge=1,
@@ -143,8 +153,30 @@ class ProxyConfig(BaseModel):
         default=False,
         description="Inject X-Katana-Scanned header on responses (opt-in, disabled by default).",
     )
+    mode: ProxyMode = Field(
+        default="strict",
+        description=(
+            "Failure-handling mode. 'strict' and 'max' fail closed on scanner "
+            "exceptions and oversized bodies; 'permissive' logs and allows traffic. "
+            "Mirrors the policy engine's tri-mode model."
+        ),
+    )
 
     model_config = {"frozen": False, "extra": "forbid"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_scanner_security_level(cls, data: object) -> object:
+        """Derive scanner strength from proxy fail-closed mode unless explicit."""
+        if isinstance(data, dict) and data.get("scanner_security_level") is None:
+            mode = data.get("mode", "strict")
+            data = dict(data)
+            data["scanner_security_level"] = {
+                "permissive": "low",
+                "strict": "medium",
+                "max": "high",
+            }.get(mode, "medium")
+        return data
 
     @field_validator("host")
     @classmethod

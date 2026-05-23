@@ -1,4 +1,0 @@
-# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/scanner/context_analyzer.py
-# hypothesis_version: 6.151.10
-
-[0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.7, 0.8, 0.85, 1.0, '[.!?\\n]', '[a-z]+', '```[\\s\\S]*?```', 'high', 'instruction_density', 'low', 'medium', 'persona', 'persona_shift', 'sustained_risk', 'topic_drift', 'turn_index', 'turn_risk', 'word_freq']

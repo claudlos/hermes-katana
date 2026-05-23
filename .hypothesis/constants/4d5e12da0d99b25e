@@ -1,4 +1,0 @@
-# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/taint/value.py
-# hypothesis_version: 6.151.10
-
-[', ', '...', '<no reason given>', 'K', 'T', 'V', '_item_taint', '_key_taint', 'char_taint', 'strict', 'trusted', 'untrusted', 'utf-8']

@@ -1,4 +1,0 @@
-# file: /usr/lib/python3/dist-packages/yaml/reader.py
-# hypothesis_version: 6.151.10
-
-[4096, '\x00', '<byte string>', '<file>', '<unicode string>', 'Reader', 'ReaderError', '[^\t\n\r -~\x85\xa0-\ud7ff\ue000-�𐀀-\U0010ffff]', 'name', 'strict', 'unicode', 'utf-16-be', 'utf-16-le', 'utf-8', '\ufeff']

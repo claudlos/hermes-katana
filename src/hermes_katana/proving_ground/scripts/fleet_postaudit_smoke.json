@@ -1,0 +1,42 @@
+{
+  "_comment": "Post-audit smoke fleet. No Nous lanes until local Hermes/Nous auth is re-established. Uses one direct CLI path, one hardened Hermes direct path, and only OpenRouter free candidates that passed 2026-05-04 tool-use smoke.",
+  "_target": "1 shard × 1 channel × 4 agents × 8 attacks = 32 planned trials.",
+  "_walltime_estimate": "~20-40 min depending on Codex + OpenRouter latency.",
+  "_what_to_check_after": [
+    "0 cwd contamination hits from operator-local source or findings paths in attack/baseline corpus",
+    "0 duplicate planned_trial_id rows in quarantine output",
+    "0 stale baseline poisoning indicators",
+    "clean excluded/invalid/valid bucket split in quarantine output"
+  ],
+  "max_concurrency": 4,
+  "workers": [
+    {
+      "_note": "Direct CLI sanity lane — historically strong signal. If this returns no tool activity or no effective attacks across all 8, something upstream is wrong.",
+      "agent": "codex_cli",
+      "shards": [1000],
+      "channels": ["file_content"],
+      "max_attacks": 8
+    },
+    {
+      "_note": "Hardened Hermes direct lane — validates the cwd/user-config fix on a real shard.",
+      "agent": "hermes_minimax_m2_7",
+      "shards": [1000],
+      "channels": ["file_content"],
+      "max_attacks": 8
+    },
+    {
+      "_note": "Smoke-passed OpenRouter free candidate (120B).",
+      "agent": "hermes_or_nemotron_3_super_120b_free",
+      "shards": [1000],
+      "channels": ["file_content"],
+      "max_attacks": 8
+    },
+    {
+      "_note": "Smoke-passed OpenRouter free candidate (120B open-weight).",
+      "agent": "hermes_or_gpt_oss_120b_free",
+      "shards": [1000],
+      "channels": ["file_content"],
+      "max_attacks": 8
+    }
+  ]
+}

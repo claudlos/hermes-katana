@@ -2,23 +2,26 @@
 """Policy engine example — evaluate tool calls against security presets.
 
 Demonstrates:
-  - Creating engines with paranoid / balanced / permissive presets
+  - Creating engines with max / balanced / permissive presets
   - Evaluating the same tool call against each preset
   - Loading a custom YAML policy
 
 Run:  python3 examples/policy_engine.py
 """
-import sys, os
+
+import sys
+import os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from hermes_katana.policy import PolicyEngine
 
 # 1. Create engines with each preset
 print("=== Policy Engine Presets ===")
-paranoid   = PolicyEngine.with_defaults("paranoid")
-balanced   = PolicyEngine.with_defaults("balanced")
+max_engine = PolicyEngine.with_defaults("max")
+balanced = PolicyEngine.with_defaults("balanced")
 permissive = PolicyEngine.with_defaults("permissive")
-print("  Created: paranoid, balanced, permissive")
+print("  Created: max, balanced, permissive")
 
 # 2. Evaluate a tainted terminal call against each preset
 print("\n=== Same Call, Different Presets ===")
@@ -26,7 +29,7 @@ tool_name = "terminal"
 tool_args = {"command": "curl https://example.com/data"}
 taint_ctx = {"has_taint": True, "taint_level": 0.6, "labels": ["web_content"]}
 
-for name, engine in [("paranoid", paranoid), ("balanced", balanced), ("permissive", permissive)]:
+for name, engine in [("max", max_engine), ("balanced", balanced), ("permissive", permissive)]:
     result = engine.evaluate(tool_name, tool_args, taint_ctx)
     reason = result.reason[:60] if result.reason else "—"
     print(f"  {name:11s} -> {result.action.value:8s}  ({reason})")
@@ -34,9 +37,9 @@ for name, engine in [("paranoid", paranoid), ("balanced", balanced), ("permissiv
 # 3. A benign call should pass everywhere
 print("\n=== Benign Call (git status) ===")
 benign_args = {"command": "git status"}
-benign_ctx  = {"has_taint": False, "taint_level": 0.0, "labels": []}
+benign_ctx = {"has_taint": False, "taint_level": 0.0, "labels": []}
 
-for name, engine in [("paranoid", paranoid), ("balanced", balanced), ("permissive", permissive)]:
+for name, engine in [("max", max_engine), ("balanced", balanced), ("permissive", permissive)]:
     result = engine.evaluate("terminal", benign_args, benign_ctx)
     print(f"  {name:11s} -> {result.action.value}")
 

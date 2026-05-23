@@ -22,13 +22,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+from hermes_katana._files import AdvisoryFileLock, atomic_write_text
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class SecretExpiry:
     def __init__(self, path: Optional[Path] = None) -> None:
         self._path = path or _default_expiry_path()
         self._lock = threading.Lock()
+        self._file_lock = AdvisoryFileLock(self._path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -123,7 +124,7 @@ class SecretExpiry:
         expires_at = entry.get("expires_at")
         if expires_at is None:
             return False
-        return time.time() > expires_at
+        return time.time() > float(expires_at)
 
     def check_expired(self) -> list[str]:
         """Return a list of all expired key names.
@@ -193,7 +194,8 @@ class SecretExpiry:
         if not self._path.exists():
             return {}
         try:
-            raw = self._path.read_text(encoding="utf-8")
+            with self._file_lock:
+                raw = self._path.read_text(encoding="utf-8")
             data = json.loads(raw)
             return data if isinstance(data, dict) else {}
         except (json.JSONDecodeError, OSError):
@@ -206,20 +208,8 @@ class SecretExpiry:
         """
         content = json.dumps(data, indent=2, default=str)
         try:
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(self._path.parent),
-                prefix=".expiry_",
-                suffix=".tmp",
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as fp:
-                    fp.write(content)
-                    fp.flush()
-                    os.fsync(fp.fileno())
-                os.replace(tmp_path, str(self._path))
-            except Exception:
-                os.unlink(tmp_path)
-                raise
+            with self._file_lock:
+                atomic_write_text(self._path, content, mode=0o600)
         except OSError:
             logger.warning("Failed to write expiry metadata", exc_info=True)
 

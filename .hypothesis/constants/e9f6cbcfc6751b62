@@ -1,4 +1,0 @@
-# file: /usr/lib/python3/dist-packages/gi/types.py
-# hypothesis_version: 6.151.10
-
-['(.)([A-Z][a-z]+)', '([a-z0-9])([A-Z])', '-', 'Object', '\\1_\\2', '_', '__doc__', '__gtype__', '__gtype_name__', '__info__', 'do_', 'do_%s', 'do_%s_%s', 'get_vfuncs', 'gi.overrides', 'gi.overrides.', 'gi.repository.', 'new']

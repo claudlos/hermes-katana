@@ -7,13 +7,15 @@ import logging
 
 import pytest
 
-from hermes_katana.taint.labels import Source, TaintLabel, TrustLevel
+from hermes_katana.taint.labels import Reader, Source, TaintLabel, TrustLevel
 from hermes_katana.taint.value import (
+    CharTaint,
     TaintedBytes,
     TaintedDict,
     TaintedList,
     TaintedStr,
     TaintedValue,
+    taint_aware_fstring,
 )
 from hermes_katana.taint.flow import (
     CRITICAL_SINKS,
@@ -168,6 +170,93 @@ class TestEncode:
         assert isinstance(result, TaintedBytes)
         assert bytes(result) == b"caf\xe9"
         assert _has_label(result.sources)
+
+
+class TestAuditReportedLaunderingVectors:
+    def test_common_str_methods_preserve_taint(self):
+        t = TaintedStr("PAYLOAD\nNEXT", sources=_src())
+        operations = [
+            lambda: t.casefold(),
+            lambda: t.title(),
+            lambda: t.capitalize(),
+            lambda: t.swapcase(),
+            lambda: t.expandtabs(),
+            lambda: t.ljust(20),
+            lambda: t.rjust(20),
+            lambda: t.center(20),
+            lambda: t.zfill(20),
+            lambda: t.lstrip(),
+            lambda: t.rstrip(),
+            lambda: t.translate(str.maketrans({"P": "p"})),
+            lambda: t.removeprefix("PAY"),
+            lambda: t.removesuffix("NEXT"),
+            lambda: t * 2,
+            lambda: 2 * t,
+        ]
+
+        for op in operations:
+            result = op()
+            assert isinstance(result, TaintedStr)
+            assert _has_label(result.sources)
+
+        for result in [t.splitlines(), t.rsplit("A"), t.partition("A"), t.rpartition("A")]:
+            assert all(isinstance(part, TaintedStr) for part in result)
+
+    def test_common_bytes_methods_preserve_taint(self):
+        b = TaintedBytes(b"abc", sources=_src())
+        operations = [
+            lambda: b * 2,
+            lambda: 2 * b,
+            lambda: b.replace(b"a", b"z"),
+            lambda: b.center(6),
+            lambda: b.ljust(6),
+            lambda: b.rjust(6),
+            lambda: b.zfill(6),
+            lambda: b.translate(bytes.maketrans(b"a", b"z")),
+            lambda: b.upper(),
+            lambda: b.lower(),
+            lambda: b.removeprefix(b"a"),
+            lambda: b.removesuffix(b"c"),
+        ]
+
+        for op in operations:
+            result = op()
+            assert isinstance(result, TaintedBytes)
+            assert _has_label(result.sources)
+
+        assert all(isinstance(part, TaintedBytes) and _has_label(part.sources) for part in b.split(b"b"))
+        assert isinstance(b.hex(), TaintedStr)
+        assert _has_label(b.hex().sources)
+
+    def test_sources_are_defensively_copied(self):
+        srcs = set(_src())
+        t = TaintedStr("hi", sources=srcs)
+        srcs.add(Source.mcp("later"))
+        assert len(t.sources) == 1
+
+        bsrcs = set(_src())
+        b = TaintedBytes(b"hi", sources=bsrcs)
+        bsrcs.add(Source.mcp("later"))
+        assert len(b.sources) == 1
+
+    def test_partial_char_taint_survives_rebuild_methods(self):
+        src = next(iter(_src()))
+        char_taint = CharTaint(_map={1: frozenset({src})}, _default=frozenset())
+        t = TaintedStr("ab", sources=frozenset(), char_taint=char_taint)
+
+        for result in [t.replace("a", "A"), TaintedStr("{}").format(t), TaintedStr(",").join([t])]:
+            assert isinstance(result, TaintedStr)
+            assert src in result.char_taint.all_sources()
+
+    def test_reader_merge_intersects_restrictions(self):
+        r_terminal = Reader("terminal", frozenset({TaintLabel.USER}))
+        r_display = Reader("display", frozenset({TaintLabel.WEB_CONTENT}))
+        left = TaintedStr("a", sources=frozenset({Source.user()}), readers=frozenset({r_terminal}))
+        right = TaintedStr("b", sources=frozenset({Source.web("example")}), readers=frozenset({r_display}))
+
+        merged = left + right
+        assert merged.readers
+        assert {r.identity for r in merged.readers} == {"__katana_no_readers__"}
 
 
 # ---------------------------------------------------------------------------
@@ -353,3 +442,71 @@ class TestFnmatchGlob:
         )
         assert rule.matches_tool("terminal")
         assert not rule.matches_tool("terminal2")
+
+
+# ---------------------------------------------------------------------------
+# F-string laundering — known limitation + taint_aware_fstring mitigation
+# ---------------------------------------------------------------------------
+
+
+class TestFStringLaundering:
+    """Document and test the f-string taint laundering limitation.
+
+    CPython's BUILD_STRING opcode (used when an f-string has surrounding
+    literal text) assembles parts via an internal C-level join that bypasses
+    Python's __add__ / __format__ overrides.  The result is a plain str, not
+    a TaintedStr.  Only a bare `f"{tainted}"` (single expression, no adjacent
+    literals) calls __format__ and preserves the TaintedStr type.
+    """
+
+    def test_bare_fstring_preserves_type(self):
+        """f"{tainted}" with NO surrounding text preserves TaintedStr type."""
+        t = TaintedStr("evil", sources=_src())
+        result = f"{t}"
+        assert isinstance(result, TaintedStr), "Bare f-string should preserve TaintedStr (calls __format__ only)"
+        assert _has_label(result.sources)
+
+    def test_fstring_with_surrounding_literals_launders_taint(self):
+        """f"prefix {tainted} suffix" — taint IS laundered (CPython BUILD_STRING).
+
+        This test documents the known limitation.  The result is a plain str
+        and taint is lost.  Use taint_aware_fstring() instead.
+        """
+        t = TaintedStr("evil", sources=_src())
+        result = f"Context: {t}"
+        # BUILD_STRING produces a plain str — TaintedStr type is lost
+        assert not isinstance(result, TaintedStr), (
+            "f-string with surrounding literals should launder taint (this test documents the known limitation)"
+        )
+
+    def test_taint_aware_fstring_positional(self):
+        """taint_aware_fstring() preserves taint with positional placeholders."""
+        t = TaintedStr("evil", sources=_src())
+        result = taint_aware_fstring("Context: {}", t)
+        assert isinstance(result, TaintedStr)
+        assert _has_label(result.sources)
+        assert result.value == "Context: evil"
+
+    def test_taint_aware_fstring_keyword(self):
+        """taint_aware_fstring() preserves taint with keyword placeholders."""
+        t = TaintedStr("injected", sources=_src(TaintLabel.MCP))
+        result = taint_aware_fstring("Hello {name}!", name=t)
+        assert isinstance(result, TaintedStr)
+        assert _has_label(result.sources, TaintLabel.MCP)
+        assert result.value == "Hello injected!"
+
+    def test_taint_aware_fstring_merges_multiple_sources(self):
+        """taint_aware_fstring() merges taint from multiple tainted args."""
+        t1 = TaintedStr("web", sources=_src(TaintLabel.WEB_CONTENT))
+        t2 = TaintedStr("mcp", sources=_src(TaintLabel.MCP))
+        result = taint_aware_fstring("{} and {}", t1, t2)
+        assert isinstance(result, TaintedStr)
+        assert _has_label(result.sources, TaintLabel.WEB_CONTENT)
+        assert _has_label(result.sources, TaintLabel.MCP)
+        assert result.value == "web and mcp"
+
+    def test_taint_aware_fstring_plain_args_pass_through(self):
+        """taint_aware_fstring() with plain (non-tainted) args produces clean output."""
+        result = taint_aware_fstring("Hello {}!", "world")
+        assert result.value == "Hello world!"
+        assert not result.sources  # no taint sources

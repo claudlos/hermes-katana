@@ -1,0 +1,13 @@
+[allowlist]
+description = "Intentional fake secrets used by scanner tests, examples, and canary fixtures."
+regexes = [
+  '''sk-live-abc123secretkey''',
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''AKIA1234567890ABCDEF''',
+  '''ghp_abc123def456ghi789''',
+  '''sk-ant-demo-1234567890abcdef''',
+  '''sk-kproof-9f3a2b1c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a''',
+  '''AKIAKPROOFCANARY123456''',
+  '''ghp_1234567890ABCDEFghijklmnopqrstuvwxyz12''',
+  '''MIIEowIBAAK''',
+]

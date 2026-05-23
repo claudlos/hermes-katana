@@ -1,0 +1,18 @@
+{
+  "_comment": "SMOKE fleet for LOCAL-MODEL boxes (mini-PC, qwen35 desktop). Same shape as fleet_smoke.json but tests the local-model driver instead of API agents. Run this on the box that has the local model server, not on the main box.",
+  "_target": "1 shard (400) × 1 channel × 1 agent × 5 attacks = 5 trials.",
+  "_walltime_estimate": "5-10 min on a 7B-35B local model.",
+  "_pair_note": "Undefended only — see scripts/fleet_smoke.json.",
+  "_swap_agent": "On the qwen35 desktop change the agent to 'hermes_qwen35_local'. Default here is the mini-PC variant.",
+  "max_concurrency": 1,
+  "workers": [
+    {
+      "_note": "Local-model driver. Set KATANA_MINIPC_MODEL + KATANA_MINIPC_PROVIDER env vars first; the driver picks them up.",
+      "agent": "hermes_minipc_local",
+      "shards": [400],
+      "channels": ["file_content"],
+      "max_attacks": 5,
+      "instances": 1
+    }
+  ]
+}

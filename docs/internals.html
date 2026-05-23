@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hermes Katana Function Map</title>
+    <meta
+      name="description"
+      content="A visual technical map of Hermes Katana internals: entrypoints, middleware, scanners, Scabbard, policy, artifacts, audit, proxy, and operator commands."
+    >
+    <link rel="stylesheet" href="assets/manual.css">
+    <style>
+      .internals-page::before {
+        background:
+          linear-gradient(90deg, rgba(5, 7, 6, 0.9), rgba(5, 7, 6, 0.34), rgba(5, 7, 6, 0.92)),
+          url("assets/hermes-dark-background.webp") center top / cover no-repeat;
+        opacity: 0.78;
+      }
+
+      .internals-shell {
+        width: min(1240px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      .internals-hero {
+        min-height: 72vh;
+        display: grid;
+        grid-template-columns: minmax(0, 0.94fr) minmax(280px, 0.58fr);
+        gap: clamp(28px, 5vw, 72px);
+        align-items: end;
+        padding: clamp(76px, 11vw, 136px) 0 56px;
+      }
+
+      .internals-hero h1 {
+        max-width: 11ch;
+        font-size: clamp(4rem, 9vw, 8.6rem);
+      }
+
+      .hero-note {
+        max-width: 460px;
+        margin-bottom: 18px;
+        color: var(--bone-dim);
+        font-size: clamp(1rem, 1.6vw, 1.24rem);
+      }
+
+      .manual-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 26px;
+      }
+
+      .hermetic-line,
+      .footer-axiom {
+        color: var(--green);
+        font-size: clamp(1.1rem, 2.2vw, 1.7rem);
+        font-weight: 950;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .hermetic-line {
+        margin: 0 0 24px;
+      }
+
+      .footer-axiom {
+        width: min(1180px, calc(100% - 32px));
+        margin: 18px auto 0;
+        text-align: center;
+      }
+
+      .review-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 34px;
+      }
+
+      .hero-note .review-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .review-strip article,
+      .function-card,
+      .system-card,
+      .source-card,
+      .callout-panel,
+      .flow-step {
+        background:
+          linear-gradient(145deg, rgba(240, 229, 207, 0.055), transparent 48%),
+          var(--panel);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+      }
+
+      .review-strip article {
+        min-height: 122px;
+        padding: 18px;
+      }
+
+      .review-strip strong {
+        display: block;
+        color: var(--green);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        overflow-wrap: normal;
+      }
+
+      .review-strip span {
+        display: block;
+        margin-top: 10px;
+        color: var(--bone);
+        font-weight: 800;
+        overflow-wrap: normal;
+      }
+
+      .map-section,
+      .function-section,
+      .source-section {
+        padding: clamp(58px, 8vw, 96px) 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .section-split {
+        display: grid;
+        grid-template-columns: minmax(0, 0.9fr) minmax(280px, 0.54fr);
+        gap: clamp(24px, 4vw, 56px);
+        align-items: end;
+        margin-bottom: 28px;
+      }
+
+      .section-split h2 {
+        max-width: 16ch;
+        font-size: clamp(2.4rem, 5vw, 5.5rem);
+      }
+
+      .section-split p {
+        color: var(--bone-dim);
+      }
+
+      .infographic-frame {
+        padding: clamp(12px, 2vw, 22px);
+        background:
+          linear-gradient(180deg, rgba(240, 229, 207, 0.05), transparent),
+          rgba(9, 14, 11, 0.9);
+        border: 1px solid var(--line-strong);
+        box-shadow: var(--shadow);
+      }
+
+      .infographic-frame img {
+        display: block;
+        width: 100%;
+        height: auto;
+        background: #050706;
+      }
+
+      .runtime-flow {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 24px;
+      }
+
+      .flow-step {
+        position: relative;
+        min-height: 210px;
+        padding: 20px;
+      }
+
+      .flow-step::before {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        margin-bottom: 18px;
+        place-items: center;
+        color: var(--ink);
+        background: var(--green);
+        border-radius: 50%;
+        box-shadow: 0 0 24px rgba(142, 240, 160, 0.46);
+        content: attr(data-step);
+        font-size: 0.8rem;
+        font-weight: 950;
+      }
+
+      .flow-step h3,
+      .function-card h3,
+      .system-card h3,
+      .source-card h3,
+      .callout-panel h3 {
+        margin-bottom: 10px;
+        color: #fff8e8;
+        font-size: 1.1rem;
+      }
+
+      .flow-step p,
+      .function-card p,
+      .system-card p,
+      .source-card p,
+      .callout-panel p,
+      .source-card li {
+        color: var(--bone-dim);
+        font-size: 0.95rem;
+      }
+
+      .file-tag {
+        display: inline-flex;
+        margin-top: 12px;
+        padding: 5px 8px;
+        color: var(--green);
+        background: rgba(142, 240, 160, 0.08);
+        border: 1px solid rgba(142, 240, 160, 0.26);
+        font: 700 0.75rem ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      .function-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .function-card,
+      .system-card,
+      .source-card,
+      .callout-panel {
+        padding: 22px;
+      }
+
+      .function-card.accent {
+        border-color: rgba(142, 240, 160, 0.72);
+        box-shadow:
+          0 0 32px rgba(142, 240, 160, 0.12),
+          var(--shadow);
+      }
+
+      .function-card.warn {
+        border-color: rgba(215, 168, 73, 0.74);
+      }
+
+      .function-card.stop {
+        border-color: rgba(210, 92, 78, 0.76);
+      }
+
+      .system-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(280px, 0.65fr);
+        gap: 18px;
+      }
+
+      .system-stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .chain-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+      }
+
+      .chain-list li {
+        padding: 12px;
+        background: rgba(5, 7, 6, 0.42);
+        border: 1px solid var(--line);
+      }
+
+      .chain-list strong {
+        display: block;
+        color: var(--bone);
+      }
+
+      .source-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .source-card ul {
+        padding-left: 18px;
+        margin: 12px 0 0;
+      }
+
+      .decision-table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        background: rgba(5, 7, 6, 0.5);
+        border: 1px solid var(--line);
+      }
+
+      .decision-table th,
+      .decision-table td {
+        padding: 14px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .decision-table th {
+        color: var(--green);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+      }
+
+      .decision-table td {
+        color: var(--bone-dim);
+      }
+
+      .callout-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      @media (max-width: 920px) {
+        .internals-hero,
+        .section-split,
+        .system-grid,
+        .source-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .review-strip,
+        .runtime-flow,
+        .function-grid,
+        .callout-row {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 640px) {
+        .review-strip,
+        .runtime-flow,
+        .function-grid,
+        .callout-row,
+        .chain-list {
+          grid-template-columns: 1fr;
+        }
+
+        .internals-hero h1 {
+          font-size: clamp(3.3rem, 18vw, 5.2rem);
+        }
+      }
+    </style>
+  </head>
+  <body class="internals-page">
+    <header class="topbar">
+      <a class="brand" href="index.html" aria-label="Hermes Katana manual home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>Hermes Katana</span>
+      </a>
+      <nav aria-label="Internal architecture sections">
+        <a href="index.html">Manual</a>
+        <a href="#pipeline">Pipeline</a>
+        <a href="#runtime">Runtime</a>
+        <a href="#scanners">Scanners</a>
+        <a href="#policy">Policy</a>
+        <a href="#commands">Commands</a>
+      </nav>
+    </header>
+
+    <main class="internals-shell">
+      <section class="internals-hero" aria-labelledby="internals-title">
+        <div>
+          <p class="eyebrow">Inner function map</p>
+          <h1 id="internals-title">Hermes Katana Function Map</h1>
+          <p class="hermetic-line">As Above So Below</p>
+          <div class="manual-links">
+            <a class="button primary" href="#pipeline">Read the Pipeline</a>
+            <a class="button" href="#runtime">Runtime Chain</a>
+            <a class="button" href="#commands">Command Reference</a>
+          </div>
+        </div>
+      </section>
+
+      <section id="pipeline" class="map-section" aria-labelledby="pipeline-title">
+        <div class="section-split">
+          <div>
+            <p class="eyebrow">One visual board</p>
+            <h2 id="pipeline-title">Release, runtime, and install path in one frame.</h2>
+          </div>
+          <p>
+            The top row is release readiness. The middle row is runtime enforcement.
+            The bottom row is evidence, verification, and user setup. The rule is simple:
+            GitHub code, GitHub Pages, and Hugging Face artifacts should become public together.
+          </p>
+        </div>
+        <figure class="infographic-frame">
+          <img
+            src="assets/pipeline-infographic.svg"
+            alt="Hermes Katana pipeline board showing source of truth, package build, Hugging Face artifacts, public launch, ingress, scan, policy, dispatch, evidence, verification, and user install path"
+          >
+        </figure>
+      </section>
+
+      <section id="runtime" class="function-section" aria-labelledby="runtime-title">
+        <div class="section-split">
+          <div>
+            <p class="eyebrow">Runtime path</p>
+            <h2 id="runtime-title">A tool call becomes a security decision.</h2>
+          </div>
+          <p>
+            Hermes Katana does not try to make prompts magically safe. It puts a decision point
+            around tool dispatch, then feeds that decision point with provenance, scanner findings,
+            model signals, policy rules, and audit evidence.
+          </p>
+        </div>
+        <div class="runtime-flow">
+          <article class="flow-step" data-step="1">
+            <h3>Ingress</h3>
+            <p>User text, tool output, web/file content, MCP schemas, retrieved documents, and model output enter with origin context where possible.</p>
+            <span class="file-tag">taint/labels.py</span>
+          </article>
+          <article class="flow-step" data-step="2">
+            <h3>Normalize</h3>
+            <p>Hidden payloads are decoded before scanning: base64, URL encoding, HTML entities, Unicode spoofing, document metadata, and embedded carriers.</p>
+            <span class="file-tag">scanner/decoder.py</span>
+          </article>
+          <article class="flow-step" data-step="3">
+            <h3>Classify and Scan</h3>
+            <p>Scabbard, ProtectAI, heuristic scanners, structural scanners, RAG/MCP detectors, and multi-turn checks add risk signals.</p>
+            <span class="file-tag">middleware/integration.py</span>
+          </article>
+          <article class="flow-step" data-step="4">
+            <h3>Decide</h3>
+            <p>Policy resolves the current tool call to allow, deny, escalate, or log-only. Audit records the path even when execution is blocked.</p>
+            <span class="file-tag">policy/engine.py</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="function-section" aria-labelledby="chain-title">
+        <div class="section-split">
+          <div>
+            <p class="eyebrow">Default middleware order</p>
+            <h2 id="chain-title">The chain is ordered by priority.</h2>
+          </div>
+          <p>
+            Higher priority middleware runs first. A deny short-circuits execution. Escalations
+            continue collecting context so a caller can decide whether a human review is needed.
+          </p>
+        </div>
+        <div class="system-grid">
+          <article class="system-card">
+            <h3>Dispatch stack</h3>
+            <ul class="chain-list">
+              <li><strong>100 Taint</strong><span>source labels and flow checks</span></li>
+              <li><strong>90 Scabbard</strong><span>primary multi-signal classifier</span></li>
+              <li><strong>88 ProtectAI</strong><span>binary injection gate</span></li>
+              <li><strong>85 Scabbard secondary</strong><span>second classifier pass</span></li>
+              <li><strong>80 Scanner</strong><span>injection, secrets, unicode, content, commands</span></li>
+              <li><strong>78 MCP</strong><span>tool schema and server poisoning</span></li>
+              <li><strong>76 Multi-turn</strong><span>conversation-level escalation</span></li>
+              <li><strong>74 RAG injection</strong><span>retrieved-document attacks</span></li>
+              <li><strong>70 Structural</strong><span>HTML, PDF, Markdown, bloom signals</span></li>
+              <li><strong>65 Behavioral</strong><span>post-dispatch sequence observer</span></li>
+              <li><strong>60 Policy</strong><span>YAML allow, deny, escalate, log-only</span></li>
+              <li><strong>20 Audit</strong><span>decision trail and diagnostics</span></li>
+            </ul>
+            <span class="file-tag">create_default_chain()</span>
+          </article>
+          <div class="system-stack">
+            <article class="system-card">
+              <h3>Why Scabbard comes early</h3>
+              <p>
+                Scabbard normalizes text, extracts multi-signal features, and classifies before
+                pattern scanners run. A high-confidence block can stop the tool call before later
+                layers spend time on detailed checks.
+              </p>
+              <span class="file-tag">scabbard/scabbard.py</span>
+            </article>
+            <article class="system-card">
+              <h3>Why policy comes late</h3>
+              <p>
+                Policy needs context from earlier layers: taint sources, command safety, scanner
+                findings, route decisions, and risk scores. It is the resolver, not the first sensor.
+              </p>
+              <span class="file-tag">policy/engine.py</span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="scanners" class="function-section" aria-labelledby="scanner-title">
+        <div class="section-split">
+          <div>
+            <p class="eyebrow">Scanner system</p>
+            <h2 id="scanner-title">Heuristics cover the surfaces models miss.</h2>
+          </div>
+          <p>
+            The scanner layer is deliberately broad. It handles text, commands, output, binary
+            file bytes, document metadata, URLs, encoded carriers, and multimodal payloads without
+            requiring a remote API.
+          </p>
+        </div>
+        <div class="function-grid">
+          <article class="function-card accent">
+            <h3>Prompt injection</h3>
+            <p>Instruction override, role hijack, delimiter escape, prompt leak attempts, encoded payloads, multilingual forms, and persona manipulation.</p>
+            <span class="file-tag">scanner/injection.py</span>
+          </article>
+          <article class="function-card stop">
+            <h3>Command risk</h3>
+            <p>Dangerous terminal intent: destructive deletes, reverse shells, pipe-to-shell, privilege escalation, container escape, mining, and network scanning.</p>
+            <span class="file-tag">scanner/commands.py</span>
+          </article>
+          <article class="function-card warn">
+            <h3>Secrets</h3>
+            <p>API keys, JWTs, private keys, database URLs, high-entropy blobs, and encoded or chunked secret material.</p>
+            <span class="file-tag">scanner/secrets.py</span>
+          </article>
+          <article class="function-card">
+            <h3>Structural documents</h3>
+            <p>HTML hidden text, Markdown tricks, PDF layers and JavaScript, OOXML metadata, SVG payloads, image text chunks, and steganography indicators.</p>
+            <span class="file-tag">scanner/structural.py</span>
+          </article>
+          <article class="function-card">
+            <h3>RAG and MCP</h3>
+            <p>Retrieved-document prompt injection, context manipulation, tool hijack, poisoned embedding text, MCP schema drift, and hidden tool instructions.</p>
+            <span class="file-tag">scanner/rag_injection.py</span>
+          </article>
+          <article class="function-card">
+            <h3>Unicode and content</h3>
+            <p>Bidi overrides, zero-width text, homoglyphs, mixed scripts, ANSI injection, homograph URLs, markdown exfil paths, and suspicious browser content.</p>
+            <span class="file-tag">scanner/unicode.py</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="function-section" aria-labelledby="scabbard-title">
+        <div class="section-split">
+          <div>
+            <p class="eyebrow">Scabbard classifier</p>
+            <h2 id="scabbard-title">The ML path has fallbacks by design.</h2>
+          </div>
+          <p>
+            Public checkouts work without bundled private model files. When optional artifacts are
+            present, Scabbard can use them. When they are missing, it still falls back to lightweight
+            signals instead of making the whole runtime unusable.
+          </p>
+        </div>
+        <div class="function-grid">
+          <article class="function-card accent">
+            <h3>Normalize</h3>
+            <p>Transforms suspicious text into a consistent view and records anomaly flags that can boost downstream risk.</p>
+            <span class="file-tag">scabbard/normalizer.py</span>
+          </article>
+          <article class="function-card">
+            <h3>Extract features</h3>
+            <p>Combines intent divergence, centroid similarity, perplexity shifts, n-gram signals, encoding flags, and optional retrieval features.</p>
+            <span class="file-tag">scabbard/feature_extractor.py</span>
+          </article>
+          <article class="function-card warn">
+            <h3>Classify</h3>
+            <p>Uses the configured Katana classifier artifact, legacy DeBERTa, or lightweight fusion depending on runtime profile.</p>
+            <span class="file-tag">scabbard/fusion.py</span>
+          </article>
+        </div>
+      </section>
+
+      <section id="policy" class="function-section" aria-labelledby="policy-title">
+        <div class="section-split">
+          <div>
+            <p class="eyebrow">Policy resolver</p>
+            <h2 id="policy-title">YAML decides what the tool can do.</h2>
+          </div>
+          <p>
+            Built-in presets come from <code>policies/*.yaml</code>. The engine sorts policies by
+            priority, matches the tool name by glob, evaluates every condition in a rule, and returns
+            the first matching action.
+          </p>
+        </div>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th>Runtime effect</th>
+              <th>Typical reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>allow</code></td>
+              <td>The middleware chain may continue to execution.</td>
+              <td>Clean route, trusted or acceptable source, and no blocking scanner/policy condition.</td>
+            </tr>
+            <tr>
+              <td><code>deny</code></td>
+              <td>Execution stops before the tool runs.</td>
+              <td>Dangerous command, secret exfil path, tainted critical sink, or explicit max/balanced rule.</td>
+            </tr>
+            <tr>
+              <td><code>escalate</code></td>
+              <td>The call is marked for review instead of silently trusted.</td>
+              <td>Unknown or sensitive route where the right answer depends on operator intent.</td>
+            </tr>
+            <tr>
+              <td><code>log_only</code></td>
+              <td>The event is recorded while execution is allowed.</td>
+              <td>Permissive workflows where visibility is wanted but blocking would be too disruptive.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="commands" class="source-section" aria-labelledby="commands-title">
+        <div class="section-split">
+          <div>
+            <p class="eyebrow">Commands and pipeline reference</p>
+            <h2 id="commands-title">Run the system from the outside in.</h2>
+          </div>
+          <p>
+            These commands are the public control surface. The notes under each command explain which
+            part of the runtime pipeline it exercises, so a new user can connect CLI behavior to the
+            internals shown above.
+          </p>
+        </div>
+        <div class="source-grid">
+          <article class="source-card">
+            <h3>Install and inspect</h3>
+            <ul>
+              <li><code>pip install hermes-katana</code> installs the base package without large local model artifacts.</li>
+              <li><code>katana doctor</code> checks Python, optional dependencies, paths, policy files, and runtime readiness.</li>
+              <li><code>katana status</code> shows the local security configuration and active environment state.</li>
+              <li><code>katana version</code> prints the installed package version for support and troubleshooting.</li>
+            </ul>
+          </article>
+          <article class="source-card">
+            <h3>Policy and scanner gates</h3>
+            <ul>
+              <li><code>katana policy list</code> shows available presets and the currently selected policy set.</li>
+              <li><code>katana policy use balanced</code> selects a runtime preset from the YAML policy source of truth.</li>
+              <li><code>katana scan TEXT</code> runs prompt-injection, secret, Unicode, content, and structural checks on text.</li>
+              <li><code>katana scan-command CMD</code> evaluates terminal intent before a command reaches execution.</li>
+            </ul>
+          </article>
+          <article class="source-card">
+            <h3>Secrets, audit, and egress</h3>
+            <ul>
+              <li><code>katana vault set NAME</code> stores a secret handle outside prompt text.</li>
+              <li><code>katana vault list</code> confirms which handles exist without printing secret values.</li>
+              <li><code>katana audit show</code> reviews allow, deny, escalate, and log-only decisions.</li>
+              <li><code>katana proxy start</code> starts optional HTTPS egress inspection when proxy dependencies are installed.</li>
+            </ul>
+          </article>
+          <article class="source-card">
+            <h3>Artifacts and Hermes integration</h3>
+            <ul>
+              <li><code>katana artifacts status --all</code> reports which optional local model artifacts are present.</li>
+              <li><code>katana setup --yes</code> downloads the default fast CPU artifact when wanted.</li>
+              <li><code>katana install --target PATH</code> patches a compatible Hermes checkout.</li>
+              <li><code>katana run --target PATH -- ...</code> runs Hermes through the Katana-protected dispatch path.</li>
+            </ul>
+          </article>
+        </div>
+        <div class="callout-row">
+          <article class="callout-panel">
+            <h3>Text path</h3>
+            <p>
+              Input enters through CLI, plugin, tool output, file, web, MCP, or retrieved content.
+              Taint labels preserve source context so the same text can be treated differently by origin.
+            </p>
+          </article>
+          <article class="callout-panel">
+            <h3>Decision path</h3>
+            <p>
+              Normalizers expose hidden payloads, Scabbard and scanners add risk signals, policy
+              resolves the action, and middleware either blocks, escalates, logs, or allows dispatch.
+            </p>
+          </article>
+          <article class="callout-panel">
+            <h3>Evidence path</h3>
+            <p>
+              Vault keeps secrets out of prompts, proxy can inspect egress, audit records decisions,
+              and optional artifacts add local classifier capability without bloating the base install.
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        See <a href="index.html">visual manual</a>, <a href="quickstart.md">quickstart</a>,
+        <a href="runbook.md">runbook</a>, and
+        <a href="https://github.com/claudlos/hermes-katana#readme">README</a>.
+      </p>
+      <p class="footer-axiom">As Below So Above</p>
+    </footer>
+  </body>
+</html>

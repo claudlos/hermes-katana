@@ -1,4 +1,0 @@
-# file: /usr/lib/python3/dist-packages/dbus/_expat_introspect_parser.py
-# hypothesis_version: 6.151.10
-
-['%s: %s', '.', 'UTF-8', 'arg', 'direction', 'in', 'in_iface', 'in_method', 'interface', 'map', 'method', 'name', 'sig', 'type']

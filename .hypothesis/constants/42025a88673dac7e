@@ -1,4 +1,0 @@
-# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/installer/patches.py
-# hypothesis_version: 6.151.10
-
-['# [KATANA-PATCH]', '.katana-backup', 'Backup created: %s', 'Patch %s: %s', 'Path | None', 'applied', 'banner_integration', 'dispatcher_bootstrap', 'error', 'hermes/ui/banner.py', 'planned', 'proxy_env_vars', 'reverted', 'setuid', 'skipped', 'symlink', 'tool_dispatch_hook', 'utf-8']

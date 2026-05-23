@@ -1,4 +1,0 @@
-# file: /usr/lib/python3/dist-packages/gi/__init__.py
-# hypothesis_version: 6.151.10
-
-['.', 'gi._gobject', 'gi.repository', 'gio', 'glib', 'gobject', 'gtk', 'gtk.gdk', 'overrides', '{0}.{1}.{2}']

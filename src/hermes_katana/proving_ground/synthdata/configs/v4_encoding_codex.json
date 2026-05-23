@@ -1,0 +1,34 @@
+{
+  "_comment": "v4 encoding — boost encoding_evasion from 354 to ~700+. Teacher gpt-5.4 via Codex (Anthropic Usage Policy refused this label in v3 via Claude). Critics MiniMax via Hermes. Target: ~30 leaves x 5 scenarios x 1.3 (complexify) x 4 = ~780 raw -> ~570 kept (73%) -> 354+570 = 924 total.",
+  "run_id": "katana_synth_v4_encoding",
+  "checkpoint_dir": "synthdata/checkpoints",
+  "teacher": {
+    "model": "gpt-5.4",
+    "provider": "codex_cli",
+    "temperature": 0.8,
+    "max_tokens": 1500
+  },
+  "critic_a": {
+    "model": "MiniMax-M2.7",
+    "provider": "hermes_cli",
+    "base_url": "minimax",
+    "temperature": 0.1,
+    "max_tokens": 400
+  },
+  "critic_b": {
+    "model": "MiniMax-M2.5",
+    "provider": "hermes_cli",
+    "base_url": "minimax",
+    "temperature": 0.3,
+    "max_tokens": 400
+  },
+  "seed_corpus": "results/elite_attacks_n5.jsonl",
+  "seeds_per_label": 3,
+  "max_depth": 3,
+  "n_candidates_per_split": 5,
+  "scenarios_per_leaf": 5,
+  "texts_per_scenario": 4,
+  "complexify_fraction": 0.30,
+  "ops_budget": [1, 2],
+  "critic_workers": 8
+}

@@ -1,4 +1,0 @@
-# file: /home/carlos/Documents/Code/hermes-katana/src/hermes_katana/installer/installer.py
-# hypothesis_version: 6.151.10
-
-[384, 2048, 3650, 65537, '%Y%m%d-%H%M%S', '%Y-%m-%dT%H:%M:%SZ', '.katana', '.katana-backups', '.katana-installed', '0.1.0', 'BackupManifest', 'Generated config: %s', 'HermesKatana', 'HermesKatana CA', 'Not a directory: %s', 'US', 'applied', 'audit', 'backup_manifest', 'backup_root', 'ca_cert_exists', 'ca_salt.txt', 'certs', 'config_exists', 'created_at', 'details', 'error', 'files', 'hermes/__init__.py', 'hermes_detected', 'install', 'install_metadata', 'installed', 'installed_at', 'installer_version', 'is_valid', 'issues', 'katana-ca-key.pem', 'katana-ca.pem', 'katana.yaml', 'manifest.json', 'message', 'missing_paths', 'name = "hermes"', "name = 'hermes'", 'operation', 'patches', 'pyproject.toml', 'status', 'target', 'total', 'uninstall', 'utf-8', 'warnings']
