@@ -42,7 +42,7 @@ Feature highlights:
 ```bash
 git clone https://github.com/claudlos/hermes-katana.git
 cd hermes-katana
-pip install -e ".[security]"         # source install until PyPI publish
+python -m pip install -e ".[security]"
 katana doctor                        # verify prerequisites
 katana policy use balanced           # activate default policy
 katana vault set MY_KEY "secret"     # store a secret (AES-256-GCM)
