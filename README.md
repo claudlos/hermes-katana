@@ -57,13 +57,15 @@ The base install is intentionally small and works without model downloads.
 For optional local ML artifacts and research harness extras:
 
 ```bash
-pip install -e ".[fast-cpu]"
+pip install -e ".[fast-cpu]"   # ONNX Runtime path
+# or: pip install -e ".[torch-cpu]" for PyTorch checkpoint runtimes
 katana setup
 ```
 
-`katana setup` prompts for the default MiniLM artifact, the larger optional
-model, and the Proving Ground research harness. For unattended installs, use
-`katana setup --yes` to accept the default small-model-only path.
+`katana setup` prompts for the small MiniLM ONNX artifact, optional MiniLM
+PyTorch checkpoint, larger PyTorch model, and Proving Ground research harness.
+For unattended installs, use `katana setup --yes` to accept the default small
+ONNX path.
 
 Large model and dataset artifacts live on Hugging Face, not in this GitHub
 repository. Downloads remain explicit unless you opt into runtime auto-download.

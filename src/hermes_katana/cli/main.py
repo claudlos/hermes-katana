@@ -73,6 +73,22 @@ EXIT_SECURITY = 2
 VERSION = __version__
 
 _PROVING_GROUND_EXTRA = "proving-ground"
+_ONNX_RUNTIME_EXTRA = "fast-cpu"
+_TORCH_CPU_EXTRA = "torch-cpu"
+_ONNX_RUNTIME_MODULES = (
+    ("numpy", "numpy"),
+    ("onnxruntime", "onnxruntime"),
+    ("transformers", "transformers"),
+    ("sentencepiece", "sentencepiece"),
+    ("huggingface_hub", "huggingface_hub"),
+)
+_TORCH_CPU_MODULES = (
+    ("numpy", "numpy"),
+    ("torch", "torch"),
+    ("transformers", "transformers"),
+    ("sentencepiece", "sentencepiece"),
+    ("huggingface_hub", "huggingface_hub"),
+)
 _PROVING_GROUND_MODULES = (
     ("openai", "openai"),
     ("anthropic", "anthropic"),
@@ -83,6 +99,37 @@ _PROVING_GROUND_MODULES = (
     ("joblib", "joblib"),
     ("psutil", "psutil"),
 )
+
+
+def _missing_onnx_runtime_dependencies() -> list[str]:
+    """Return distribution names missing for the optional ONNX CPU runtime."""
+    missing: list[str] = []
+    for module_name, distribution_name in _ONNX_RUNTIME_MODULES:
+        try:
+            found = importlib.util.find_spec(module_name) is not None
+        except (ImportError, ModuleNotFoundError, ValueError):
+            found = False
+        if not found:
+            missing.append(distribution_name)
+    return missing
+
+
+def _missing_fast_cpu_dependencies() -> list[str]:
+    """Backward-compatible alias for the ONNX Runtime dependency check."""
+    return _missing_onnx_runtime_dependencies()
+
+
+def _missing_torch_cpu_dependencies() -> list[str]:
+    """Return distribution names missing for the optional PyTorch CPU runtime."""
+    missing: list[str] = []
+    for module_name, distribution_name in _TORCH_CPU_MODULES:
+        try:
+            found = importlib.util.find_spec(module_name) is not None
+        except (ImportError, ModuleNotFoundError, ValueError):
+            found = False
+        if not found:
+            missing.append(distribution_name)
+    return missing
 
 
 def _missing_proving_ground_dependencies() -> list[str]:
@@ -116,6 +163,43 @@ def _extra_install_args(extra: str) -> list[str]:
     return _current_checkout_install_args(extra) or [f"hermes-katana[{extra}]"]
 
 
+def _install_onnx_runtime_extra() -> None:
+    """Install optional ONNX CPU dependencies into the active environment."""
+    missing = _missing_onnx_runtime_dependencies()
+    if not missing:
+        console.print("[green]Present[/green] ONNX Runtime CPU dependencies")
+        return
+
+    cmd = [sys.executable, "-m", "pip", "install", *_extra_install_args(_ONNX_RUNTIME_EXTRA)]
+    console.print("[bold]Installing ONNX Runtime CPU dependencies[/bold]")
+    console.print(f"   {_format_command(cmd)}")
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"ONNX Runtime dependency install failed with exit code {exc.returncode}") from exc
+
+
+def _install_fast_cpu_extra() -> None:
+    """Backward-compatible alias for the ONNX Runtime setup path."""
+    _install_onnx_runtime_extra()
+
+
+def _install_torch_cpu_extra() -> None:
+    """Install optional PyTorch CPU dependencies into the active environment."""
+    missing = _missing_torch_cpu_dependencies()
+    if not missing:
+        console.print("[green]Present[/green] PyTorch CPU dependencies")
+        return
+
+    cmd = [sys.executable, "-m", "pip", "install", *_extra_install_args(_TORCH_CPU_EXTRA)]
+    console.print("[bold]Installing PyTorch CPU dependencies[/bold]")
+    console.print(f"   {_format_command(cmd)}")
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"PyTorch CPU dependency install failed with exit code {exc.returncode}") from exc
+
+
 def _install_proving_ground_extra() -> None:
     """Install optional Proving Ground dependencies into the active environment."""
     missing = _missing_proving_ground_dependencies()
@@ -134,6 +218,86 @@ def _install_proving_ground_extra() -> None:
 
 def _format_command(cmd: list[str]) -> str:
     return shlex.join(cmd)
+
+
+def _prompt_install_onnx_runtime(
+    *,
+    yes: bool,
+    install_onnx_runtime: bool,
+    no_onnx_runtime: bool,
+    selected_onnx_artifact: bool,
+) -> bool:
+    if install_onnx_runtime and no_onnx_runtime:
+        raise click.ClickException("--onnx-runtime and --no-onnx-runtime cannot be used together")
+    if install_onnx_runtime:
+        return True
+    if no_onnx_runtime:
+        return False
+
+    missing = _missing_onnx_runtime_dependencies()
+    if not missing:
+        console.print("[green]Present[/green] ONNX Runtime CPU dependencies")
+        return False
+
+    if yes:
+        return selected_onnx_artifact
+    if not sys.stdin.isatty():
+        return False
+
+    missing_text = ", ".join(missing)
+    prompt = (
+        "Install ONNX Runtime CPU dependencies "
+        f"({missing_text}; needed to run the small local ONNX model)?"
+    )
+    return bool(click.confirm(prompt, default=selected_onnx_artifact))
+
+
+def _prompt_install_fast_cpu(
+    *,
+    yes: bool,
+    install_fast_cpu: bool,
+    no_fast_cpu: bool,
+    selected_model_artifacts: bool,
+) -> bool:
+    """Backward-compatible wrapper for tests/plugins that still say fast CPU."""
+    return _prompt_install_onnx_runtime(
+        yes=yes,
+        install_onnx_runtime=install_fast_cpu,
+        no_onnx_runtime=no_fast_cpu,
+        selected_onnx_artifact=selected_model_artifacts,
+    )
+
+
+def _prompt_install_torch_cpu(
+    *,
+    yes: bool,
+    install_torch_cpu: bool,
+    no_torch_cpu: bool,
+    selected_torch_artifact: bool,
+) -> bool:
+    if install_torch_cpu and no_torch_cpu:
+        raise click.ClickException("--torch-cpu and --no-torch-cpu cannot be used together")
+    if install_torch_cpu:
+        return True
+    if no_torch_cpu:
+        return False
+
+    missing = _missing_torch_cpu_dependencies()
+    if not missing:
+        console.print("[green]Present[/green] PyTorch CPU dependencies")
+        return False
+
+    if yes:
+        return selected_torch_artifact
+    if not sys.stdin.isatty():
+        return False
+
+    missing_text = ", ".join(missing)
+    prompt = (
+        "Install PyTorch CPU dependencies "
+        f"({missing_text}; needed for safetensors/checkpoint model runtimes)?"
+    )
+    return bool(click.confirm(prompt, default=selected_torch_artifact))
 
 
 def _prompt_install_proving_ground(
@@ -168,6 +332,7 @@ def _run_artifacts_setup(
     *,
     yes: bool,
     small: bool,
+    small_torch: bool,
     large: bool,
     all_models: bool,
     no_large: bool,
@@ -175,7 +340,7 @@ def _run_artifacts_setup(
     force: bool,
     allow_no_artifact_choice: bool = False,
     prompt_for_artifacts: bool = True,
-) -> bool:
+) -> tuple[str, ...]:
     """Prompt for optional model downloads and prepare the local artifact cache."""
     from hermes_katana.artifacts import ArtifactError, artifact_specs, artifact_status, download_artifact
 
@@ -188,9 +353,11 @@ def _run_artifacts_setup(
 
     if all_models:
         selected = list(specs)
-    elif small or large:
+    elif small or small_torch or large:
         if small:
             selected.append(by_alias["minilm"])
+        if small_torch:
+            selected.append(by_alias["minilm_torch"])
         if large and not no_large:
             selected.append(by_alias["large"])
     elif yes:
@@ -199,7 +366,7 @@ def _run_artifacts_setup(
         pass
     elif not sys.stdin.isatty():
         if not allow_no_artifact_choice:
-            raise click.ClickException("Non-interactive setup requires --yes, --small, --large, or --all")
+            raise click.ClickException("Non-interactive setup requires --yes, --small, --small-torch, --large, or --all")
     else:
         console.print("[bold]Katana artifact setup[/bold]\n")
         for spec in specs:
@@ -220,7 +387,7 @@ def _run_artifacts_setup(
     if not selected:
         if prompt_for_artifacts or not allow_no_artifact_choice:
             console.print("No artifact downloads selected.")
-        return False
+        return ()
 
     target_root = Path(target_dir).expanduser().resolve() if target_dir else None
     multiple = len(selected) > 1
@@ -236,7 +403,7 @@ def _run_artifacts_setup(
             err_console.print(f"[red]Artifact download failed for {spec.name}:[/red] {exc}")
             raise SystemExit(EXIT_ERROR)
         console.print(f"[green]Downloaded[/green] {spec.name}: {downloaded.path}")
-    return True
+    return tuple(spec.name for spec in selected)
 
 
 def _build_preflight_summary(target: str | None = None) -> dict[str, object]:
@@ -530,6 +697,8 @@ def doctor(target: str | None) -> None:
         if scabbard["standard_profile_ready"]
         else "; ".join(scabbard_issues[:2]) or "missing profile assets"
     )
+    centroid_note = "centroids experimental/on" if scabbard.get("experimental_centroids_enabled") else "centroids experimental/off"
+    scabbard_details = f"{scabbard_details}; {centroid_note}"
     ml_table.add_row(
         "Scabbard profile",
         ("[green]Standard ready[/green]" if scabbard["standard_profile_ready"] else "[yellow]Degraded[/yellow]"),
@@ -707,10 +876,27 @@ def preflight(target: str | None, json_output: bool) -> None:
 
 @main.command()
 @click.option("--yes", "-y", is_flag=True, help="Accept default setup choices without prompting.")
-@click.option("--small", is_flag=True, help="Download the default fast CPU model.")
-@click.option("--large", is_flag=True, help="Download the optional large local model.")
+@click.option("--small", is_flag=True, help="Download the small MiniLM ONNX model artifact.")
+@click.option("--small-torch", is_flag=True, help="Download the small MiniLM PyTorch checkpoint artifact.")
+@click.option("--large", is_flag=True, help="Download the large PyTorch model artifact.")
 @click.option("--all", "all_models", is_flag=True, help="Download every registered model.")
 @click.option("--no-large", is_flag=True, help="Skip optional large models.")
+@click.option(
+    "--fast-cpu",
+    "--onnx-runtime",
+    "install_onnx_runtime",
+    is_flag=True,
+    help="Install ONNX Runtime CPU dependencies for the small ONNX model.",
+)
+@click.option(
+    "--no-fast-cpu",
+    "--no-onnx-runtime",
+    "no_onnx_runtime",
+    is_flag=True,
+    help="Skip ONNX Runtime CPU dependencies.",
+)
+@click.option("--torch-cpu", "install_torch_cpu", is_flag=True, help="Install PyTorch CPU dependencies for checkpoint models.")
+@click.option("--no-torch-cpu", is_flag=True, help="Skip PyTorch CPU dependencies.")
 @click.option("--proving-ground", "install_proving_ground", is_flag=True, help="Install Proving Ground extras.")
 @click.option("--no-proving-ground", is_flag=True, help="Skip Proving Ground extras.")
 @click.option("--target-dir", default=None, type=click.Path(), help="Local artifact directory or cache root.")
@@ -718,9 +904,14 @@ def preflight(target: str | None, json_output: bool) -> None:
 def setup(
     yes: bool,
     small: bool,
+    small_torch: bool,
     large: bool,
     all_models: bool,
     no_large: bool,
+    install_onnx_runtime: bool,
+    no_onnx_runtime: bool,
+    install_torch_cpu: bool,
+    no_torch_cpu: bool,
     install_proving_ground: bool,
     no_proving_ground: bool,
     target_dir: str | None,
@@ -729,18 +920,44 @@ def setup(
     """Run first-use setup for optional models and research harness extras."""
     if install_proving_ground and no_proving_ground:
         raise click.ClickException("--proving-ground and --no-proving-ground cannot be used together")
-    explicit_artifact_choice = yes or small or large or all_models
-    _run_artifacts_setup(
+    if install_onnx_runtime and no_onnx_runtime:
+        raise click.ClickException("--onnx-runtime and --no-onnx-runtime cannot be used together")
+    if install_torch_cpu and no_torch_cpu:
+        raise click.ClickException("--torch-cpu and --no-torch-cpu cannot be used together")
+    explicit_artifact_choice = yes or small or small_torch or large or all_models
+    selected_artifacts = _run_artifacts_setup(
         yes=yes,
         small=small,
+        small_torch=small_torch,
         large=large,
         all_models=all_models,
         no_large=no_large,
         target_dir=target_dir,
         force=force,
-        allow_no_artifact_choice=install_proving_ground,
-        prompt_for_artifacts=not install_proving_ground or explicit_artifact_choice,
+        allow_no_artifact_choice=install_proving_ground or install_onnx_runtime or install_torch_cpu,
+        prompt_for_artifacts=not (install_proving_ground or install_onnx_runtime or install_torch_cpu)
+        or explicit_artifact_choice,
     )
+    selected_onnx_artifact = any(name == "katana_v15_distill_minilm_onnx" for name in selected_artifacts)
+    selected_torch_artifact = any(
+        name in {"katana_v15_distill_minilm_torch", "katana_v15_large"} for name in selected_artifacts
+    )
+    install_onnx = _prompt_install_onnx_runtime(
+        yes=yes,
+        install_onnx_runtime=install_onnx_runtime,
+        no_onnx_runtime=no_onnx_runtime,
+        selected_onnx_artifact=selected_onnx_artifact,
+    )
+    if install_onnx:
+        _install_onnx_runtime_extra()
+    install_torch = _prompt_install_torch_cpu(
+        yes=yes,
+        install_torch_cpu=install_torch_cpu,
+        no_torch_cpu=no_torch_cpu,
+        selected_torch_artifact=selected_torch_artifact,
+    )
+    if install_torch:
+        _install_torch_cpu_extra()
     install_pg = _prompt_install_proving_ground(
         yes=yes,
         install_proving_ground=install_proving_ground,
@@ -1598,7 +1815,10 @@ def status(target: str | None) -> None:
     ml_table.add_row(
         "Scabbard profile",
         "standard-ready" if scabbard["standard_profile_ready"] else "degraded",
-        "; ".join(scabbard_issues[:2]) or "all assets present",
+        (
+            f"{'; '.join(scabbard_issues[:2]) or 'all assets present'}; "
+            f"{'centroids experimental/on' if scabbard.get('experimental_centroids_enabled') else 'centroids experimental/off'}"
+        ),
     )
     ml_table.add_row(
         "Scabbard default",
@@ -1843,8 +2063,9 @@ def artifacts_download(
 
 @artifacts.command(name="setup")
 @click.option("--yes", "-y", is_flag=True, help="Accept default setup choices without prompting.")
-@click.option("--small", is_flag=True, help="Download the default fast CPU model.")
-@click.option("--large", is_flag=True, help="Download the optional large local model.")
+@click.option("--small", is_flag=True, help="Download the small MiniLM ONNX model artifact.")
+@click.option("--small-torch", is_flag=True, help="Download the small MiniLM PyTorch checkpoint artifact.")
+@click.option("--large", is_flag=True, help="Download the large PyTorch model artifact.")
 @click.option("--all", "all_models", is_flag=True, help="Download every registered model.")
 @click.option("--no-large", is_flag=True, help="Skip optional large models.")
 @click.option("--target-dir", default=None, type=click.Path(), help="Local artifact directory or cache root.")
@@ -1852,6 +2073,7 @@ def artifacts_download(
 def artifacts_setup(
     yes: bool,
     small: bool,
+    small_torch: bool,
     large: bool,
     all_models: bool,
     no_large: bool,
@@ -1862,6 +2084,7 @@ def artifacts_setup(
     _run_artifacts_setup(
         yes=yes,
         small=small,
+        small_torch=small_torch,
         large=large,
         all_models=all_models,
         no_large=no_large,

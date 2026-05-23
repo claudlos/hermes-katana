@@ -40,7 +40,7 @@ class FeatureVector:
     text_embedding: Any = None  # 768-dim ndarray
     context_embedding: Any = None  # 768-dim ndarray
     intent_divergence: float = 0.0
-    centroid_distances: Any = None  # 6-dim ndarray
+    centroid_distances: Any = None  # 8-dim ndarray
     perplexity_features: Any = None  # 3-dim ndarray
     ngram_features: Any = None  # 20-dim ndarray
     encoding_flags: Any = None  # 5-dim ndarray
@@ -122,6 +122,8 @@ class CentroidDetector:
         "behavioral_control",
         "exfiltration_attempt",
         "jailbreak",
+        "encoding_evasion",
+        "persona_jailbreak",
     ]
 
     def __init__(self, centroids: Optional[dict[str, Any]] = None) -> None:
@@ -144,7 +146,7 @@ class CentroidDetector:
         return cls(centroids)
 
     def compute_distances(self, text_embedding: Any) -> Any:
-        """Return 6-dim array of cosine similarities to attack centroids."""
+        """Return cosine similarities to attack centroids, one per category."""
         np = _np()
         distances = np.zeros(len(self.CATEGORIES))
         for i, cat in enumerate(self.CATEGORIES):

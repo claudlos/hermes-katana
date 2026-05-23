@@ -55,6 +55,8 @@ ATTACK_LABELS: list[str] = [
     "exfiltration_attempt",
     "jailbreak",
     "cognitive_state_attack",
+    "encoding_evasion",
+    "persona_jailbreak",
     "unknown_anomaly",
 ]
 
@@ -155,6 +157,8 @@ class MahalanobisCentroidDetector:
         "behavioral_control",
         "exfiltration_attempt",
         "jailbreak",
+        "encoding_evasion",
+        "persona_jailbreak",
     ]
 
     def __init__(self, centroids: Optional[dict[str, Any]] = None, covariance: Optional[dict[str, Any]] = None) -> None:
@@ -181,13 +185,13 @@ class MahalanobisCentroidDetector:
         self._fitted = True
 
     def compute_distances(self, text_embedding: Any) -> Any:
-        """Return 6-dim array of Mahalanobis distances to attack centroids.
+        """Return one Mahalanobis distance per attack centroid.
 
         Args:
             text_embedding: 1D array of shape (input_dim,)
 
         Returns:
-            Array of Mahalanobis distances (lower = closer to centroid = more suspicious)
+            Array of Mahalanobis distances (lower = closer to centroid = more suspicious).
         """
         np = _np()
         self._compute_inverse_covariance()
@@ -462,10 +466,10 @@ class FeatureImportanceAnalyzer:
         0:256      text_projection (L2-normed 256-dim)
         256:512    context_projection (L2-normed 256-dim)
         512        intent_divergence
-        513:519    mahalanobis_centroid_distances (6)
-        519:522    perplexity_features (3)
-        522:542    ngram_features (20)
-        542:547    encoding_flags (5)
+        513:521    mahalanobis_centroid_distances (8)
+        521:524    perplexity_features (3)
+        524:544    ngram_features (20)
+        544:549    encoding_flags (5)
         ========== ===================================
         """
         names = []
@@ -739,7 +743,7 @@ class FusionClassifier:
             text_embedding: input_dim text embedding
 
         Returns:
-            6-dim array of Mahalanobis distances
+            One distance per centroid category.
         """
         if self.use_mahalanobis and self.centroid_detector is not None:
             return self.centroid_detector.compute_distances(text_embedding)
@@ -752,7 +756,7 @@ class FusionClassifier:
         # Simple fallback using cosine similarity (1 - cosine = distance)
         if self.centroid_detector is not None:
             return 1.0 - self.centroid_detector.compute_distances(text_embedding)
-        return np.zeros(6)
+        return np.zeros(len(MahalanobisCentroidDetector.CATEGORIES))
 
     # ------------------------------------------------------------------
     # Rule-based fallback
@@ -761,10 +765,10 @@ class FusionClassifier:
     def _rule_based_classify(self, features: Any) -> dict[str, float]:
         """Rule-based classification when no trained model is available.
 
-        Supports three feature vector layouts:
-        - Old: 768 + 768 + 1 + 6 + 3 + 20 + 5 = 1571
-        - M23: 256 + 256 + 1 + 6 + 3 + 20 + 5 = 547
-        - zvec: 128 + 128 + 1 + 6 + 3 + 20 + 5 = 291
+        Supports current 8-slot and legacy 6-slot feature vector layouts:
+        - Old: 768 + 768 + 1 + centroid slots + 3 + 20 + 5 = 1571 or 1573
+        - M23: 256 + 256 + 1 + centroid slots + 3 + 20 + 5 = 547 or 549
+        - zvec: 128 + 128 + 1 + centroid slots + 3 + 20 + 5 = 291 or 293
 
         Centroid distances are cosine similarity (HIGH = close to centroid =
         strong attack signal).  This is the opposite of Mahalanobis distance.
@@ -775,33 +779,14 @@ class FusionClassifier:
 
         n_features = len(features)
 
-        # Detect layout based on vector size
-        # zvec: 291, M23: 547, old: 1571
-        if n_features == 291:
-            # zvec layout: 128+128+1+6+3+20+5 = 291
-            # text(128) + ctx(128) + intent(1) + centroids(6) + perplexity(3) + ngram(20) + flags(5)
-            centroid_start = 128 + 128 + 1  # 257 (intent=256, centroids start at 257)
-            intent_idx = 256
-            perplexity_start = 263
-            ngram_start = 266
-            ngram_end = 286
-            flags_start = 286
-        elif n_features <= 547:
-            # M23 layout: 256+256+1+6+3+20+5 = 547
-            centroid_start = 512
-            intent_idx = 512
-            perplexity_start = 519
-            ngram_start = 522
-            ngram_end = 542
-            flags_start = 542
-        else:
-            # Old layout: 768+768+1+6+3+20+5 = 1571
-            centroid_start = 1537
-            intent_idx = 1536
-            perplexity_start = 1543
-            ngram_start = 1546
-            ngram_end = 1566
-            flags_start = 1566
+        layout = self._feature_layout(n_features)
+        intent_idx = layout["intent_idx"]
+        centroid_start = layout["centroid_start"]
+        centroid_count = layout["centroid_count"]
+        perplexity_start = layout["perplexity_start"]
+        ngram_start = layout["ngram_start"]
+        ngram_end = layout["ngram_end"]
+        flags_start = layout["flags_start"]
 
         # --- Intent Divergence ---
         # Low cosine similarity between text and context = suspicious
@@ -815,14 +800,7 @@ class FusionClassifier:
         # --- Centroid Cosine Similarities ---
         # HIGH cosine similarity = close to centroid = attack-like
         # Cosine sim range: [-1, 1], values > 0.7 indicate strong attack signal
-        centroid_cats = [
-            "content_injection",
-            "semantic_manipulation",
-            "cognitive_state_attack",
-            "behavioral_control",
-            "exfiltration_attempt",
-            "jailbreak",
-        ]
+        centroid_cats = MahalanobisCentroidDetector.CATEGORIES[:centroid_count]
         for i, cat in enumerate(centroid_cats):
             if centroid_start + i < n_features:
                 sim = features[centroid_start + i]
@@ -879,6 +857,56 @@ class FusionClassifier:
     # ------------------------------------------------------------------
     # Stacking ensemble (M23)
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _feature_layout(n_features: int) -> dict[str, int]:
+        """Infer feature positions for current 8-slot and legacy 6-slot vectors."""
+        centroid_total = len(MahalanobisCentroidDetector.CATEGORIES)
+        static_tail = 1 + 3 + 20 + 5
+        layouts = (
+            (128, centroid_total),
+            (128, 6),
+            (256, centroid_total),
+            (256, 6),
+            (768, centroid_total),
+            (768, 6),
+        )
+        for emb_dim, centroid_count in layouts:
+            expected = emb_dim + emb_dim + static_tail + centroid_count
+            if n_features == expected:
+                intent_idx = emb_dim * 2
+                centroid_start = intent_idx + 1
+                return {
+                    "embedding_dim": emb_dim,
+                    "centroid_count": centroid_count,
+                    "intent_idx": intent_idx,
+                    "centroid_start": centroid_start,
+                    "perplexity_start": centroid_start + centroid_count,
+                    "ngram_start": centroid_start + centroid_count + 3,
+                    "ngram_end": centroid_start + centroid_count + 3 + 20,
+                    "flags_start": centroid_start + centroid_count + 3 + 20,
+                }
+
+        # Best-effort fallback for partial or future vectors: preserve the old
+        # broad zvec/M23/legacy split, but use the current centroid count.
+        if n_features < 512:
+            emb_dim = 128
+        elif n_features < 1024:
+            emb_dim = 256
+        else:
+            emb_dim = 768
+        intent_idx = emb_dim * 2
+        centroid_start = intent_idx + 1
+        return {
+            "embedding_dim": emb_dim,
+            "centroid_count": centroid_total,
+            "intent_idx": intent_idx,
+            "centroid_start": centroid_start,
+            "perplexity_start": centroid_start + centroid_total,
+            "ngram_start": centroid_start + centroid_total + 3,
+            "ngram_end": centroid_start + centroid_total + 3 + 20,
+            "flags_start": centroid_start + centroid_total + 3 + 20,
+        }
 
     def fit_stacking(self, X: Any, y: Any, n_folds: int = 5) -> None:
         """Fit a stacking ensemble with cross-validated OOF predictions.
@@ -949,10 +977,12 @@ class FusionClassifier:
                         # lower (< 0.845). Real attacks have ALL centroids high (> 0.88);
                         # greetings have one centroid conspicuously lower.
                         n_feat = len(features)
-                        centroid_start = {291: 257, 547: 512, 1571: 1537}.get(n_feat)
-                        if centroid_start is not None:
-                            cs = features[centroid_start : centroid_start + 6]
-                            if len(cs) == 6 and cs[0] > 0.90 and cs[2] < 0.845:
+                        layout = self._feature_layout(n_feat)
+                        centroid_start = layout["centroid_start"]
+                        centroid_count = layout["centroid_count"]
+                        cs = features[centroid_start : centroid_start + centroid_count]
+                        if len(cs) >= 3:
+                            if cs[0] > 0.90 and cs[2] < 0.845:
                                 # Probable greeting FP — dampen attack scores
                                 for k in scores:
                                     scores[k] = scores[k] * 0.30
