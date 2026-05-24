@@ -10,24 +10,47 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in HermesKatana, please report it responsibly:
+Please report security vulnerabilities **privately** through one of
+the channels below — not via public issues or pull requests, which
+would expose the vulnerability before a fix is available.
 
-1. **Do not** open a public GitHub issue for security vulnerabilities.
-2. Email **claudlos@users.noreply.github.com** with:
-   - A description of the vulnerability
-   - Steps to reproduce
-   - Potential impact assessment
-3. You will receive an acknowledgment within 48 hours.
-4. A fix will be developed and released as a patch version.
+### Preferred: GitHub Security Advisories
+
+**[Report a vulnerability](https://github.com/claudlos/hermes-katana/security/advisories/new)** directly through GitHub.
+The advisory is private until the maintainers and you publish it
+together once a fix is shipped.
+
+### Email
+
+`carlosian@agentmail.to`
+
+### What to include
+
+In either channel, please include:
+
+- a description of the vulnerability,
+- steps to reproduce (proof-of-concept welcome),
+- a potential impact assessment, and
+- the Hermes Katana version (`katana version`) and any relevant
+  environment details.
+
+### What to expect
+
+- An acknowledgment within **48 hours**.
+- A fix developed privately and shipped as a patch version on the
+  affected supported lines (see the table above).
+- A credited GitHub Security Advisory published alongside the fix,
+  unless you ask to remain anonymous.
 
 ## Scope
 
-HermesKatana is a security toolkit designed to protect LLM agents. The following are in scope:
+Hermes Katana is a security toolkit designed to protect LLM agents.
+The following are in scope:
 
 - Bypasses of taint tracking that allow untrusted data to reach sinks
 - Policy engine evaluation errors that produce incorrect allow/deny decisions
 - Vault encryption weaknesses or key exposure
-- Audit trail hash chain forgery
+- Audit trail hash-chain forgery
 - Scanner evasion techniques not covered by existing patterns
 - Proxy secret scrubbing bypasses
 
