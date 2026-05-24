@@ -92,7 +92,7 @@ def test_scan_middleware_skips_structural_args_but_scans_commands(monkeypatch):
 
     ctx = CallContext(
         tool_name="terminal",
-        args={"workdir": "/home/carlos/project", "timeout": 30, "command": "printf benchmark"},
+        args={"workdir": "/home/user/project", "timeout": 30, "command": "printf benchmark"},
     )
 
     assert mw.pre_dispatch(ctx) == DispatchDecision.ALLOW

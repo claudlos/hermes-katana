@@ -1805,11 +1805,12 @@ _install_katana_twins()
 def _harden_hermes_driver_templates() -> None:
     """Make nested Hermes CLI drivers hermetic for proving-ground sandboxes.
 
-    Hermes Agent normally honors the user's ~/.hermes/config.yaml. Carlos's
-    normal config pins terminal.cwd to /home/example, which is correct for daily
-    use but invalid inside this harness: each attack gets its own seeded
-    workspace, and tool/file operations must stay in that workspace.  Passing
-    --ignore-user-config lets Hermes resolve terminal.cwd from subprocess cwd.
+    Hermes Agent normally honors the user's ~/.hermes/config.yaml. Many
+    operators pin terminal.cwd in that config to a daily-driver path, which is
+    correct for daily use but invalid inside this harness: each attack gets
+    its own seeded workspace, and tool/file operations must stay in that
+    workspace.  Passing --ignore-user-config lets Hermes resolve terminal.cwd
+    from the subprocess cwd we set per attack.
 
     --ignore-rules also prevents ambient AGENTS.md/CLAUDE.md/memory-style repo
     rules from contaminating the measured prompt.  Finally, 15 tool iterations
@@ -2077,10 +2078,11 @@ def _build_subprocess_env(driver: AgentDriver, workspace: Path | None = None) ->
 
     If a per-attack workspace is supplied, make the environment agree with
     subprocess cwd. This matters for nested Hermes drivers: Hermes Agent
-    intentionally honors TERMINAL_CWD, and Carlos's normal parent shell can
-    export TERMINAL_CWD=/home/example. Without overriding it here, Hermes can
-    have process cwd=<sandbox> but terminal/file tools still operate in
-    /home/example, invalidating proving-ground rows.
+    intentionally honors TERMINAL_CWD, and the operator's parent shell can
+    export TERMINAL_CWD pointing at their daily-driver workspace. Without
+    overriding it here, Hermes can have process cwd=<sandbox> but
+    terminal/file tools still operate in the inherited TERMINAL_CWD,
+    invalidating proving-ground rows.
 
     Methodology fix G3: also threads eval_defaults (temperature, top_p,
     seed) into the subprocess via env vars. We don't control these

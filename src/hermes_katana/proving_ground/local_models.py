@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Local model manager — downloads and serves GGUF models via llama.cpp server.
 
-For Carlos's RTX 3050Ti (4GB VRAM):
+Sized for ~4 GB VRAM (e.g. RTX 3050 Ti, GTX 1650, T4-half):
 - Bonsai 8B 1-bit: 1.15 GB, ~67 tok/s (best quality that fits)
 - Bonsai 4B 1-bit: ~0.6 GB, ~96 tok/s (fastest)
 - Qwen3 4B Q4_K_M: ~2.5 GB, ~49 tok/s (good quality, standard quant)
 - Nemotron 4B: similar size range
+
+Larger GPUs can still use the same registry; the speed/VRAM columns
+in `list_models()` are reference measurements on the 4 GB tier.
 
 Usage:
     python -m hermes_katana.proving_ground.local_models list
@@ -531,7 +534,7 @@ DEFAULT_PORT = 8080
 
 def list_models():
     """List available models with VRAM requirements."""
-    print(f"{'ID':<16} {'Name':<32} {'Size':>6} {'VRAM':>6} {'Speed':>8} {'Fits 3050Ti?':<12}")
+    print(f"{'ID':<16} {'Name':<32} {'Size':>6} {'VRAM':>6} {'Speed':>8} {'Fits 4GB?':<12}")
     print("-" * 90)
     for mid, m in MODELS.items():
         vram_gb = m.get("vram_gb")

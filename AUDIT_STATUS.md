@@ -2,7 +2,9 @@
 
 Last reconciled: 2026-05-21
 
-Source audit: `/home/carlos/Documents/Code/hermes-katana-v3-audit.html`.
+Source audit: an external v3 audit report (the original HTML was authored
+off-tree against this repository's `c3f3db2` snapshot — findings are mirrored
+into the tables below).
 
 This file is a working tracker, not a substitute for tests. Each status is based
 on the current tree plus spot checks run during reconciliation.
@@ -54,7 +56,7 @@ on the current tree plus spot checks run during reconciliation.
 | 20 | `pip install hermes-katana` does not resolve | Partially fixed | README/quickstart now use source install; PyPI publish remains open. |
 | 21 | README quickstart output was fictional | Fixed | README/quickstart now describe actual Rich output instead of a fake line report. |
 | 22 | README links to missing `docs/research/` | Fixed | Missing research links removed from README. |
-| 23 | `/home/carlos` hard-coded in shipped scripts | Verified obsolete | Only remaining tracked match is a unit-test fixture path. |
+| 23 | Operator's home dir hard-coded in shipped scripts | Verified obsolete | No remaining tracked matches; the depersonalize pass replaced the last fixture path with `/home/user/`. |
 | 24 | `zvec` dependency in `[ml]` resolves wrong package | Fixed | Removed the PyPI `zvec` dependency from the `ml` extra. |
 | 25 | Zero false-positive guarantee is false | Partially fixed | README guarantee removed; scanner FP tuning remains product work. |
 | 26 | `<0.5 ms / 1KB` performance claim is false | Fixed | README now says to benchmark locally instead of publishing fixed latency claims. |

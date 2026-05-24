@@ -147,8 +147,8 @@ def build_fleet_manifest(shards_used, output_path, run_id):
     headroom we measured at ~60% utilization on the 2x layout).
     1x agent (hermes_openai_codex) gets a single file_content worker.
 
-    codex_cli is temporarily excluded — Carlos's weekly quota at <5% on
-    2026-05-11; re-add after reset, ideally switched to gpt-5.4-mini.
+    codex_cli is temporarily excluded — the operator's weekly quota was at
+    <5% on 2026-05-11; re-add after reset, ideally switched to gpt-5.4-mini.
     """
     workers = []
 
@@ -175,8 +175,9 @@ def build_fleet_manifest(shards_used, output_path, run_id):
     #   * one tool_output worker over all shards
     #   * two file_content workers over disjoint shard halves
     #
-    # This adds the one extra M2.5 and one extra M2.7 worker Carlos requested
-    # without launching duplicate jobs against the same output file.
+    # This adds the one extra M2.5 and one extra M2.7 worker we wanted for
+    # this campaign without launching duplicate jobs against the same output
+    # file.
     mid = len(shards_used) // 2
     first_half = shards_used[:mid]
     second_half = shards_used[mid:]
@@ -236,8 +237,8 @@ def build_fleet_manifest(shards_used, output_path, run_id):
         "_target": "Confirm as many untested synth rows from data_v7/attacks.jsonl as possible.",
         "_design_id": f"D-v8-untested-synth-{run_id}",
         # fleet.py uses global job concurrency, not persistent per-entry
-        # worker slots. Cap this campaign at the six MiniMax lanes Carlos
-        # requested; otherwise fast-completing/skipped non-MM jobs can let the
+        # worker slots. Cap this campaign at the six MiniMax lanes we want
+        # active; otherwise fast-completing/skipped non-MM jobs can let the
         # queue fill all active slots with MiniMax and overshoot the free-plan
         # 5-hour allowance.
         "max_concurrency": 6,
