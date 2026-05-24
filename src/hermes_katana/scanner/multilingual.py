@@ -878,7 +878,7 @@ def _load_corpus_ml_phrases() -> None:
             continue
         try:
             kw_dict = _LANG_KEYWORDS[lang]
-            for line in phrase_file.read_text().splitlines():
+            for line in phrase_file.read_text(encoding="utf-8").splitlines():
                 key = line.strip().lower()
                 if not key or len(key) < 6:
                     continue

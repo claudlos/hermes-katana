@@ -155,7 +155,7 @@ def _extract_injection_keywords() -> list[str]:
     (2+ words) by stripping regex metacharacters.
     """
     injection_py = Path(__file__).with_name("injection.py")
-    source = injection_py.read_text()
+    source = injection_py.read_text(encoding="utf-8")
     phrases: list[str] = []
     for m in _PATTERN_LITERAL_RE.finditer(source):
         raw = m.group(1)
@@ -195,7 +195,7 @@ def _extract_caught_attacks() -> list[str]:
         return []
 
     phrases: list[str] = []
-    with norm_path.open() as f:
+    with norm_path.open(encoding="utf-8") as f:
         for line in f:
             rec = json.loads(line)
             verdict = rec.get("katana_verdicts", {}).get("injection", {}).get("verdict")
@@ -339,7 +339,7 @@ def _load_corpus_phrases(path: str) -> list[str]:
     fp = _CORPUS_DIR / path
     if not fp.exists():
         return []
-    return [line.strip() for line in fp.read_text().splitlines() if line.strip()]
+    return [line.strip() for line in fp.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 # ---------------------------------------------------------------------------
