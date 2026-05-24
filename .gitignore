@@ -52,6 +52,11 @@ V3-ACTION-PLAN.md
 V3-COVERAGE-REPORT.md
 .hermes/
 
+# One-off audit working directory: built sdist/wheel under .audit/dist,
+# pytest logs, isolated HOME, sweep helper scripts. Re-created each time
+# an audit is run; the human-facing record lives in AUDIT_REPORT.md.
+.audit/
+
 # Misc
 .tmp/
 *.lock
