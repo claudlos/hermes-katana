@@ -182,7 +182,7 @@ def _extend_with_corpus(automaton: ahocorasick.Automaton) -> int:
 
     count = 0
     try:
-        for line in bloom_file.read_text().splitlines():
+        for line in bloom_file.read_text(encoding="utf-8").splitlines():
             phrase = line.strip().lower()
             if not phrase or len(phrase) < 6:
                 continue

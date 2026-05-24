@@ -114,7 +114,7 @@ def _load_phrases() -> list[tuple[str, str]]:
     # fast_patterns.json
     if _SCANNER_DATA.exists():
         try:
-            data = json.loads(_SCANNER_DATA.read_text())
+            data = json.loads(_SCANNER_DATA.read_text(encoding="utf-8"))
             for cat, phrases in data.items():
                 for ph in phrases:
                     add(ph, cat)
@@ -124,7 +124,7 @@ def _load_phrases() -> list[tuple[str, str]]:
     # attack_seed_phrases.json
     if _SCABBARD_DATA.exists():
         try:
-            data = json.loads(_SCABBARD_DATA.read_text())
+            data = json.loads(_SCABBARD_DATA.read_text(encoding="utf-8"))
             for cat, phrases in data.items():
                 for ph in phrases:
                     add(ph, cat)
@@ -134,7 +134,7 @@ def _load_phrases() -> list[tuple[str, str]]:
     # injection_ngrams.txt
     if _NGRAMS_FILE.exists():
         try:
-            for line in _NGRAMS_FILE.read_text().splitlines():
+            for line in _NGRAMS_FILE.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#"):
                     add(line, "injection_ngram")
@@ -146,7 +146,7 @@ def _load_phrases() -> list[tuple[str, str]]:
     _AHO_CORPUS = _CORPUS_DIR / "aho_patterns.txt"
     if _AHO_CORPUS.exists():
         try:
-            for line in _AHO_CORPUS.read_text().splitlines():
+            for line in _AHO_CORPUS.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line and len(line) >= 10:
                     add(line, "injection_ngram")

@@ -70,7 +70,7 @@ def _load_tokenizer(path: str) -> Any:
         config_path = Path(path) / "tokenizer_config.json"
         if not config_path.exists():
             raise
-        cfg = _json.loads(config_path.read_text())
+        cfg = _json.loads(config_path.read_text(encoding="utf-8"))
         est = cfg.get("extra_special_tokens")
         if not isinstance(est, list):
             raise
@@ -81,7 +81,7 @@ def _load_tokenizer(path: str) -> Any:
                 if src.is_file():
                     shutil.copy2(src, tmpdir)
             cfg["extra_special_tokens"] = {t: t for t in est}
-            (Path(tmpdir) / "tokenizer_config.json").write_text(_json.dumps(cfg, indent=2))
+            (Path(tmpdir) / "tokenizer_config.json").write_text(_json.dumps(cfg, indent=2), encoding="utf-8")
             return AutoTokenizer.from_pretrained(tmpdir)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -111,7 +111,7 @@ def _model_metric(path: Path, key: str) -> float:
     if not metrics_path.exists():
         return 0.0
     try:
-        metrics = json.loads(metrics_path.read_text())
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return 0.0
     value = metrics.get(key)
