@@ -32,7 +32,7 @@ def _load_run_meta(run_id: str) -> dict | None:
     p = FLEET_RUNS / run_id / "run_meta.json"
     if not p.exists():
         return None
-    return json.loads(p.read_text())
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def _iter_run_rows(run_id: str):
@@ -43,7 +43,7 @@ def _iter_run_rows(run_id: str):
         if "_broken" in str(p):
             continue
         try:
-            with p.open() as f:
+            with p.open(encoding="utf-8") as f:
                 for line in f:
                     try:
                         row = json.loads(line)
@@ -239,7 +239,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     report = build_report(args.run_id)
     out_path = out_dir / "report.md"
-    out_path.write_text(report)
+    out_path.write_text(report, encoding="utf-8")
     print(f"Wrote {out_path} ({len(report):,} bytes)")
     if args.stdout:
         print()

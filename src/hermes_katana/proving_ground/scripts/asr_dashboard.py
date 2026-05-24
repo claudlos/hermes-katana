@@ -43,7 +43,7 @@ def load_runs(paths: list[str]) -> list[dict]:
     for pat in paths:
         for fp in glob.glob(pat, recursive=True):
             try:
-                with open(fp) as f:
+                with open(fp, encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
                         if not line:
@@ -120,7 +120,7 @@ def load_corpus(paths: list[str]) -> dict[str, dict]:
     by_id: dict[str, dict] = {}
     for pat in paths:
         for fp in glob.glob(pat):
-            with open(fp) as f:
+            with open(fp, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -453,7 +453,7 @@ def main():
     out = "".join(sections)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out).write_text(out)
+        Path(args.out).write_text(out, encoding="utf-8")
         print(f"wrote {args.out} ({len(out)} chars)", file=sys.stderr)
     else:
         sys.stdout.write(out)
@@ -485,7 +485,7 @@ def main():
                 for k, ki, n, rate, lo, hi in summarize(aggregate(rows, key_fn))
             ]
         Path(args.json).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.json).write_text(json.dumps(cells, indent=2))
+        Path(args.json).write_text(json.dumps(cells, indent=2), encoding="utf-8")
         print(f"wrote {args.json}", file=sys.stderr)
 
 

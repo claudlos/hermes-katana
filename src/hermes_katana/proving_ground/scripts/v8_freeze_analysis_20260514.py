@@ -68,7 +68,7 @@ OPENAI_BATCH_DIRS = [
 
 
 def read_jsonl(path: Path) -> Iterable[dict]:
-    with path.open(errors="ignore") as f:
+    with path.open(errors="ignore", encoding="utf-8") as f:
         for line_no, line in enumerate(f, 1):
             if not line.strip():
                 continue
@@ -88,7 +88,7 @@ def read_jsonl(path: Path) -> Iterable[dict]:
 def write_jsonl(path: Path, rows: Iterable[dict]) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     n = 0
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
             n += 1
@@ -97,7 +97,7 @@ def write_jsonl(path: Path, rows: Iterable[dict]) -> int:
 
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def invalid_reason(row: dict) -> str | None:
@@ -293,7 +293,7 @@ def create_snapshot(args: argparse.Namespace) -> int:
         copy_file(main_spec, dst)
         manifest["copied"]["spec_files"].append(str(dst.relative_to(snap)))
 
-    (snap / "process_snapshot.txt").write_text(ps_snapshot())
+    (snap / "process_snapshot.txt").write_text(ps_snapshot(), encoding="utf-8")
     manifest["paths"] = {
         "snapshot": str(snap),
         "agent_shard_runs": str(agent_dst),
@@ -313,7 +313,7 @@ def load_status_totals(snapshot: Path) -> dict:
     }
     for path in sorted((snapshot / "agent_shard_runs").glob("*.status.json")):
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             continue
         run_id = data.get("run_id")
@@ -1168,7 +1168,7 @@ def derive(args: argparse.Namespace) -> int:
     }
     write_json(derived / "summary.json", summary)
     report = build_report(summary, confirmations, retries)
-    (derived / "report.md").write_text(report)
+    (derived / "report.md").write_text(report, encoding="utf-8")
     print(
         json.dumps(
             {"derived": str(derived), "summary": str(derived / "summary.json"), "report": str(derived / "report.md")},

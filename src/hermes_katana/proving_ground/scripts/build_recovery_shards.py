@@ -104,7 +104,7 @@ def load_existing_fingerprints(shards_dir: Path) -> set[str]:
     seen = set()
     for sp in sorted(shards_dir.glob("shard_*.jsonl")):
         try:
-            with sp.open() as f:
+            with sp.open(encoding="utf-8") as f:
                 for line in f:
                     d = json.loads(line)
                     ns = d.get("text_sha256_normalized") or sha(normalize(d.get("text", "")))
@@ -196,7 +196,7 @@ def build(
     kept: list[dict] = []
     label_in = Counter()
 
-    with source.open() as f:
+    with source.open(encoding="utf-8") as f:
         for line in f:
             n_total += 1
             try:
@@ -285,7 +285,7 @@ def build(
 
         if not dry_run:
             sp = out_dir / f"shard_{shard_id:03d}.jsonl"
-            with sp.open("w") as f:
+            with sp.open("w", encoding="utf-8") as f:
                 for row in rows:
                     f.write(json.dumps(row, ensure_ascii=False) + "\n")
             written_paths.append(sp.name)
@@ -336,7 +336,7 @@ def build(
     }
     if not dry_run:
         manifest_path = out_dir / "recovery_manifest.json"
-        manifest_path.write_text(json.dumps(manifest, indent=2))
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         print(f"\nWrote: {manifest_path}")
     else:
         print("\nDry-run manifest:")

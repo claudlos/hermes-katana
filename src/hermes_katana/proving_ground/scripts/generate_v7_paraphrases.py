@@ -236,7 +236,7 @@ def main() -> int:
         # Strip session_id line(s) if present (hermes -Q usually drops them).
         clean = "\n".join(ln for ln in raw.splitlines() if ln.strip() and not ln.startswith("session_id:"))
         # Save raw + count distinct lines
-        out_path.write_text(clean + "\n")
+        out_path.write_text(clean + "\n", encoding="utf-8")
         n_lines = sum(1 for ln in clean.splitlines() if ln.strip())
         print(f"  [{tid}] {n_lines} lines  in {elapsed:.0f}s -> {out_path}", flush=True)
 

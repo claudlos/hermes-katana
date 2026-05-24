@@ -103,7 +103,7 @@ def _is_informative(ngram: str) -> bool:
 
 
 def load_attacks(path: str) -> list[dict]:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
@@ -245,13 +245,17 @@ def main():
                 "ngrams": triggers,
             },
             indent=2,
-        )
+        ),
+        encoding="utf-8",
     )
     # Drop-in for hermes-katana fast_patterns
-    (out_dir / "fast_patterns_extension.json").write_text(json.dumps(to_fast_patterns_extension(triggers), indent=2))
+    (out_dir / "fast_patterns_extension.json").write_text(
+        json.dumps(to_fast_patterns_extension(triggers), indent=2), encoding="utf-8"
+    )
     # Drop-in for hermes-katana attack_seed_phrases
     (out_dir / "attack_seed_phrases_extension.json").write_text(
-        json.dumps(to_attack_seed_phrases_extension(triggers), indent=2)
+        json.dumps(to_attack_seed_phrases_extension(triggers), indent=2),
+        encoding="utf-8",
     )
     print(f"Wrote artifacts to {out_dir}/")
 

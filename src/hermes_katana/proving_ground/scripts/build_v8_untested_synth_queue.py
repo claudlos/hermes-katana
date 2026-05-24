@@ -77,7 +77,7 @@ QTIER_PREFERENCE = [
 
 def load_attacks():
     rows = []
-    with ATTACKS.open() as f:
+    with ATTACKS.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -243,7 +243,7 @@ def build_fleet_manifest(shards_used, output_path, run_id):
         "max_concurrency": 6,
         "workers": workers,
     }
-    output_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    output_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
 def main():
@@ -287,7 +287,7 @@ def main():
         sid = args.start_shard_id + (i // args.rows_per_shard)
         path = shards_dir / f"shard_{sid:05d}.jsonl"
         rows_out = shard_to_jsonl(chunk, sid)
-        with path.open("w") as f:
+        with path.open("w", encoding="utf-8") as f:
             for r in rows_out:
                 f.write(json.dumps(r, sort_keys=True, ensure_ascii=False) + "\n")
         shard_files.append(str(path.relative_to(ROOT)))
@@ -297,7 +297,7 @@ def main():
     # Write a queue manifest for traceability
     queue_path = ROOT / "results" / "queues" / f"queue_{run_id}.jsonl"
     queue_path.parent.mkdir(parents=True, exist_ok=True)
-    with queue_path.open("w") as f:
+    with queue_path.open("w", encoding="utf-8") as f:
         for r in queue:
             f.write(
                 json.dumps(

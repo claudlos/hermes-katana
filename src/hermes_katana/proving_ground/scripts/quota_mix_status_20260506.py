@@ -24,7 +24,7 @@ RUN_IDS = [
 
 def load_json(path: Path) -> dict:
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
@@ -44,7 +44,7 @@ def run_status(run_id: str) -> dict:
     last = ""
     if sup.exists() and sup.stat().st_size:
         try:
-            last = sup.read_text(errors="ignore").splitlines()[-1]
+            last = sup.read_text(errors="ignore", encoding="utf-8").splitlines()[-1]
         except Exception:
             last = ""
     active = bool(last and "fleet exit" not in last)

@@ -67,7 +67,7 @@ def _iter_rows(agent_ids: set[str]):
         if not any(f"_{a}_" in name or name.endswith(f"_{a}.jsonl") for a in agent_ids):
             continue
         try:
-            with p.open() as f:
+            with p.open(encoding="utf-8") as f:
                 for line in f:
                     try:
                         row = json.loads(line)
@@ -224,7 +224,7 @@ def main() -> int:
     }
     out_path = ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(result, indent=2))
+    out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     print(f"\n=== harness-ablation — paired n={overall['n_pairs']:,} ===\n")
     t = overall["table"]

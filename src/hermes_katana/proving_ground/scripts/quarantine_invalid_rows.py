@@ -54,7 +54,7 @@ def _load_plan(path: Path | None) -> dict[str, dict]:
     if path is None:
         return {}
     plan: dict[str, dict] = {}
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for lineno, line in enumerate(f, 1):
             if not line.strip():
                 continue
@@ -72,7 +72,7 @@ def _iter_jsonl(paths: Iterable[str]) -> Iterable[tuple[Path, int, dict | None, 
     for pat in paths:
         for name in sorted(glob.glob(pat)):
             p = Path(name)
-            with p.open(errors="ignore") as f:
+            with p.open(errors="ignore", encoding="utf-8") as f:
                 for lineno, line in enumerate(f, 1):
                     if not line.strip():
                         continue
@@ -184,7 +184,7 @@ def denominator_summary(buckets: dict[str, list[dict]], *, planned_n: int) -> di
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -192,7 +192,7 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
 def _load_exclude_rules(path: Path | None) -> list[dict]:
     if path is None:
         return []
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, list):
         raise ValueError("exclude rules file must contain a JSON list")
     out: list[dict] = []
@@ -235,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, rows in buckets.items():
         _write_jsonl(args.out_dir / f"{name}.jsonl", rows)
     summary = denominator_summary(buckets, planned_n=len(plan))
-    (args.out_dir / "denominators.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
+    (args.out_dir / "denominators.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 

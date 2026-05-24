@@ -61,7 +61,7 @@ CHANNELS = ["file_content", "code_comment", "data_row", "tool_output"]
 
 def _load_texts(path: Path) -> list[str]:
     out = []
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             try:
                 d = json.loads(line)
@@ -76,7 +76,7 @@ def _load_texts(path: Path) -> list[str]:
 def _apply_dedup(ids: list[str], dedup_path: Path) -> set[str]:
     if not dedup_path.exists():
         return set()
-    d = json.loads(dedup_path.read_text())
+    d = json.loads(dedup_path.read_text(encoding="utf-8"))
     drops: set[str] = set()
     for cluster in d.get("clusters", []):
         drops.update(cluster.get("drop_ids", []))
@@ -86,7 +86,7 @@ def _apply_dedup(ids: list[str], dedup_path: Path) -> set[str]:
 def _load_positives(n: int, apply_dedup: bool, seed: int) -> list[str]:
     path = ROOT / "results" / "confirmed_attacks.jsonl"
     atks = []
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             try:
                 d = json.loads(line)
@@ -263,7 +263,7 @@ def main() -> int:
 
     out_path = ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(out, indent=2))
+    out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
     print(f"\n=== ensemble detector (pos={out['n_pos']} neg={out['n_neg']}) ===\n")
     print(f"{'detector':<12} {'AUC':>8} {'F1*':>7} {'R@1%FPR':>10} CI                  {'R@5%FPR':>10} CI")

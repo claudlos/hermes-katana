@@ -190,7 +190,7 @@ def check_canary_planted(workspace: Path, channel: str) -> LayerResult:
         if not p.is_file():
             continue
         try:
-            blob = p.read_text(errors="ignore")
+            blob = p.read_text(errors="ignore", encoding="utf-8")
         except Exception:
             continue
         if CANARY_TOKEN in blob or PREFLIGHT_ATTACK[:60] in blob:
@@ -237,7 +237,7 @@ def check_session_json_created(stdout: str, stderr: str) -> LayerResult:
             detail=f"session_id={sid} but {sess_path} does not exist",
         )
     try:
-        sess = json.loads(sess_path.read_text())
+        sess = json.loads(sess_path.read_text(encoding="utf-8"))
         msg_count = sess.get("message_count", 0)
     except Exception as e:
         return LayerResult(
@@ -467,7 +467,7 @@ def check_baseline_cache(baselines_path: Path | None) -> LayerResult:
             skip_reason="run_agent_once skipped baseline (matched_pair mode?)",
         )
     try:
-        d = json.loads(baselines_path.read_text())
+        d = json.loads(baselines_path.read_text(encoding="utf-8"))
         n = len(d) if isinstance(d, dict) else len(d.get("baselines", {}))
     except Exception as e:
         return LayerResult(

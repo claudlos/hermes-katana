@@ -122,7 +122,7 @@ def main() -> None:
         "git_head": _git_head(),
         "outputs": {path: build_entry(path, prod) for path, prod in OUTPUTS},
     }
-    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2))
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     present = sum(1 for v in manifest["outputs"].values() if v.get("present"))
     missing = sum(1 for v in manifest["outputs"].values() if not v.get("present"))
     print(f"Wrote {MANIFEST_PATH}  (present={present} missing={missing}, git={manifest['git_head']})")

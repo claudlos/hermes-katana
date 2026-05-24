@@ -31,7 +31,7 @@ def invalid_reason(row: dict) -> str | None:
 def read_rows(path: Path) -> tuple[list[str], list[dict | None]]:
     raw_lines = []
     parsed = []
-    with path.open(errors="ignore") as f:
+    with path.open(errors="ignore", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
@@ -96,7 +96,7 @@ def main() -> int:
         if not args.dry_run:
             backup_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, backup_dir / path.name)
-            with path.open("w") as f:
+            with path.open("w", encoding="utf-8") as f:
                 f.writelines(keep_lines)
 
     summary["reasons"] = dict(summary["reasons"])

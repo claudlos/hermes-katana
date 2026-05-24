@@ -37,7 +37,7 @@ def log(msg: str) -> None:
     ts = time.strftime("%H:%M:%S")
     line = f"[{ts}] {msg}"
     print(line, flush=True)
-    with LOG.open("a") as f:
+    with LOG.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
 
 
@@ -60,7 +60,7 @@ def main() -> int:
 
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=60.0)
 
-    pending = json.loads(PENDING.read_text()) if PENDING.exists() else []
+    pending = json.loads(PENDING.read_text(encoding="utf-8")) if PENDING.exists() else []
     log(f"=== v12 Track A start ({len(pending)} pending) ===")
 
     session_submissions: list[str] = []
@@ -78,7 +78,7 @@ def main() -> int:
             try:
                 rec = submit_openai(Path(r["input"]), r["model"])
                 job_path = _job_record_path(rec["batch_id"])
-                job_path.write_text(json.dumps(rec, indent=2, default=_json_default))
+                job_path.write_text(json.dumps(rec, indent=2, default=_json_default), encoding="utf-8")
                 session_submissions.append(rec["batch_id"])
                 log(f"  ✓ {Path(r['input']).name} → {rec['batch_id']}")
             except Exception as e:
@@ -91,7 +91,7 @@ def main() -> int:
                     break
                 log(f"  ✗ {Path(r['input']).name}: {msg}")
         # persist pending so restarts don't re-submit
-        PENDING.write_text(json.dumps(pending))
+        PENDING.write_text(json.dumps(pending), encoding="utf-8")
         if pending:
             time.sleep(5)
 

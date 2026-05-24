@@ -48,7 +48,7 @@ SHARD_MANIFEST = ROOT / "shards" / "manifest_multilingual.json"
 def _load_shard_language_map() -> dict[int, str]:
     if not SHARD_MANIFEST.exists():
         raise SystemExit(f"multilingual manifest not found: {SHARD_MANIFEST}")
-    d = json.loads(SHARD_MANIFEST.read_text())
+    d = json.loads(SHARD_MANIFEST.read_text(encoding="utf-8"))
     return {s["shard"]: s["language"] for s in d.get("shards", [])}
 
 
@@ -64,7 +64,7 @@ def _stream_rows_multilingual(lang_map: dict[int, str]):
             continue
         if shard_num not in lang_map:
             continue
-        with p.open() as f:
+        with p.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     row = json.loads(line)
@@ -235,7 +235,7 @@ def main() -> int:
     res = analyze(min_n_per_cell=args.min_n, min_languages_per_agent=args.min_langs)
     out_path = ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(res, indent=2))
+    out_path.write_text(json.dumps(res, indent=2), encoding="utf-8")
 
     print("\n=== multilingual transfer ===")
     print(f"qualified agents (≥{args.min_langs} languages, ≥{args.min_n} rows/cell): {len(res['qualified_agents'])}")

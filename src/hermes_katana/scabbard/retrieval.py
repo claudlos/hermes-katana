@@ -181,7 +181,7 @@ class RetrievalIndex:
 
         path = Path(phrases_path) if phrases_path else self._phrases_path or SEED_PHRASES_PATH
 
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             data: dict[str, list[str]] = json.load(fh)
 
         all_phrases: list[str] = []
@@ -226,7 +226,7 @@ class RetrievalIndex:
 
         phrases_cache = path.with_suffix(".phrases.json")
         if phrases_cache.exists():
-            with open(phrases_cache) as fh:
+            with open(phrases_cache, encoding="utf-8") as fh:
                 cache = json.load(fh)
             self._phrases = cache.get("phrases", [])
             self._phrase_categories = cache.get("categories", [])
@@ -247,7 +247,7 @@ class RetrievalIndex:
         faiss_lib.write_index(self._index, str(path))
 
         phrases_cache = path.with_suffix(".phrases.json")
-        with open(phrases_cache, "w") as fh:
+        with open(phrases_cache, "w", encoding="utf-8") as fh:
             json.dump(
                 {
                     "phrases": self._phrases,
@@ -362,7 +362,7 @@ class RetrievalIndex:
                     self._category_to_indices[cat].append(idx)
 
     def _get_seed_data(self) -> dict[str, list[str]]:
-        with open(SEED_PHRASES_PATH) as fh:
+        with open(SEED_PHRASES_PATH, encoding="utf-8") as fh:
             return cast(dict[str, list[str]], json.load(fh))
 
 

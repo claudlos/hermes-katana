@@ -31,7 +31,7 @@ def _load_status_files(run_id_filter: str | None):
     """Yield (status_dict, mtime) for every shard status that matches."""
     for sp in RUNS_DIR.glob("*.status.json"):
         try:
-            d = json.loads(sp.read_text())
+            d = json.loads(sp.read_text(encoding="utf-8"))
         except Exception:
             continue
         if run_id_filter and d.get("run_id") != run_id_filter:
@@ -174,7 +174,7 @@ def main() -> int:
             sup = FLEET_DIR / r / "supervisor.log"
             if not sup.exists():
                 continue
-            tail = sup.read_text().splitlines()[-1:] if sup.stat().st_size else []
+            tail = sup.read_text(encoding="utf-8").splitlines()[-1:] if sup.stat().st_size else []
             tail_str = (tail[0] if tail else "")[:120]
             print(f"  {r:<32} {tail_str}")
     return 0

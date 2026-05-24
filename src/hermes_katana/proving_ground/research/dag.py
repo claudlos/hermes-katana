@@ -58,7 +58,7 @@ class HypothesisDAG:
     # ------------------------------------------------------------------- I/O
     def _load(self) -> None:
         assert self.path is not None
-        d = json.loads(self.path.read_text())
+        d = json.loads(self.path.read_text(encoding="utf-8"))
         for nid, raw in d.get("nodes", {}).items():
             self._nodes[nid] = Node(**raw)
 
@@ -72,7 +72,7 @@ class HypothesisDAG:
             "nodes": {nid: asdict(n) for nid, n in self._nodes.items()},
         }
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload, indent=2))
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         tmp.replace(self.path)
 
     # --------------------------------------------------------------- mutation

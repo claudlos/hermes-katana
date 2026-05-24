@@ -187,7 +187,7 @@ def load_rows(patterns: list[str]) -> list[dict]:
             if path.endswith(".fp.jsonl"):
                 # Prefer .fp.jsonl when present (semantic-enriched)
                 pass
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -269,7 +269,7 @@ def emit_audit_sample(rows: list[dict], out_path: Path, frac: float, seed: int) 
         n_pick = max(1, int(len(group) * frac))
         out.extend(rng.sample(group, min(n_pick, len(group))))
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", newline="") as f:
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(
             [
@@ -355,7 +355,7 @@ def main() -> int:
 
     report = aggregate(rows)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(report, indent=2))
+    args.out.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"Wrote {args.out}")
 
     if args.audit_csv is not None:

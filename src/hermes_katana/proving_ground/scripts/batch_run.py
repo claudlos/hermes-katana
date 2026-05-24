@@ -72,7 +72,7 @@ def _load_dotenv() -> None:
         if not env_path.exists():
             continue
         try:
-            for line in env_path.read_text().splitlines():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
@@ -91,7 +91,7 @@ def _load_shard(shard_id: int) -> list[dict]:
     path = ROOT / "shards" / f"shard_{shard_id:03d}.jsonl"
     if not path.exists():
         raise FileNotFoundError(path)
-    return [json.loads(line) for line in path.open() if line.strip()]
+    return [json.loads(line) for line in path.open(encoding="utf-8") if line.strip()]
 
 
 def _system_and_user(task: str, channel: str, attack_text: str) -> tuple[str, str]:
@@ -191,7 +191,7 @@ def build_batch(shard_id: int, task: str, channel: str, model: str, provider: st
     # translates to the wire format the provider expects.
     safe_model = model.replace("/", "_").replace(":", "_")
     out_path = out_dir / f"shard_{shard_id:03d}_{safe_model}_{channel}.jsonl"
-    with out_path.open("w") as f:
+    with out_path.open("w", encoding="utf-8") as f:
         for r in reqs:
             f.write(json.dumps(asdict(r), ensure_ascii=False) + "\n")
 
@@ -216,7 +216,7 @@ def submit_anthropic(input_path: Path, model: str) -> dict:
     client = Anthropic(api_key=key, timeout=60.0)
 
     requests_payload = []
-    for line in input_path.open():
+    for line in input_path.open(encoding="utf-8"):
         r = json.loads(line)
         requests_payload.append(
             {
@@ -258,7 +258,7 @@ def fetch_anthropic(batch_id: str, out_path: Path) -> int:
 
     client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], timeout=60.0)
     n = 0
-    with out_path.open("w") as f:
+    with out_path.open("w", encoding="utf-8") as f:
         for result in client.messages.batches.results(batch_id):
             row = result.model_dump() if hasattr(result, "model_dump") else dict(result)
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -283,8 +283,8 @@ def submit_openai(input_path: Path, model: str) -> dict:
     #   {"custom_id": ..., "method": "POST", "url": "/v1/chat/completions",
     #    "body": {...chat-completions payload...}}
     tmp = input_path.with_suffix(".openai_tmp.jsonl")
-    with tmp.open("w") as out:
-        for line in input_path.open():
+    with tmp.open("w", encoding="utf-8") as out:
+        for line in input_path.open(encoding="utf-8"):
             r = json.loads(line)
             body = {
                 "model": model,
@@ -319,7 +319,7 @@ def submit_openai(input_path: Path, model: str) -> dict:
         "model": model,
         "input_path": str(input_path),
         "submitted_at": int(time.time()),
-        "n_requests": sum(1 for _ in input_path.open()),
+        "n_requests": sum(1 for _ in input_path.open(encoding="utf-8")),
         "file_id": uploaded.id,
         "raw": batch.model_dump() if hasattr(batch, "model_dump") else None,
     }
@@ -347,7 +347,7 @@ def fetch_openai(batch_id: str, out_path: Path) -> int:
     content = client.files.content(b.output_file_id).read()
     out_path.write_bytes(content)
     # OpenAI returns one JSONL line per input request.
-    return sum(1 for _ in out_path.open())
+    return sum(1 for _ in out_path.open(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +373,7 @@ def submit_gemini(input_path: Path, model: str) -> dict:
 
     inlined = []
     custom_ids: list[str] = []
-    for line in input_path.open():
+    for line in input_path.open(encoding="utf-8"):
         r = json.loads(line)
         inlined.append(
             types.InlinedRequest(
@@ -418,7 +418,7 @@ def fetch_gemini(batch_id: str, out_path: Path) -> int:
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"])
     b = client.batches.get(name=batch_id)
     n = 0
-    with out_path.open("w") as f:
+    with out_path.open("w", encoding="utf-8") as f:
         for resp in getattr(b, "inlined_responses", []) or []:
             row = resp.model_dump() if hasattr(resp, "model_dump") else dict(resp)
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -457,7 +457,7 @@ def submit_gemini_direct(input_path: Path, model: str) -> dict:
         raise RuntimeError("No Google keys set (GOOGLE_API_KEY / GOOGLE_API_KEY_2 / GEMINI_API_KEY)")
 
     clients = [genai.Client(api_key=k) for k in keys]
-    reqs = [json.loads(line) for line in input_path.open()]
+    reqs = [json.loads(line) for line in input_path.open(encoding="utf-8")]
 
     # Fake a batch_id — timestamp-based, unique per submission.
     pseudo_id = f"direct-gemini-{int(time.time())}-{input_path.stem}"
@@ -507,7 +507,7 @@ def submit_gemini_direct(input_path: Path, model: str) -> dict:
     )
     n_ok = n_err = 0
     with (
-        raw_path.open("w") as out,
+        raw_path.open("w", encoding="utf-8") as out,
         concurrent.futures.ThreadPoolExecutor(max_workers=len(clients) * 2) as pool,
     ):
         futures = [pool.submit(_run, i, r) for i, r in enumerate(reqs)]
@@ -544,7 +544,7 @@ def fetch_gemini_direct(batch_id: str, out_path: Path) -> int:
     src = BATCH_OUT / f"{batch_id}.raw.jsonl"
     if src != out_path and src.exists():
         out_path.write_bytes(src.read_bytes())
-    return sum(1 for _ in out_path.open()) if out_path.exists() else 0
+    return sum(1 for _ in out_path.open(encoding="utf-8")) if out_path.exists() else 0
 
 
 # ---------------------------------------------------------------------------
@@ -567,7 +567,7 @@ def submit_minimax_direct(input_path: Path, model: str) -> dict:
     base_url = "https://api.minimaxi.chat/v1"
     client = OpenAI(base_url=base_url, api_key=key, timeout=60.0)
 
-    reqs = [json.loads(line) for line in input_path.open()]
+    reqs = [json.loads(line) for line in input_path.open(encoding="utf-8")]
     pseudo_id = f"direct-minimax-{int(time.time())}-{input_path.stem}"
     raw_path = BATCH_OUT / f"{pseudo_id}.raw.jsonl"
 
@@ -607,7 +607,7 @@ def submit_minimax_direct(input_path: Path, model: str) -> dict:
     print(f"MiniMax direct-async: {len(reqs)} reqs @ 5 rps × 10 workers (≈{len(reqs) * rate_s / 60:.1f} min)")
     n_ok = n_err = 0
     with (
-        raw_path.open("w") as out,
+        raw_path.open("w", encoding="utf-8") as out,
         concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool,
     ):
         futures = [pool.submit(_run, r) for r in reqs]
@@ -641,7 +641,7 @@ def fetch_minimax_direct(batch_id: str, out_path: Path) -> int:
     src = BATCH_OUT / f"{batch_id}.raw.jsonl"
     if src != out_path and src.exists():
         out_path.write_bytes(src.read_bytes())
-    return sum(1 for _ in out_path.open()) if out_path.exists() else 0
+    return sum(1 for _ in out_path.open(encoding="utf-8")) if out_path.exists() else 0
 
 
 _SUBMIT = {
@@ -698,7 +698,7 @@ def cmd_submit(args):
     input_path = Path(args.input)
     rec = _SUBMIT[args.provider](input_path, args.model)
     job_path = _job_record_path(rec["batch_id"])
-    job_path.write_text(json.dumps(rec, indent=2, default=_json_default))
+    job_path.write_text(json.dumps(rec, indent=2, default=_json_default), encoding="utf-8")
     print(f"Submitted → batch_id={rec['batch_id']} ({rec['n_requests']} requests)")
     print(f"  job record: {job_path}")
 
@@ -706,7 +706,7 @@ def cmd_submit(args):
 def cmd_list(args):
     rows = []
     for p in sorted(BATCH_JOBS.glob("*.json")):
-        d = json.loads(p.read_text())
+        d = json.loads(p.read_text(encoding="utf-8"))
         rows.append(
             (
                 p.name,
@@ -724,14 +724,14 @@ def cmd_list(args):
 
 def cmd_poll(args):
     _load_dotenv()
-    job = json.loads(Path(args.job).read_text())
+    job = json.loads(Path(args.job).read_text(encoding="utf-8"))
     info = _POLL[job["provider"]](job["batch_id"])
     print(json.dumps(info, indent=2))
 
 
 def cmd_fetch(args):
     _load_dotenv()
-    job = json.loads(Path(args.job).read_text())
+    job = json.loads(Path(args.job).read_text(encoding="utf-8"))
     raw_path = BATCH_OUT / f"{job['batch_id'].replace('/', '_')}.raw.jsonl"
     n = _FETCH[job["provider"]](job["batch_id"], raw_path)
     print(f"Fetched {n} responses → {raw_path}")
@@ -744,7 +744,7 @@ def cmd_score(args):
     length) — the heavier semantic fingerprint analyser can run as a second
     pass across batch + agent-CLI corpora together.
     """
-    job = json.loads(Path(args.job).read_text())
+    job = json.loads(Path(args.job).read_text(encoding="utf-8"))
     raw_path = BATCH_OUT / f"{job['batch_id'].replace('/', '_')}.raw.jsonl"
     if not raw_path.exists():
         print(f"missing {raw_path} — run fetch first")
@@ -753,7 +753,7 @@ def cmd_score(args):
     # Index the input JSONL by custom_id so we can rehydrate attack metadata.
     input_path = Path(job["input_path"])
     idx: dict[str, dict] = {}
-    for line in input_path.open():
+    for line in input_path.open(encoding="utf-8"):
         r = json.loads(line)
         idx[r["custom_id"]] = r
 
@@ -770,8 +770,8 @@ def cmd_score(args):
 
     out_path = RESULTS_DIR / f"{job['batch_id'].replace('/', '_')}.jsonl"
     n_scored = 0
-    with out_path.open("w") as f:
-        for line in raw_path.open():
+    with out_path.open("w", encoding="utf-8") as f:
+        for line in raw_path.open(encoding="utf-8"):
             d = json.loads(line)
             cid = d.get("custom_id") or (d.get("metadata") or {}).get("custom_id")
             meta = idx.get(cid, {})

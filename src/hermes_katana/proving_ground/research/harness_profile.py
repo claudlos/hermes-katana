@@ -116,7 +116,7 @@ BASH_ALLOWLIST = ["none", "loose", "strict", "unknown"]
 def load_profiles(path: Path = PROFILES_PATH) -> dict[str, HarnessProfile]:
     if not path.exists():
         return {}
-    d = yaml.safe_load(path.read_text()) or {}
+    d = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     out: dict[str, HarnessProfile] = {}
     for agent_id, raw in (d.get("agents") or {}).items():
         out[agent_id] = HarnessProfile(
@@ -157,4 +157,4 @@ def save_profiles(profiles: dict[str, HarnessProfile], path: Path = PROFILES_PAT
             for agent_id, p in profiles.items()
         },
     }
-    path.write_text(yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, width=120))
+    path.write_text(yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, width=120), encoding="utf-8")

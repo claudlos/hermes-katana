@@ -263,7 +263,7 @@ def _list_shards_handler(_args: dict) -> dict:
     control = sorted(control_dir.glob("shard_ctrl_???.jsonl")) if control_dir.exists() else []
 
     def _n_rows(p):
-        with p.open() as f:
+        with p.open(encoding="utf-8") as f:
             return sum(1 for _ in f)
 
     return {
@@ -306,10 +306,10 @@ def _list_active_runs_handler(_args: dict) -> dict:
         if not pid_file.exists():
             continue
         try:
-            pid = int(pid_file.read_text().strip())
+            pid = int(pid_file.read_text(encoding="utf-8").strip())
             os.kill(pid, 0)
             meta_file = d / "run_meta.json"
-            meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
+            meta = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else {}
             out.append(
                 {
                     "run_id": d.name,
@@ -395,7 +395,7 @@ def _harness_matrix_handler(args: dict) -> dict:
     report_path = ROOT / "results" / "harness_matrix.json"
     return {
         "report_path": str(report_path.relative_to(ROOT)),
-        "result": json.loads(report_path.read_text()) if report_path.exists() else None,
+        "result": json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else None,
         "stdout_tail": out.stdout[-500:],
     }
 
@@ -414,7 +414,7 @@ def _factorial_decompose_handler(args: dict) -> dict:
     report_path = ROOT / "results" / "factorial.json"
     return {
         "report_path": str(report_path.relative_to(ROOT)),
-        "result": json.loads(report_path.read_text()) if report_path.exists() else None,
+        "result": json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else None,
         "stdout_tail": out.stdout[-800:],
     }
 
@@ -436,7 +436,7 @@ def _simulate_defense_handler(args: dict) -> dict:
     report_path = ROOT / "results" / out_name
     return {
         "report_path": str(report_path.relative_to(ROOT)),
-        "result": json.loads(report_path.read_text()) if report_path.exists() else None,
+        "result": json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else None,
         "stdout_tail": out.stdout[-800:],
     }
 
@@ -456,7 +456,7 @@ def _harness_ablation_handler(args: dict) -> dict:
     report_path = ROOT / "results" / "harness_ablation.json"
     return {
         "report_path": str(report_path.relative_to(ROOT)),
-        "result": json.loads(report_path.read_text()) if report_path.exists() else None,
+        "result": json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else None,
         "stdout_tail": out.stdout[-800:],
     }
 
@@ -477,7 +477,7 @@ def _detection_bench_handler(args: dict) -> dict:
     report_path = ROOT / "results" / "detection_bench.json"
     return {
         "report_path": str(report_path.relative_to(ROOT)),
-        "result": json.loads(report_path.read_text()) if report_path.exists() else None,
+        "result": json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else None,
         "stdout_tail": out.stdout[-800:],
     }
 

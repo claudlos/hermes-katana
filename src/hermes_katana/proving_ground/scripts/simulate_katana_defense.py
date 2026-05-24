@@ -71,7 +71,7 @@ EXCLUSION_LIST = ROOT / "results" / "exclusion_list.json"
 def _exclusion_keys() -> set[tuple]:
     if not EXCLUSION_LIST.exists():
         return set()
-    d = json.loads(EXCLUSION_LIST.read_text())
+    d = json.loads(EXCLUSION_LIST.read_text(encoding="utf-8"))
     return {(r.get("agent_id"), r.get("shard"), r.get("channel"), r.get("attack_id")) for r in d.get("rows", [])}
 
 
@@ -86,7 +86,7 @@ def _load_attack_texts() -> dict[str, str]:
         p = ROOT / "results" / fname
         if not p.exists():
             continue
-        with p.open() as f:
+        with p.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     d = json.loads(line)
@@ -98,7 +98,7 @@ def _load_attack_texts() -> dict[str, str]:
                     out[aid] = txt
     # Fallback: try to pull text from shards/ if missing
     for p in (ROOT / "shards").glob("shard_*.jsonl"):
-        with p.open() as f:
+        with p.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     d = json.loads(line)
@@ -117,7 +117,7 @@ def _stream_rows(apply_exclusion: bool):
         if "_broken" in str(p):
             continue
         try:
-            with p.open() as f:
+            with p.open(encoding="utf-8") as f:
                 for line in f:
                     try:
                         row = json.loads(line)
@@ -360,7 +360,7 @@ def main() -> int:
         )
         out_path = ROOT / args.out.replace(".json", "_sweep.json")
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(res, indent=2))
+        out_path.write_text(json.dumps(res, indent=2), encoding="utf-8")
         print(f"\n=== Katana defense threshold sweep (n={res['rows_scanned']:,}) ===")
         print(f"{'thresh':>7} {'base':>7} {'defended':>9} {'Δpp':>7} {'recall':>8} {'false_block':>12}")
         for r in res["sweep"]:
@@ -380,7 +380,7 @@ def main() -> int:
     )
     out_path = ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(res, indent=2))
+    out_path.write_text(json.dumps(res, indent=2), encoding="utf-8")
 
     o = res["overall"]
     print("\n=== Katana defense-in-harness simulation ===")

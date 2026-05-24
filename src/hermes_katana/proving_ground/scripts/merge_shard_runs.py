@@ -109,9 +109,9 @@ def merge(input_dir: str, output_path: str):
         (sigs_jsonl, "shard_*.signatures.jsonl"),
     ]:
         n_lines = 0
-        with dst_file.open("w") as f:
+        with dst_file.open("w", encoding="utf-8") as f:
             for src in sorted(Path(input_dir).glob(glob)):
-                with src.open() as g:
+                with src.open(encoding="utf-8") as g:
                     for line in g:
                         line = line.strip()
                         if not line:

@@ -32,7 +32,7 @@ def _supervisor_alive(run_id: str) -> bool:
     if not pid_file.exists():
         return False
     try:
-        os.kill(int(pid_file.read_text().strip()), 0)
+        os.kill(int(pid_file.read_text(encoding="utf-8").strip()), 0)
         return True
     except Exception:
         return False
@@ -82,7 +82,7 @@ def _load_agent_denylist(paths: list[Path]) -> dict[str, str]:
         if not path.exists():
             continue
         try:
-            payload = json.loads(path.read_text())
+            payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception as exc:
             _log(f"WARN failed to read denylist {path}: {exc}")
             continue
@@ -144,7 +144,7 @@ def _pull_bad_invalid_lanes(
 ) -> None:
     for status_path in glob.glob(str(STATUS_DIR / f"*{run_id}*.status.json")):
         try:
-            status = json.loads(Path(status_path).read_text())
+            status = json.loads(Path(status_path).read_text(encoding="utf-8"))
         except Exception:
             continue
 

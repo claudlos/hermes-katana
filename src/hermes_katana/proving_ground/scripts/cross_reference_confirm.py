@@ -124,7 +124,7 @@ def _merge_agent_observations(into: dict[str, dict], runs_dir: str) -> None:
     for f in sorted(Path(runs_dir).glob("*.jsonl")):
         if "_broken_" in str(f):
             continue
-        for line in f.open():
+        for line in f.open(encoding="utf-8"):
             try:
                 d = json.loads(line)
             except Exception:
@@ -166,7 +166,7 @@ def _backfill_attack_text(observations: dict[str, dict], shards_dir: str) -> Non
     for shard_file in sorted(Path(shards_dir).glob("shard_*.jsonl")):
         if not wanted:
             break
-        for line in shard_file.open():
+        for line in shard_file.open(encoding="utf-8"):
             try:
                 d = json.loads(line)
             except Exception:
@@ -220,7 +220,7 @@ def classify(
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row) + "\n")
 

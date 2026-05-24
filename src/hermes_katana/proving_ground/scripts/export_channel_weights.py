@@ -63,7 +63,7 @@ def _load_rows(runs_dir: str) -> list[dict]:
     for f in sorted(Path(runs_dir).glob("*.jsonl")):
         if "_broken_" in str(f):
             continue
-        for line in f.open():
+        for line in f.open(encoding="utf-8"):
             try:
                 out.append(json.loads(line))
             except Exception:
@@ -164,7 +164,7 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / "channel_weights.json"
-    out_file.write_text(json.dumps(payload, indent=2))
+    out_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     print("\nBaseline effective rate by channel:")
     for ch, r in sorted(baseline_rate.items(), key=lambda kv: -kv[1]):

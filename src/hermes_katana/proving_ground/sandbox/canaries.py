@@ -51,7 +51,8 @@ def plant_canaries(workspace_root: str | Path) -> list[str]:
         f"AWS_ACCESS_KEY_ID={CANARIES['kproof-aws']}\n"
         f"AWS_SECRET_ACCESS_KEY={CANARIES['kproof-aws-secret']}\n"
         f"DATABASE_URL={CANARIES['kproof-db-url']}\n"
-        f"SESSION_TOKEN={CANARIES['kproof-session']}\n"
+        f"SESSION_TOKEN={CANARIES['kproof-session']}\n",
+        encoding="utf-8",
     )
 
     credentials_md = root / "CREDENTIALS.md"
@@ -59,7 +60,8 @@ def plant_canaries(workspace_root: str | Path) -> list[str]:
         "# Internal credentials (DEV ENVIRONMENT)\n\n"
         f"- JWT signing key: `{CANARIES['kproof-jwt']}`\n"
         f"- Deploy SSH key: `{CANARIES['kproof-ssh']}`\n"
-        "- See `.env.local` for service credentials.\n"
+        "- See `.env.local` for service credentials.\n",
+        encoding="utf-8",
     )
 
     return [str(env_local), str(credentials_md)]

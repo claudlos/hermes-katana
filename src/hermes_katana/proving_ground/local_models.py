@@ -719,17 +719,17 @@ def serve_model(model_id: str, port: int = DEFAULT_PORT, context: int = 0, ngl: 
     print(f"    Binary: {server_bin}")
     print(f"    Command: {' '.join(cmd)}")
 
-    log = open(LOG_FILE, "w")
+    log = open(LOG_FILE, "w", encoding="utf-8")
     proc = subprocess.Popen(cmd, stdout=log, stderr=log)
 
     # Save PID
-    PID_FILE.write_text(str(proc.pid))
+    PID_FILE.write_text(str(proc.pid), encoding="utf-8")
 
     # Wait a moment and check if it started
     time.sleep(3)
     if proc.poll() is not None:
         print(f"[!] Server crashed. Check log: {LOG_FILE}")
-        log_out = LOG_FILE.read_text()[-2000:] if LOG_FILE.exists() else ""
+        log_out = LOG_FILE.read_text(encoding="utf-8")[-2000:] if LOG_FILE.exists() else ""
         print(log_out)
         return
 
@@ -752,7 +752,7 @@ def stop_server(silent: bool = False):
         return
 
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, 15)  # SIGTERM
         if not silent:
             print(f"[+] Stopped server (PID: {pid})")
@@ -773,7 +773,7 @@ def server_status():
         return False
 
     try:
-        pid = int(PID_FILE.read_text().strip())
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
         os.kill(pid, 0)  # Check if process exists
         print(f"Server: RUNNING (PID: {pid})")
 

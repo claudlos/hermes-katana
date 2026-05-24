@@ -102,7 +102,7 @@ def _load_ngrams() -> None:
     if not p.exists():
         _NGRAM_LOOKUP = {}
         return
-    d = json.loads(p.read_text())
+    d = json.loads(p.read_text(encoding="utf-8"))
     _NGRAM_LOOKUP = {r["ngram"]: r["score"] for r in d.get("ngrams", [])}
     _NGRAM_MAX = max(_NGRAM_LOOKUP.values()) if _NGRAM_LOOKUP else 1.0
 
@@ -153,7 +153,7 @@ def _load_centroids():
     norms = np.linalg.norm(_CENTROIDS, axis=1, keepdims=True)
     _CENTROIDS = _CENTROIDS / np.clip(norms, 1e-8, None)
     # Labels live in the JSON's `centroids` list or in the npz "labels" array
-    meta = json.loads(json_p.read_text())
+    meta = json.loads(json_p.read_text(encoding="utf-8"))
     _CENTROID_LABELS = [c["label"] for c in meta.get("centroids", [])]
     model_name = meta.get("model", "all-MiniLM-L6-v2")
     _EMBED_MODEL = SentenceTransformer(model_name)
@@ -234,7 +234,7 @@ DETECTORS: dict[str, Callable[[str], float]] = {
 
 def _load_positives(path: Path, apply_dedup: bool) -> list[dict]:
     atks = []
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             try:
                 atks.append(json.loads(line))
@@ -243,7 +243,7 @@ def _load_positives(path: Path, apply_dedup: bool) -> list[dict]:
     if apply_dedup:
         dedup_p = ROOT / "results" / "confirmed_attacks_dedup.json"
         if dedup_p.exists():
-            d = json.loads(dedup_p.read_text())
+            d = json.loads(dedup_p.read_text(encoding="utf-8"))
             drop = set()
             for c in d.get("clusters", []):
                 drop.update(c.get("drop_ids", []))
@@ -260,7 +260,7 @@ def _load_negatives(path: Path, limit: int | None) -> list[dict]:
     else:
         files = sorted(path.glob("shard_ctrl_*.jsonl"))
     for p in files:
-        with p.open() as f:
+        with p.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     negs.append(json.loads(line))
@@ -393,7 +393,7 @@ def _build_attack_channel_map() -> dict[str, list[str]]:
         if "_broken" in str(p):
             continue
         try:
-            with p.open() as f:
+            with p.open(encoding="utf-8") as f:
                 for line in f:
                     try:
                         row = json.loads(line)
@@ -489,7 +489,7 @@ def main() -> int:
     }
     out_path = ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(out, indent=2))
+    out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
     # Console summary
     print(f"\n=== detection benchmark — n_pos={len(pos_texts):,} n_neg={len(neg_texts):,} ===\n")

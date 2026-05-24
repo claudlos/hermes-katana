@@ -137,6 +137,19 @@ target-version = "py310"
 line-length = 120
 exclude = ["tests/fixtures/"]
 
+[tool.ruff.lint]
+# PLW1514: text-mode open()/read_text()/write_text() without an explicit encoding=.
+# The hermes-katana scanner pipeline reads UTF-8 pattern files at import time;
+# the cp1252 default on Windows previously poisoned every scan with a fail-closed
+# BLOCK. Keep this rule on so the bug class cannot regress.
+#
+# PLW1514 is still a preview rule in ruff at the time of this fix; it takes
+# effect once the rule graduates or `preview = true` is enabled fleet-wide.
+# Listing it here is forward-compat documentation as well as a self-test
+# (the sweep that produced this entry already added `encoding="utf-8"` to
+# every text-mode call in src/).
+extend-select = ["PLW1514"]
+
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true

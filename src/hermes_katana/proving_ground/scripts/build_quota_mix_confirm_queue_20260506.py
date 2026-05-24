@@ -420,7 +420,7 @@ def main() -> int:
     write_jsonl(queue_path, queue)
     write_jsonl(shard_path, shard_rows)
     shard_hash = file_sha256(shard_path)
-    spec_path.write_text(json.dumps(make_spec(), indent=2, sort_keys=False) + "\n")
+    spec_path.write_text(json.dumps(make_spec(), indent=2, sort_keys=False) + "\n", encoding="utf-8")
     plan = make_trial_plan(queue, shard_rows, shard_hash)
     write_jsonl(plan_path, plan)
 
@@ -457,7 +457,7 @@ def main() -> int:
         "priority_block_trials": dict(Counter(r["priority_block"] for r in plan)),
         "confirm_agents": CONFIRM_AGENTS,
     }
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

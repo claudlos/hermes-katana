@@ -299,7 +299,7 @@ class _Lazy:
                     import zvec as _z
 
                     cls._zvec = _z
-                cls.collection = cls._zvec.open(path=_ZVEC_INDEX_DIR)
+                cls.collection = cls._zvec.open(path=_ZVEC_INDEX_DIR, encoding="utf-8")
 
             if cls.model is None and cls.embedder is None:
                 if _USE_CONTRASTIVE:

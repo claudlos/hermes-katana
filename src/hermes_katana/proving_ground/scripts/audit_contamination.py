@@ -86,11 +86,11 @@ def _load_external(spec: str) -> list[str]:
     if not path.exists():
         raise FileNotFoundError(f"external corpus not found: {path}")
     if path.suffix == ".txt":
-        return [line.strip() for line in path.read_text().splitlines() if line.strip()]
+        return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if len(parts) >= 3 and parts[1] == "csv":
         field = parts[2]
         out = []
-        with path.open(newline="") as f:
+        with path.open(newline="", encoding="utf-8") as f:
             for row in csv.DictReader(f):
                 v = row.get(field)
                 if v:
@@ -99,7 +99,7 @@ def _load_external(spec: str) -> list[str]:
     # JSONL with a named field
     field = parts[1] if len(parts) > 1 else "text"
     out = []
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             try:
                 d = json.loads(line)
@@ -187,7 +187,7 @@ def audit(
     max_top_pairs: int = 50,
 ) -> dict:
     atks: list[dict] = []
-    with corpus_path.open() as f:
+    with corpus_path.open(encoding="utf-8") as f:
         for line in f:
             try:
                 atks.append(json.loads(line))
@@ -277,7 +277,7 @@ def main() -> int:
     )
     out_path = ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(out, indent=2))
+    out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
     if args.write_dedup_list:
         # Union-find over intra-corpus near-duplicate pairs → one cluster id
@@ -310,7 +310,7 @@ def main() -> int:
         if out["intra"]["n_pairs_above_threshold"] > len(out["intra"]["top_pairs"]):
             # Re-run quickly — cheap relative to n^2 we already paid.
             all_pairs = _intra_corpus_pairs(
-                [json.loads(line) for line in corpus.open()],
+                [json.loads(line) for line in corpus.open(encoding="utf-8")],
                 threshold=args.threshold,
             )
             for pair in all_pairs:
@@ -341,7 +341,8 @@ def main() -> int:
                     "clusters": dedup_rows,
                 },
                 indent=2,
-            )
+            ),
+            encoding="utf-8",
         )
         print(
             f"dedup list: {dedup_path}  ({len(dedup_rows)} clusters, "

@@ -123,7 +123,7 @@ def generate_variants(attack: dict, variants_per_attack: int = 6) -> list[dict]:
 def main():
     # Load confirmed attacks
     confirmed = []
-    with open(CONFIRMED_PATH) as f:
+    with open(CONFIRMED_PATH, encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 confirmed.append(json.loads(line))
@@ -137,7 +137,7 @@ def main():
         print(f"  [{attack['label']}] {len(variants)} variants")
 
     # Export
-    with open(OUTPUT_PATH, "w") as f:
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         for v in all_variants:
             f.write(json.dumps(v) + "\n")
 

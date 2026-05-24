@@ -198,7 +198,7 @@ def load_api_observations(
     path = Path(sessions_jsonl)
     if not path.exists():
         return
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             try:
                 d = json.loads(line)
@@ -216,7 +216,7 @@ def load_cli_observations(
     for f in sorted(root.glob("*.jsonl")):
         if "_broken_" in str(f):
             continue
-        with f.open() as fh:
+        with f.open(encoding="utf-8") as fh:
             for line in fh:
                 try:
                     d = json.loads(line)

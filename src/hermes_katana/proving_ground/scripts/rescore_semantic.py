@@ -212,7 +212,7 @@ def main():
             continue
 
         rows = []
-        with fpath.open() as f:
+        with fpath.open(encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     rows.append(json.loads(line))
@@ -243,7 +243,7 @@ def main():
 
         # Write enriched file + reproducibility metadata
         out_path = fpath.with_suffix(".enriched.jsonl")
-        with out_path.open("w") as f:
+        with out_path.open("w", encoding="utf-8") as f:
             for row in enriched:
                 f.write(json.dumps(row) + "\n")
         meta = _build_rescore_metadata(
@@ -255,7 +255,7 @@ def main():
             effective_after=effective_after,
             run_id=args.run_id,
         )
-        out_path.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
+        out_path.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
 
         name = fpath.stem
         corpus_available = sum(1 for r in enriched if r.get("attack_corpus"))

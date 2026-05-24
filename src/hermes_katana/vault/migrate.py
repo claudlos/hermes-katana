@@ -189,7 +189,7 @@ def _scan_hermes_config(config_path: Optional[Path] = None) -> dict[str, str]:
     try:
         import yaml  # type: ignore[import-untyped]
 
-        with open(config_path, "r") as fp:
+        with open(config_path, "r", encoding="utf-8") as fp:
             data = yaml.safe_load(fp)
 
         if isinstance(data, dict):
@@ -263,7 +263,7 @@ def _scan_dotenv(dotenv_path: Optional[Path] = None) -> dict[str, str]:
 
     found: dict[str, str] = {}
     try:
-        with open(dotenv_path, "r") as fp:
+        with open(dotenv_path, "r", encoding="utf-8") as fp:
             for line in fp:
                 line = line.strip()
                 if not line or line.startswith("#"):

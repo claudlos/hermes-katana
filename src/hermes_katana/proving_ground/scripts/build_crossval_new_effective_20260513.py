@@ -31,7 +31,7 @@ DEFAULT_AGENTS = [
 
 
 def read_jsonl(path: Path):
-    with path.open(errors="ignore") as f:
+    with path.open(errors="ignore", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 yield json.loads(line)
@@ -39,7 +39,7 @@ def read_jsonl(path: Path):
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -103,7 +103,7 @@ def load_current_new_effective(source_run_id: str, snapshot_keys: set[tuple]) ->
 def load_shard_index(shard: int) -> dict[str, tuple[int, dict]]:
     path = ROOT / "shards" / f"shard_{shard:03d}.jsonl"
     out = {}
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for idx, line in enumerate(f):
             if not line.strip():
                 continue
@@ -299,7 +299,7 @@ def main() -> int:
         plan_path,
         args.max_concurrency,
     )
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
+    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     summary = {
         "source_run_id": args.source_run_id,
@@ -318,7 +318,7 @@ def main() -> int:
         "trial_plan": str(plan_path.relative_to(ROOT)),
         "spec": str(spec_path.relative_to(ROOT)),
     }
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 

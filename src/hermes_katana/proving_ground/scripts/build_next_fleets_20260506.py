@@ -364,7 +364,7 @@ def write_fleet(
         "max_concurrency": 6,
         "workers": workers,
     }
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=False) + "\n")
+    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=False) + "\n", encoding="utf-8")
     plan = make_trial_plan(
         design_id=design_id,
         run_id=run_id,
@@ -399,7 +399,7 @@ def write_fleet(
         "selected_by_label": dict(Counter(row["label"] for row in shard_rows)),
         "selected_by_quality_tier": dict(Counter(row["quality_tier"] for row in shard_rows)),
     }
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return summary
 
 
@@ -624,7 +624,7 @@ def main() -> int:
         "targeted_labels": targeted_summary,
     }
     manifest_path = ROOT / "results" / "designs" / "next_fleets_20260506_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(manifest, indent=2, sort_keys=True))
     return 0
 

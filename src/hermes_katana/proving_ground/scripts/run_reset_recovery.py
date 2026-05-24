@@ -43,7 +43,7 @@ def load_jsonl(path: Path) -> list[dict]:
     rows: list[dict] = []
     if not path.exists():
         return rows
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 rows.append(json.loads(line))
@@ -84,7 +84,7 @@ def build_invalid_recovery_plan(design_id: str, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     plan_path = out_dir / "trial_plan.jsonl"
     summary_path = out_dir / "trial_plan_summary.json"
-    with plan_path.open("w") as f:
+    with plan_path.open("w", encoding="utf-8") as f:
         for seq, original_id in enumerate(original_ids):
             row = dict(original_plan[original_id])
             row["recovery_source_run_id"] = MAIN_RUN_ID
@@ -113,7 +113,8 @@ def build_invalid_recovery_plan(design_id: str, out_dir: Path) -> Path:
             },
             indent=2,
             sort_keys=True,
-        )
+        ),
+        encoding="utf-8",
     )
     return plan_path
 
@@ -147,7 +148,7 @@ def missing_fill_plan(out_dir: Path) -> Path:
     ]
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "missing_fill_plan.jsonl"
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in missing_rows:
             f.write(json.dumps(row, sort_keys=True) + "\n")
     return path
@@ -194,7 +195,7 @@ def run_jobs(jobs: list[dict], log_dir: Path, caps: dict[str, int], global_cap: 
         tag = f"{job['mode']}__{job['agent_id']}__s{job['shard']}__{job['channel']}__{job['task']}"
         log_path = log_dir / f"{tag}.log"
         cmd = command_for(job)
-        fh = log_path.open("w")
+        fh = log_path.open("w", encoding="utf-8")
         fh.write(f"cmd: {' '.join(cmd)}\n")
         fh.flush()
         proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
@@ -307,7 +308,7 @@ def run_post(recovery_run_id: str, recovery_plan: Path, log_dir: Path) -> list[d
     results = []
     for name, cmd in commands:
         log_path = log_dir / f"post_{name}.log"
-        with log_path.open("w") as f:
+        with log_path.open("w", encoding="utf-8") as f:
             f.write(f"cmd: {' '.join(cmd)}\n")
             f.flush()
             started = time.time()
@@ -339,7 +340,7 @@ def main() -> int:
     missing_jobs = grouped_jobs_from_plan(missing_plan, MAIN_RUN_ID, "missing_fill")
     recovery_jobs = grouped_jobs_from_plan(recovery_plan, args.recovery_run_id, "invalid_recovery")
     jobs = missing_jobs + recovery_jobs
-    (log_dir / "jobs.json").write_text(json.dumps(jobs, indent=2, sort_keys=True))
+    (log_dir / "jobs.json").write_text(json.dumps(jobs, indent=2, sort_keys=True), encoding="utf-8")
     log(f"reset recovery starting jobs={len(jobs)} missing={len(missing_jobs)} invalid_recovery={len(recovery_jobs)}")
 
     results = run_jobs(
@@ -348,10 +349,10 @@ def main() -> int:
         caps={"claude": args.claude_cap, "codex": args.codex_cap, "minimax": args.minimax_cap, "other": 1},
         global_cap=args.global_cap,
     )
-    (log_dir / "job_results.json").write_text(json.dumps(results, indent=2, sort_keys=True))
+    (log_dir / "job_results.json").write_text(json.dumps(results, indent=2, sort_keys=True), encoding="utf-8")
 
     post = run_post(args.recovery_run_id, recovery_plan, log_dir)
-    (log_dir / "post_results.json").write_text(json.dumps(post, indent=2, sort_keys=True))
+    (log_dir / "post_results.json").write_text(json.dumps(post, indent=2, sort_keys=True), encoding="utf-8")
     log("reset recovery complete")
     return 0 if all(item["rc"] == 0 for item in post) else 1
 

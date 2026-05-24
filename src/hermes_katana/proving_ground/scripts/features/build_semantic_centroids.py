@@ -30,7 +30,7 @@ from pathlib import Path
 
 
 def _load_jsonl(path: str) -> list[dict]:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
@@ -119,7 +119,7 @@ def build_centroids(
             for label, vec, members in centroids_list
         ],
     }
-    (out / "semantic_centroids.json").write_text(json.dumps(json_payload, indent=2))
+    (out / "semantic_centroids.json").write_text(json.dumps(json_payload, indent=2), encoding="utf-8")
 
     # Full numeric bundle — consumable by the zvec projector.
     np.savez(
@@ -138,7 +138,7 @@ def build_centroids(
     )
 
     # Per-attack vectors JSONL (for projection / downstream ML).
-    with (out / "attack_vectors.jsonl").open("w") as f:
+    with (out / "attack_vectors.jsonl").open("w", encoding="utf-8") as f:
         for i, a in enumerate(all_attacks):
             f.write(
                 json.dumps(

@@ -54,7 +54,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    cfg = json.loads(args.config.read_text())
+    cfg = json.loads(args.config.read_text(encoding="utf-8"))
     teacher = LLMClient(LLMConfig(**cfg["teacher"]))
 
     target_labels = tuple(args.labels.split(",")) if args.labels else GAP_LABELS
@@ -109,7 +109,7 @@ def main() -> int:
     # Update run_meta counts.
     meta_path = args.run / "run_meta.json"
     if meta_path.exists():
-        meta = GenerationRun(**json.loads(meta_path.read_text()))
+        meta = GenerationRun(**json.loads(meta_path.read_text(encoding="utf-8")))
         meta.n_taxonomy_nodes = len(nodes)
         meta.n_taxonomy_leaves = sum(1 for n in nodes.values() if n.is_leaf)
         meta.taxonomy_done = True
@@ -117,7 +117,7 @@ def main() -> int:
         meta.meta_prompts_done = False
         meta.generation_done = False
         meta.critics_done = False
-        meta_path.write_text(json.dumps(meta.to_json(), indent=2))
+        meta_path.write_text(json.dumps(meta.to_json(), indent=2), encoding="utf-8")
 
     print(f"\n[done] expanded {expanded_count} gap labels")
     print(f"[done] taxonomy now: {meta.n_taxonomy_nodes} nodes, {meta.n_taxonomy_leaves} leaves")

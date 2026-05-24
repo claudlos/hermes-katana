@@ -112,7 +112,7 @@ def sanitize_row(row: dict, stats: Counter) -> dict:
 def process_file(src: Path, dst: Path, stats: Counter) -> int:
     rows = 0
     dst.parent.mkdir(parents=True, exist_ok=True)
-    with src.open() as fin, dst.open("w") as fout:
+    with src.open(encoding="utf-8") as fin, dst.open("w", encoding="utf-8") as fout:
         for line in fin:
             if not line.strip():
                 continue
@@ -161,7 +161,7 @@ def main() -> int:
     # Carry metadata.json forward unchanged (provenance fields are accurate).
     meta_src = args.src_dir / "metadata.json"
     if meta_src.exists():
-        meta = json.loads(meta_src.read_text())
+        meta = json.loads(meta_src.read_text(encoding="utf-8"))
         meta.setdefault("public_release", {})
         meta["public_release"] = {
             "sanitization_applied": True,
@@ -173,7 +173,7 @@ def main() -> int:
                 "Family hashes and split assignment unchanged."
             ),
         }
-        (args.out_dir / "metadata.json").write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n")
+        (args.out_dir / "metadata.json").write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(f"  wrote metadata -> {args.out_dir / 'metadata.json'}")
 
     print(f"\nTotal rows scanned: {total_rows:,}")
