@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -126,7 +127,8 @@ class TestScabbardConfig:
     def test_katana_v15_factory_is_explicit_candidate(self):
         cfg = ScabbardConfig.katana_v15(backend="onnx")
         assert cfg.model_version == "katana_v15"
-        assert cfg.katana_v11_path.endswith("training/checkpoints/katana_v15/onnx")
+        # Use POSIX comparison so the assertion holds on both POSIX ("/") and Windows ("\\").
+        assert Path(cfg.katana_v11_path).as_posix().endswith("training/checkpoints/katana_v15/onnx")
 
     def test_katana_v15_large_factory_alias_supports_gpu_device(self, monkeypatch, tmp_path):
         monkeypatch.delenv("KATANA_ARTIFACT_AUTO_DOWNLOAD", raising=False)
