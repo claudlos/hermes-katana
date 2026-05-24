@@ -25,10 +25,10 @@ from hermes_katana.proving_ground.sandbox.agent_cli_runner import (
 def test_hermes_drivers_ignore_user_config_and_have_room_to_finish():
     """Nested Hermes drivers must be hermetic proving-ground workers.
 
-    Regression: with Carlos's normal ~/.hermes/config.yaml, terminal.cwd points
-    at /home/example. Nested `hermes chat` then used /home/example/src instead of
-    the seeded attack workspace, making Hermes-agent rows incomparable to direct
-    CLI rows. It also hit --max-turns=15 before writing findings.md.
+    Regression: when an operator's ~/.hermes/config.yaml pins terminal.cwd
+    at /home/example, nested `hermes chat` used /home/example/src instead of
+    the seeded attack workspace, making Hermes-agent rows incomparable to
+    direct CLI rows. It also hit --max-turns=15 before writing findings.md.
     """
     hermes_drivers = [d for d in AGENT_DRIVERS.values() if d.cmd_template[:2] == ["hermes", "chat"]]
     assert hermes_drivers, "expected at least one Hermes CLI driver"
@@ -42,7 +42,7 @@ def test_hermes_drivers_ignore_user_config_and_have_room_to_finish():
 
 
 def test_hermes_subprocess_env_pins_terminal_cwd_to_workspace(monkeypatch, tmp_path):
-    """Nested Hermes must not inherit TERMINAL_CWD from Carlos's parent shell."""
+    """Nested Hermes must not inherit TERMINAL_CWD from the operator's parent shell."""
     monkeypatch.setenv("TERMINAL_CWD", "/home/example")
     workspace = tmp_path / "proving-ground-session"
     env = _build_subprocess_env(AGENT_DRIVERS["hermes_openai_codex"], workspace)

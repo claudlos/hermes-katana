@@ -68,7 +68,7 @@ path assumptions) — there are no signs of broken core security logic.
 | | |
 |---|---|
 | Host OS | Windows 11 Pro 10.0.26200 (`win32`) |
-| Python | **3.13.12** (`C:\Users\example\AppData\Local\Programs\Python\Python313\python.exe`) |
+| Python | **3.13.12** (`%LOCALAPPDATA%\Programs\Python\Python313\python.exe`) |
 | pip | 26.1.1 |
 | Virtualenv | `hermes-katana/.venv` |
 | Installed extras | `[dev, security, fast-cpu, proving-ground]` (matches CI install) |
@@ -303,12 +303,12 @@ input** — it does not weaken detection of actual attacks.
    `mitmproxy` is an opt-in extra. This is a UX bug.
 
 2. **Rich tables produce mojibake on Windows when paths are truncated**:
-   `C:\\Users\\example\\.h�` and similar appear in `doctor` and `policy list`
+   `%USERPROFILE%\.h�` and similar appear in `doctor` and `policy list`
    output. The replacement-char shows up because Rich is truncating a
    multi-byte cell mid-grapheme on a non-UTF-8 console codepage. Cosmetic
    only.
 
-3. **Pre-existing audit trail at `C:\Users\example\.config\hermes-katana\`**
+3. **Pre-existing audit trail at `%USERPROFILE%\.config\hermes-katana\`**
    shows 5 743 entries — earlier installs left state on this machine.
    `katana audit verify` succeeded against it (chain integrity preserved
    across two install generations), which is a good sign for the hash-chain
