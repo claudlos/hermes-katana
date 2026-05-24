@@ -262,6 +262,7 @@ def _git_head() -> str | None:
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=str(ROOT),
             text=True,
+            encoding="utf-8",
         ).strip()
     except Exception:
         return None

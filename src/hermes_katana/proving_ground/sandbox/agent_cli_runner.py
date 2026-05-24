@@ -2165,6 +2165,7 @@ def run_agent_multiturn(
             timeout=driver.timeout_sec,
             check=False,
             preexec_fn=_preexec,
+            encoding="utf-8",
         )
         stdout1 = p1.stdout or ""
         stderr1 = p1.stderr or ""
@@ -2203,6 +2204,7 @@ def run_agent_multiturn(
             timeout=max(driver.timeout_sec // 2, 60),
             check=False,
             preexec_fn=_preexec,
+            encoding="utf-8",
         )
         stdout2 = p2.stdout or ""
         stderr2 = p2.stderr or ""
@@ -2343,6 +2345,7 @@ def run_agent_once(
             timeout=driver.timeout_sec,
             check=False,
             preexec_fn=_preexec,
+            encoding="utf-8",
         )
         stdout = proc.stdout or ""
         stderr = proc.stderr or ""

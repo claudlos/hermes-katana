@@ -424,6 +424,7 @@ def check_command(name: str) -> tuple[bool, str]:
             capture_output=True,
             text=True,
             timeout=10,
+            encoding="utf-8",
         )
         version = result.stdout.strip().split("\n")[0] or result.stderr.strip().split("\n")[0]
         return True, version or "installed"

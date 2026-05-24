@@ -415,6 +415,7 @@ class WorkspaceTools:
             capture_output=True,
             text=True,
             timeout=timeout,
+            encoding="utf-8",
         )
         output = result.stdout
         if result.stderr:

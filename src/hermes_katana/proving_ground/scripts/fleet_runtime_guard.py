@@ -40,7 +40,7 @@ def _supervisor_alive(run_id: str) -> bool:
 
 def _active_shards() -> list[tuple[int, str]]:
     try:
-        out = subprocess.check_output(["pgrep", "-af", "run_agent_shard.py"], text=True)
+        out = subprocess.check_output(["pgrep", "-af", "run_agent_shard.py"], text=True, encoding="utf-8")
     except subprocess.CalledProcessError:
         return []
 

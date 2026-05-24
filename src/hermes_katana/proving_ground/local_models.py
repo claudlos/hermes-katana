@@ -602,6 +602,7 @@ def get_gpu_vram_mb() -> int:
             ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
         return int(out.stdout.strip().split()[0])
     except Exception:

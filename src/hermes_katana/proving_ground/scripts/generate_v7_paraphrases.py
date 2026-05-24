@@ -197,6 +197,7 @@ def call_minimax(prompt: str, timeout: int = 600) -> str:
         capture_output=True,
         text=True,
         timeout=timeout,
+        encoding="utf-8",
     )
     return p.stdout
 

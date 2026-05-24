@@ -217,6 +217,7 @@ def ps_snapshot() -> str:
             ["ps", "-eo", "pid,ppid,pgid,stat,etime,cmd"],
             text=True,
             errors="ignore",
+            encoding="utf-8",
         )
     except Exception as exc:
         return f"ps failed: {exc}\n"

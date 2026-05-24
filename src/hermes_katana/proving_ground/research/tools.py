@@ -287,7 +287,7 @@ def _query_corpus_handler(args: dict) -> dict:
             cmd += [f"--{k.replace('_', '-')}", str(args[k])]
         if k == "effective" and args.get("effective"):
             cmd.append("--effective")
-    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=120)
+    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=120, encoding="utf-8")
     if out.returncode != 0:
         raise RuntimeError(f"query.py failed: {out.stderr[:400]}")
     return json.loads(out.stdout or "{}")
@@ -349,6 +349,7 @@ def _generate_report_handler(args: dict) -> dict:
         capture_output=True,
         text=True,
         timeout=180,
+        encoding="utf-8",
     )
     if out.returncode != 0:
         raise RuntimeError(f"report.py failed: {out.stderr[:400]}")
@@ -379,7 +380,7 @@ def _launch_fleet_handler(args: dict) -> dict:
 def _stop_fleet_handler(args: dict) -> dict:
     run_id = args["run_id"]
     cmd = [*_script_module("fleet"), "stop", "--run-id", run_id]
-    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=30)
+    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=30, encoding="utf-8")
     return {"run_id": run_id, "stdout": out.stdout, "returncode": out.returncode}
 
 
@@ -389,7 +390,7 @@ def _harness_matrix_handler(args: dict) -> dict:
         cmd.append("--apply-exclusion")
     if args.get("min_n"):
         cmd += ["--min-n", str(args["min_n"])]
-    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=300)
+    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=300, encoding="utf-8")
     if out.returncode != 0:
         raise RuntimeError(f"harness_matrix failed: {out.stderr[-400:]}")
     report_path = ROOT / "results" / "harness_matrix.json"
@@ -408,7 +409,7 @@ def _factorial_decompose_handler(args: dict) -> dict:
     cmd += ["--subsample", str(sub)]
     if args.get("interactions"):
         cmd.append("--interactions")
-    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=600)
+    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=600, encoding="utf-8")
     if out.returncode != 0:
         raise RuntimeError(f"factorial_decompose failed: {out.stderr[-400:]}")
     report_path = ROOT / "results" / "factorial.json"
@@ -429,7 +430,7 @@ def _simulate_defense_handler(args: dict) -> dict:
         cmd += ["--max-rows", str(args["max_rows"])]
     if args.get("sweep"):
         cmd.append("--sweep")
-    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=3600)
+    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=3600, encoding="utf-8")
     if out.returncode != 0:
         raise RuntimeError(f"simulate_katana_defense failed: {out.stderr[-400:]}")
     out_name = "katana_defense_simulation_sweep.json" if args.get("sweep") else "katana_defense_simulation.json"
@@ -450,7 +451,7 @@ def _harness_ablation_handler(args: dict) -> dict:
         cmd.append("--submit-to-kernel")
     if args.get("run_id"):
         cmd += ["--run-id", args["run_id"]]
-    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=900)
+    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=900, encoding="utf-8")
     if out.returncode != 0:
         raise RuntimeError(f"harness_ablation failed: {out.stderr[-400:]}")
     report_path = ROOT / "results" / "harness_ablation.json"
@@ -471,7 +472,7 @@ def _detection_bench_handler(args: dict) -> dict:
         cmd += ["--max-neg", str(args["max_neg"])]
     if args.get("skip_channel_strat"):
         cmd.append("--skip-channel-strat")
-    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=3600)
+    out = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=3600, encoding="utf-8")
     if out.returncode != 0:
         raise RuntimeError(f"detection_bench failed: {out.stderr[-400:]}")
     report_path = ROOT / "results" / "detection_bench.json"

@@ -214,6 +214,7 @@ def _claude_cli_complete(cfg: LLMConfig, system: str, user: str) -> str:
         capture_output=True,
         timeout=600,
         env=env,
+        encoding="utf-8",
     )
     if proc.returncode != 0 and not proc.stdout:
         raise RuntimeError(f"claude CLI failed rc={proc.returncode}: {proc.stderr[:500]}")
@@ -259,6 +260,7 @@ def _codex_cli_complete(cfg: LLMConfig, system: str, user: str) -> str:
             capture_output=True,
             timeout=600,
             env=_scrubbed_subprocess_env(),
+            encoding="utf-8",
         )
         if proc.returncode != 0:
             raise RuntimeError(f"codex CLI failed rc={proc.returncode}: {proc.stderr[:500]}")
@@ -311,6 +313,7 @@ def _hermes_cli_complete(cfg: LLMConfig, system: str, user: str) -> str:
         capture_output=True,
         timeout=600,
         env=_scrubbed_subprocess_env(),
+        encoding="utf-8",
     )
     if proc.returncode != 0:
         raise RuntimeError(f"hermes CLI failed rc={proc.returncode}: {proc.stderr[:500]}")
