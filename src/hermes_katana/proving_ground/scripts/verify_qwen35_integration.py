@@ -74,6 +74,7 @@ def check_hermes_cli() -> bool:
             capture_output=True,
             text=True,
             timeout=10,
+            encoding="utf-8",
         )
         _ok(f"hermes --version → {(out.stdout or out.stderr).strip()[:80]}")
         return True
@@ -108,7 +109,7 @@ def check_local_model() -> bool:
     ]
     t0 = time.time()
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=300, encoding="utf-8")
     except subprocess.TimeoutExpired:
         _fail("Timed out (>5min). Is the local inference server running?")
         return False

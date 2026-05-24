@@ -61,7 +61,7 @@ def _file_sha256(path: Path) -> str:
 
 def _git_head() -> str | None:
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(ROOT), text=True).strip()
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(ROOT), text=True, encoding="utf-8").strip()
     except Exception:
         return None
 
