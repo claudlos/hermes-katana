@@ -37,7 +37,7 @@ EXCLUSION_LIST = ROOT / "results" / "exclusion_list.json"
 def _load_exclusion() -> set[tuple]:
     if not EXCLUSION_LIST.exists():
         return set()
-    d = json.loads(EXCLUSION_LIST.read_text())
+    d = json.loads(EXCLUSION_LIST.read_text(encoding="utf-8"))
     return {(r.get("agent_id"), r.get("shard"), r.get("channel"), r.get("attack_id")) for r in d.get("rows", [])}
 
 
@@ -46,7 +46,7 @@ def _stream_rows(apply_exclusion: bool):
     for p in sorted(SHARD_RUNS.glob("shard_*.jsonl")):
         if "_broken" in str(p):
             continue
-        with p.open() as f:
+        with p.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     r = json.loads(line)
@@ -194,7 +194,7 @@ def main() -> int:
 
     out_path = ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps({**result, "gaps": gaps}, indent=2))
+    out_path.write_text(json.dumps({**result, "gaps": gaps}, indent=2), encoding="utf-8")
 
     print(f"\n=== harness coverage matrix (min_n={args.min_n}, exclusion={args.apply_exclusion}) ===")
     _print_matrix(result, args.min_n)
@@ -218,7 +218,7 @@ def main() -> int:
         spec = _propose_fleet_spec(actionable)
         fp = ROOT / args.propose_fleet
         fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(json.dumps(spec, indent=2))
+        fp.write_text(json.dumps(spec, indent=2), encoding="utf-8")
         print(f"\nproposed fleet spec: {fp}")
 
     print(f"\nfull report: {out_path}")

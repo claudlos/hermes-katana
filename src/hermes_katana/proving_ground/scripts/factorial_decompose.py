@@ -57,7 +57,7 @@ EXCLUSION_LIST = ROOT / "results" / "exclusion_list.json"
 def _exclusion_keys() -> set[tuple]:
     if not EXCLUSION_LIST.exists():
         return set()
-    d = json.loads(EXCLUSION_LIST.read_text())
+    d = json.loads(EXCLUSION_LIST.read_text(encoding="utf-8"))
     return {(r.get("agent_id"), r.get("shard"), r.get("channel"), r.get("attack_id")) for r in d.get("rows", [])}
 
 
@@ -66,7 +66,7 @@ def _stream(apply_exclusion: bool):
     for p in sorted(SHARD_RUNS.glob("shard_*.jsonl")):
         if "_broken" in str(p):
             continue
-        with p.open() as f:
+        with p.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     row = json.loads(line)
@@ -251,7 +251,7 @@ def main() -> int:
     }
     out_path = ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(out, indent=2))
+    out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
     # Console summary — main model (publishable numbers)
     mf = main_fit

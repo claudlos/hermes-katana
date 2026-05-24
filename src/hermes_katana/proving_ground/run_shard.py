@@ -51,7 +51,7 @@ def _load_dotenv():
         if not env_path.exists():
             continue
         try:
-            for line in env_path.read_text().splitlines():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
@@ -171,7 +171,7 @@ def resolve_endpoint(
         template,
     ]
     log_path = f"/tmp/llama_shard_{_safe_slug(model_id)}.log"
-    log = open(log_path, "w")
+    log = open(log_path, "w", encoding="utf-8")
     proc = subprocess.Popen(cmd, stdout=log, stderr=log)
 
     def _full_cleanup():
@@ -240,7 +240,7 @@ def _load_already_done(sessions_path: Path) -> set[str]:
     """Return attack_ids already processed in this (shard, model) output."""
     done: set[str] = set()
     if sessions_path.exists():
-        with sessions_path.open() as f:
+        with sessions_path.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     d = json.loads(line)
@@ -257,7 +257,7 @@ def _load_shard(shard_id: int) -> list[AttackSample]:
     if not path.exists():
         raise FileNotFoundError(f"Shard not found: {path}")
     out: list[AttackSample] = []
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             d = json.loads(line)
             out.append(
@@ -337,7 +337,7 @@ async def run(
 
     signal.signal(signal.SIGINT, _sigint)
 
-    with sessions_path.open("a") as sess_f, signatures_path.open("a") as sig_f:
+    with sessions_path.open("a", encoding="utf-8") as sess_f, signatures_path.open("a", encoding="utf-8") as sig_f:
         for i, attack in enumerate(pending):
             if stop["flag"]:
                 break
@@ -439,7 +439,8 @@ async def run(
                         "updated_at": time.time(),
                     },
                     indent=2,
-                )
+                ),
+                encoding="utf-8",
             )
 
     tracker.close()

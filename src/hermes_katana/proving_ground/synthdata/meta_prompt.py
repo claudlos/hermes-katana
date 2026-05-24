@@ -210,14 +210,14 @@ def meta_prompts_from_leaves(
 
 def save_meta_prompts(metas: list[MetaPrompt], path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         for m in metas:
             f.write(json.dumps(m.to_json()) + "\n")
 
 
 def load_meta_prompts(path) -> list[MetaPrompt]:
     out: list[MetaPrompt] = []
-    for line in open(path):
+    for line in open(path, encoding="utf-8"):
         if not line.strip():
             continue
         out.append(MetaPrompt(**json.loads(line)))
@@ -226,7 +226,7 @@ def load_meta_prompts(path) -> list[MetaPrompt]:
 
 def save_examples(examples: list[SynthExample], path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         for ex in examples:
             d = ex.to_json()
             for k in ("critic_a", "critic_b"):
@@ -239,7 +239,7 @@ def load_examples(path) -> list[SynthExample]:
     out: list[SynthExample] = []
     from .schema import CriticVerdict
 
-    for line in open(path):
+    for line in open(path, encoding="utf-8"):
         if not line.strip():
             continue
         d = json.loads(line)

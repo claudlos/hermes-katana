@@ -128,7 +128,7 @@ def analyze_rows(
 
 def load_jsonl(path: Path) -> list[dict]:
     rows = []
-    with path.open(errors="ignore") as f:
+    with path.open(errors="ignore", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 rows.append(json.loads(line))
@@ -197,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     rows = load_jsonl(args.valid_rows)
-    denominators = json.loads(args.denominators.read_text()) if args.denominators else None
+    denominators = json.loads(args.denominators.read_text(encoding="utf-8")) if args.denominators else None
     result = analyze_rows(
         rows,
         comparisons=_parse_comparisons(args.compare),
@@ -206,11 +206,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.out_json:
         args.out_json.parent.mkdir(parents=True, exist_ok=True)
-        args.out_json.write_text(json.dumps(result, indent=2, sort_keys=True))
+        args.out_json.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     md = render_markdown(result, denominators=denominators)
     if args.out_md:
         args.out_md.parent.mkdir(parents=True, exist_ok=True)
-        args.out_md.write_text(md)
+        args.out_md.write_text(md, encoding="utf-8")
     else:
         print(md)
     return 0

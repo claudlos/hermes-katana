@@ -374,14 +374,14 @@ class WorkspaceTools:
         path = self._safe_path(args["path"])
         if not path.exists():
             return f"File not found: {args['path']}", {}
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
         return content, {"size": len(content), "lines": content.count("\n") + 1}
 
     def _tool_write_file(self, args: dict) -> tuple[str, dict]:
         path = self._safe_path(args["path"])
         path.parent.mkdir(parents=True, exist_ok=True)
         content = args["content"]
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
         return f"Written {len(content)} bytes to {args['path']}", {"bytes": len(content)}
 
     def _tool_list_files(self, args: dict) -> tuple[str, dict]:

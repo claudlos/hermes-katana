@@ -160,7 +160,7 @@ class Job:
 
 
 def _load_spec(path: Path) -> dict:
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _expand(spec: dict, run_id: str, trial_plan: Path | None = None) -> list[Job]:
@@ -244,7 +244,7 @@ def _expand_entry(
 def _make_logger(log_path: Path):
     def _log(msg: str) -> None:
         line = f"[{time.strftime('%F %T')}] {msg}\n"
-        with log_path.open("a") as f:
+        with log_path.open("a", encoding="utf-8") as f:
             f.write(line)
         sys.stdout.write(line)
         sys.stdout.flush()
@@ -272,11 +272,11 @@ def _update_run_meta(dirs: RunDirs, **updates) -> None:
     meta = {}
     if dirs.meta.exists():
         try:
-            meta = json.loads(dirs.meta.read_text())
+            meta = json.loads(dirs.meta.read_text(encoding="utf-8"))
         except Exception:
             meta = {}
     meta.update(updates)
-    dirs.meta.write_text(json.dumps(meta, indent=2, sort_keys=True))
+    dirs.meta.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _check_prereg(spec: dict, allow_no_prereg: bool) -> tuple[Path | None, str | None]:
@@ -313,7 +313,7 @@ def _check_prereg(spec: dict, allow_no_prereg: bool) -> tuple[Path | None, str |
     try:
         import yaml
 
-        meta = yaml.safe_load(candidate.read_text()) or {}
+        meta = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
     except Exception as e:
         return (None, f"prereg `{pid}` failed to parse: {e}")
     status = (meta.get("status") or "").lower()
@@ -353,7 +353,7 @@ def launch(
     # Refuse to clobber an already-active run_id.
     if dirs.pid.exists():
         try:
-            existing_pid = int(dirs.pid.read_text().strip())
+            existing_pid = int(dirs.pid.read_text(encoding="utf-8").strip())
             os.kill(existing_pid, 0)  # no-op signal — raises if process gone
             log(f"ERROR: run_id={run_id} already has active supervisor pid={existing_pid}")
             return 2
@@ -383,11 +383,11 @@ def launch(
         "design_id": design_id,
         "trial_plan": str(trial_plan) if trial_plan else None,
     }
-    dirs.meta.write_text(json.dumps(meta, indent=2, sort_keys=True))
+    dirs.meta.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
 
     log(f"fleet launch — run_id={run_id} jobs={total} max_concurrency={max_concurrency}")
 
-    dirs.pid.write_text(str(os.getpid()))
+    dirs.pid.write_text(str(os.getpid()), encoding="utf-8")
 
     stop = {"flag": False}
 
@@ -407,7 +407,7 @@ def launch(
 
     def _launch_one(job: Job) -> None:
         job.log_path = dirs.jobs / f"{_safe_tag(job.tag())}.log"
-        log_fh = job.log_path.open("w")
+        log_fh = job.log_path.open("w", encoding="utf-8")
         job.proc = subprocess.Popen(
             job.cmd(),
             stdout=log_fh,
@@ -514,7 +514,7 @@ def _list_active_runs() -> list[tuple[str, int]]:
         if not pid_file.exists():
             continue
         try:
-            pid = int(pid_file.read_text().strip())
+            pid = int(pid_file.read_text(encoding="utf-8").strip())
             os.kill(pid, 0)
             out.append((d.name, pid))
         except (ProcessLookupError, ValueError, FileNotFoundError):
@@ -538,7 +538,7 @@ def status(run_id: str | None) -> int:
         log_path = RunDirs(rid).log
         last = ""
         if log_path.exists():
-            lines = log_path.read_text().splitlines()
+            lines = log_path.read_text(encoding="utf-8").splitlines()
             for ln in reversed(lines):
                 if " status " in ln:
                     last = ln.strip()

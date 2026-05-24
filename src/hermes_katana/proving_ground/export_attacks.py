@@ -103,7 +103,7 @@ def export_attacks(db_path: str = DB_PATH, threshold: float = DRIFT_THRESHOLD):
 
     # Export confirmed
     confirmed_unique = sorted(best_attacks.values(), key=lambda x: -x["tool_drift"])
-    with open(OUTPUT_CONFIRMED, "w") as f:
+    with open(OUTPUT_CONFIRMED, "w", encoding="utf-8") as f:
         for r in confirmed_unique:
             f.write(
                 json.dumps(
@@ -127,7 +127,7 @@ def export_attacks(db_path: str = DB_PATH, threshold: float = DRIFT_THRESHOLD):
         if all(not ar["effective"] for ar in attack_results):
             rejected_ids.add(r["attack_id"])
 
-    with open(OUTPUT_REJECTED, "w") as f:
+    with open(OUTPUT_REJECTED, "w", encoding="utf-8") as f:
         for aid in sorted(rejected_ids):
             r = by_attack[aid][0]
             f.write(
@@ -168,7 +168,7 @@ def export_attacks(db_path: str = DB_PATH, threshold: float = DRIFT_THRESHOLD):
             if r["effective"]:
                 model_analysis[model]["by_label"][lb]["effective"] += 1
 
-    with open(OUTPUT_BY_MODEL, "w") as f:
+    with open(OUTPUT_BY_MODEL, "w", encoding="utf-8") as f:
         json.dump(model_analysis, f, indent=2)
 
     conn.close()

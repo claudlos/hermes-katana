@@ -386,7 +386,7 @@ class BehavioralTracker:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
         timeline = self.get_session_timeline(sid)
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             for event in timeline:
                 f.write(json.dumps(event) + "\n")
 

@@ -94,7 +94,7 @@ async def run_single(args):
 
     # Save report
     report_path = f"results/report_{result.session_id}.json"
-    with open(report_path, "w") as f:
+    with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report.to_dict(), f, indent=2)
     print(f"\n    Report saved: {report_path}")
 
@@ -158,7 +158,7 @@ async def run_batch(args):
 
     # Save batch report
     batch_path = "results/batch_report.json"
-    with open(batch_path, "w") as f:
+    with open(batch_path, "w", encoding="utf-8") as f:
         json.dump([r.to_dict() for r in results], f, indent=2)
     print(f"\nBatch report saved: {batch_path}")
 

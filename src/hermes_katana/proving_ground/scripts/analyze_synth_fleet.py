@@ -50,7 +50,7 @@ def _load_shard_provenance() -> dict[str, dict]:
     """
     out: dict[str, dict] = {}
     for shard_file in sorted(SHARDS.glob("shard_*.jsonl")):
-        with shard_file.open() as f:
+        with shard_file.open(encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -91,7 +91,7 @@ def _is_broken_runner_row(r: dict) -> bool:
 
 def _iter_results(run_id: str | None, include_broken: bool = False):
     for f in sorted(AGENT_RUNS.glob("shard_*.jsonl")):
-        with f.open() as fp:
+        with f.open(encoding="utf-8") as fp:
             for line in fp:
                 try:
                     r = json.loads(line)

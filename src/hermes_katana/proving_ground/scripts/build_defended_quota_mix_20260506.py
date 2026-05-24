@@ -181,7 +181,7 @@ def main() -> int:
     shard_hash = file_sha256(shard_path)
 
     spec_path = ROOT / "scripts" / "fleet_defended_quota_mix_confirmed_20260506.json"
-    spec_path.write_text(json.dumps(make_spec(), indent=2, sort_keys=False) + "\n")
+    spec_path.write_text(json.dumps(make_spec(), indent=2, sort_keys=False) + "\n", encoding="utf-8")
     design_dir = ROOT / "results" / "designs" / DESIGN_ID
     plan_path = design_dir / "trial_plan.jsonl"
     plan = make_trial_plan(shard_rows, shard_hash)
@@ -207,7 +207,7 @@ def main() -> int:
         "by_label": dict(Counter(r["attack_label"] for r in plan)),
     }
     summary_path = design_dir / "trial_plan_summary.json"
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 

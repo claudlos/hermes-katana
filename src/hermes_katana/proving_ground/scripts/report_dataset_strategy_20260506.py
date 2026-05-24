@@ -318,7 +318,7 @@ def load_design_summaries() -> dict:
     out = {}
     for path in sorted((ROOT / "results" / "designs").glob("*/trial_plan_summary.json")):
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
         out[path.parent.name] = {

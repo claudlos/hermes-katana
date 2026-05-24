@@ -105,7 +105,7 @@ def _load_dotenv():
         if not env_path.exists():
             continue
         try:
-            for line in env_path.read_text().splitlines():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
@@ -157,7 +157,7 @@ def _load_done_keys(jsonl_path: Path, run_id: str | None = None) -> set[tuple[st
     repeat_idx; default to 0 for those."""
     done: set[tuple[str, int]] = set()
     if jsonl_path.exists():
-        with jsonl_path.open() as f:
+        with jsonl_path.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     d = json.loads(line)
@@ -175,7 +175,7 @@ def _load_done_trial_ids(jsonl_path: Path, run_id: str | None = None) -> set[str
     """Resume-set keyed on planned_trial_id for manifest-backed campaigns."""
     done: set[str] = set()
     if jsonl_path.exists():
-        with jsonl_path.open() as f:
+        with jsonl_path.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     d = json.loads(line)
@@ -235,7 +235,7 @@ def _pending_from_trial_plan(
     by_id = {str(a.get("id") or a.get("attack_id")): a for a in attacks}
     by_idx = {int(a.get("_shard_row_idx", i)): a for i, a in enumerate(attacks)}
     selected: list[dict] = []
-    with trial_plan.open() as f:
+    with trial_plan.open(encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
@@ -298,7 +298,7 @@ def _load_shard(shard_id: int, control: bool = False, split: str = "all") -> lis
     else:
         path = Path("shards") / f"shard_{shard_id:03d}.jsonl"
     rows = []
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for idx, line in enumerate(f):
             if not line.strip():
                 continue
@@ -396,7 +396,7 @@ def _load_or_make_cached_baseline(
     cache: dict = {}
     if baselines_path.exists():
         try:
-            cache = json.loads(baselines_path.read_text())
+            cache = json.loads(baselines_path.read_text(encoding="utf-8"))
         except Exception:
             cache = {}
     key = f"{driver.agent_id}::{task_name}::{channel}"
@@ -419,7 +419,7 @@ def _load_or_make_cached_baseline(
             "baseline_invalid_reason": reason,
             "created_at": time.time(),
         }
-        baselines_path.write_text(json.dumps(cache, indent=2))
+        baselines_path.write_text(json.dumps(cache, indent=2), encoding="utf-8")
         raise RuntimeError(f"invalid baseline for {key}: {reason}")
     cache[key] = {
         "run": run_dict,
@@ -428,7 +428,7 @@ def _load_or_make_cached_baseline(
         "baseline_invalid_reason": None,
         "created_at": time.time(),
     }
-    baselines_path.write_text(json.dumps(cache, indent=2))
+    baselines_path.write_text(json.dumps(cache, indent=2), encoding="utf-8")
     print(f"    [baseline] done: duration={run.duration_sec}s output={run.output_chars}c tools={run.tool_call_count}")
     return cache[key]["run"], cache[key]["corpus"]
 
@@ -639,7 +639,8 @@ def run(
                         "updated_at": time.time(),
                     },
                     indent=2,
-                )
+                ),
+                encoding="utf-8",
             )
             return 4
         print(
@@ -704,7 +705,8 @@ def run(
                         "updated_at": time.time(),
                     },
                     indent=2,
-                )
+                ),
+                encoding="utf-8",
             )
             print(f"    [baseline] FATAL: {e}", flush=True)
             return 4
@@ -736,7 +738,7 @@ def run(
     binary = driver.cmd_template[0] if driver.cmd_template else ""
     is_claude_cli = "claude" in binary and "hermes" not in binary
 
-    with out_jsonl.open("a") as f_out:
+    with out_jsonl.open("a", encoding="utf-8") as f_out:
         for i, (attack, repeat_idx, plan_row) in enumerate(pending):
             if stop["flag"]:
                 break
@@ -1013,7 +1015,8 @@ def run(
                         "updated_at": time.time(),
                     },
                     indent=2,
-                )
+                ),
+                encoding="utf-8",
             )
 
             # Periodic in-run sweep — every 50 sessions clean up anything

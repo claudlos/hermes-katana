@@ -31,7 +31,7 @@ from pathlib import Path
 
 
 def load_signatures(path: str):
-    rows = [json.loads(line) for line in open(path) if line.strip()]
+    rows = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
     return rows
 
 
@@ -161,7 +161,7 @@ def main():
         "scaler_mean": [round(float(m), 5) for m in scaler.mean_],
         "scaler_scale": [round(float(s), 5) for s in scaler.scale_],
     }
-    (out / "behavioral_signature_scanner.json").write_text(json.dumps(summary, indent=2))
+    (out / "behavioral_signature_scanner.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(f"\nWrote scanner to {out}/behavioral_signature_scanner.{{joblib,json}}")
 

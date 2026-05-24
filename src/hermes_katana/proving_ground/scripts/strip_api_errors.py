@@ -78,7 +78,7 @@ def process_file(path: Path, dry_run: bool) -> tuple[int, int, Counter]:
     kept_lines: list[str] = []
     stripped = 0
     pats: Counter = Counter()
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             s = line.strip()
             if not s:
@@ -96,7 +96,7 @@ def process_file(path: Path, dry_run: bool) -> tuple[int, int, Counter]:
                 kept_lines.append(line)
     kept = len(kept_lines)
     if not dry_run and stripped > 0:
-        path.write_text("".join(kept_lines))
+        path.write_text("".join(kept_lines), encoding="utf-8")
     return kept, stripped, pats
 
 

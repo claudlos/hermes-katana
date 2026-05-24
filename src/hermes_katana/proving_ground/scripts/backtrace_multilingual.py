@@ -114,7 +114,7 @@ def rows_digest(rows: list[dict]) -> str:
 def load_confirmed(path: Path) -> dict[str, dict]:
     """source_id → {label, n_models_effective, n_platforms_effective}"""
     out: dict[str, dict] = {}
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             d = json.loads(line)
             sid = d.get("id")
@@ -234,7 +234,7 @@ def load_existing_fingerprints(shards_dir: Path) -> set[str]:
     seen = set()
     for sp in sorted(shards_dir.glob("shard_*.jsonl")):
         try:
-            with sp.open() as f:
+            with sp.open(encoding="utf-8") as f:
                 for line in f:
                     d = json.loads(line)
                     ns = d.get("text_sha256_normalized") or sha(normalize(d.get("text", "")))
@@ -378,7 +378,7 @@ def build(
         all_shard_rows.extend(shard_rows)
         if not dry_run:
             sp = out_dir / f"shard_{shard_id:03d}.jsonl"
-            with sp.open("w") as f:
+            with sp.open("w", encoding="utf-8") as f:
                 for sr in shard_rows:
                     f.write(json.dumps(sr, ensure_ascii=False) + "\n")
             written.append(sp.name)
@@ -426,7 +426,7 @@ def build(
     }
     if not dry_run:
         mpath = out_dir / "multilingual_backtrace_manifest.json"
-        mpath.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+        mpath.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"\nWrote manifest: {mpath}")
     else:
         print("\nDry-run manifest:")

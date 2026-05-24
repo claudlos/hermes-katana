@@ -127,7 +127,7 @@ def _filter_rows(
     kept: list[dict] = []
     seen: set[str] = set()
     skipped: Counter = Counter()
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             try:
                 d = json.loads(line)
@@ -157,7 +157,7 @@ def _write_shard(
 ) -> dict:
     h = hashlib.sha256()
     tag_counts: Counter = Counter()
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for r in rows:
             r = {**r, "shard": shard_id, **extra_fields}
             line = json.dumps(r, sort_keys=True, ensure_ascii=False) + "\n"
@@ -245,7 +245,7 @@ def build_attack(args: argparse.Namespace) -> None:
             Path(args.corpus), rows, entries, builder="scripts/build_corpus.py attack"
         ),
     }
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     print(
         f"\nWrote {args.num_shards} attack shards to {out_dir}/ "
@@ -324,7 +324,7 @@ def build_benign(args: argparse.Namespace) -> None:
             Path(args.corpus), rows, entries, builder="scripts/build_corpus.py benign"
         ),
     }
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     print(
         f"\nWrote {args.num_shards} benign control shards to {out_dir}/ "
@@ -415,7 +415,9 @@ def build_multilingual(args: argparse.Namespace) -> None:
             "source_files": source_files,
         },
     }
-    (out_dir / "manifest_multilingual.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+    (out_dir / "manifest_multilingual.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     print(
         f"\nWrote {len(all_entries)} multilingual shards "

@@ -354,7 +354,7 @@ def _deep_scan_with_fitz(pdf_bytes: bytes) -> list[PDFJSFinding]:
         return []
     findings: list[PDFJSFinding] = []
     try:
-        doc = _fitz.open(stream=pdf_bytes, filetype="pdf")
+        doc = _fitz.open(stream=pdf_bytes, filetype="pdf", encoding="utf-8")
         # Check document-level JavaScript
         js_actions = doc.get_js()  # type: ignore[attr-defined]
         if js_actions:

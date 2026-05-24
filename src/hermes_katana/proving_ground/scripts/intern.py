@@ -282,12 +282,12 @@ def cmd_status(args: argparse.Namespace) -> int:
         dag_path = d / "hypothesis_dag.json"
         n_events = 0
         if ev_path.exists():
-            with ev_path.open() as f:
+            with ev_path.open(encoding="utf-8") as f:
                 n_events = sum(1 for _ in f)
         n_hyp = 0
         if dag_path.exists():
             try:
-                n_hyp = len(json.loads(dag_path.read_text()).get("nodes", {}))
+                n_hyp = len(json.loads(dag_path.read_text(encoding="utf-8")).get("nodes", {}))
             except Exception:
                 pass
         print(f"{d.name:<24}  {n_events:>6}  {n_hyp:>10}")
@@ -296,7 +296,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_preregister(args: argparse.Namespace) -> int:
     k = _build_kernel(args)
-    spec = yaml.safe_load(Path(args.spec).read_text())
+    spec = yaml.safe_load(Path(args.spec).read_text(encoding="utf-8"))
     evt = k.propose_hypothesis(spec)
     print(f"preregistered: {evt.hypothesis_id}")
     return 0

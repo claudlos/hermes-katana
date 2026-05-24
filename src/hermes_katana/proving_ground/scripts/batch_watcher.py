@@ -38,7 +38,7 @@ def _load_dotenv():
         if not p.exists():
             continue
         try:
-            for line in p.read_text().splitlines():
+            for line in p.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
@@ -73,7 +73,7 @@ def _run(cmd: list[str]) -> int:
 
 
 def process_one(job_path: Path) -> str:
-    job = json.loads(job_path.read_text())
+    job = json.loads(job_path.read_text(encoding="utf-8"))
     raw_path = BATCH_OUT / f"{job['batch_id'].replace('/', '_')}.raw.jsonl"
     scored_path = RESULTS_DIR / f"{job['batch_id'].replace('/', '_')}.jsonl"
     # Already fully processed?

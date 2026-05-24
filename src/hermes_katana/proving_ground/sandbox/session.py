@@ -101,7 +101,7 @@ def handle_request(user_input):
     return result.stdout
 
 def read_config(path):
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return f.read()
 
 if __name__ == "__main__":
@@ -863,4 +863,4 @@ class SessionRunner:
         for rel_path, content in files.items():
             path = self.workspace_root / rel_path
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content)
+            path.write_text(content, encoding="utf-8")

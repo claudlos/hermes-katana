@@ -326,7 +326,7 @@ def main() -> int:
 
     if args.spec:
         try:
-            spec = json.loads(args.spec.read_text())
+            spec = json.loads(args.spec.read_text(encoding="utf-8"))
         except Exception as e:
             print(f"ERROR: cannot read spec {args.spec}: {e}", file=sys.stderr)
             return 1

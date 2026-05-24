@@ -47,7 +47,7 @@ _MODELS_ORDER = [
 
 def _load_jsonl(path: str) -> list[dict]:
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return [json.loads(line) for line in f if line.strip()]
     except FileNotFoundError:
         return []
@@ -203,10 +203,10 @@ def main():
         "cluster_centers": centers.tolist(),
         "clusters": {str(k): members for k, members in clusters.items()},
     }
-    (out / "cross_model_effect_clusters.json").write_text(json.dumps(payload, indent=2))
+    (out / "cross_model_effect_clusters.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     # Flat CSV-friendly dump: one row per attack → cluster.
-    with (out / "cross_model_effect_clusters.jsonl").open("w") as f:
+    with (out / "cross_model_effect_clusters.jsonl").open("w", encoding="utf-8") as f:
         for aid, lbl in zip(attack_ids, labels):
             m = meta.get(aid, {})
             f.write(

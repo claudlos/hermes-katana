@@ -58,7 +58,7 @@ def run(cfg_path: Path | None, *, smoke: bool = False) -> int:
     if smoke:
         cfg = _smoke_config()
     else:
-        cfg = json.loads(Path(cfg_path).read_text())
+        cfg = json.loads(Path(cfg_path).read_text(encoding="utf-8"))
 
     run_id = cfg.get("run_id") or f"synth-{int(time.time())}"
     ckpt = Path(cfg.get("checkpoint_dir", DEFAULT_CHECKPOINT)) / run_id
@@ -69,7 +69,7 @@ def run(cfg_path: Path | None, *, smoke: bool = False) -> int:
     # ---- init run manifest --------------------------------------------------
     manifest_path = ckpt / "run_meta.json"
     if manifest_path.exists():
-        manifest = GenerationRun(**json.loads(manifest_path.read_text()))
+        manifest = GenerationRun(**json.loads(manifest_path.read_text(encoding="utf-8")))
         print(f"[resume] {manifest_path}")
     else:
         manifest = GenerationRun(
@@ -80,7 +80,7 @@ def run(cfg_path: Path | None, *, smoke: bool = False) -> int:
             critic_a_model=critic_a.cfg.model,
             critic_b_model=critic_b.cfg.model,
         )
-        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2))
+        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2), encoding="utf-8")
 
     # ---- Step 1: taxonomy ---------------------------------------------------
     tax_path = ckpt / "taxonomy.jsonl"
@@ -101,7 +101,7 @@ def run(cfg_path: Path | None, *, smoke: bool = False) -> int:
         manifest.n_taxonomy_nodes = len(nodes)
         manifest.n_taxonomy_leaves = sum(1 for n in nodes.values() if n.is_leaf)
         manifest.taxonomy_done = True
-        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2))
+        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2), encoding="utf-8")
         print(f"[step 1] done: {manifest.n_taxonomy_nodes} nodes, {manifest.n_taxonomy_leaves} leaves")
 
     # ---- Step 2a: meta-prompts ---------------------------------------------
@@ -131,7 +131,7 @@ def run(cfg_path: Path | None, *, smoke: bool = False) -> int:
         save_meta_prompts(metas, meta_path)
         manifest.n_meta_prompts = len(metas)
         manifest.meta_prompts_done = True
-        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2))
+        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2), encoding="utf-8")
         print(f"[step 2a] done: {manifest.n_meta_prompts} scenarios (incl. complexified)")
 
     # ---- Step 2b: generate concrete texts ----------------------------------
@@ -173,7 +173,7 @@ def run(cfg_path: Path | None, *, smoke: bool = False) -> int:
         save_examples(examples, raw_path)
         manifest.n_examples_generated = len(examples)
         manifest.generation_done = True
-        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2))
+        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2), encoding="utf-8")
         print(f"[step 2b] done: {manifest.n_examples_generated} examples")
 
     # ---- Step 4: dual-critic gate ------------------------------------------
@@ -201,16 +201,16 @@ def run(cfg_path: Path | None, *, smoke: bool = False) -> int:
         )
         save_examples(judged, judged_path)
         summary = summarize(judged)
-        (ckpt / "critic_summary.json").write_text(json.dumps(summary, indent=2))
+        (ckpt / "critic_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
         manifest.n_examples_kept = summary["n_kept"]
         manifest.critics_done = True
-        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2))
+        manifest_path.write_text(json.dumps(manifest.to_json(), indent=2), encoding="utf-8")
         print(f"[step 4] done: {summary['n_kept']}/{summary['n_total']} kept (keep_rate={summary['keep_rate']:.1%})")
 
     # ---- final export -------------------------------------------------------
     kept_only = [ex for ex in judged if ex.keep]
     final_path = ckpt / "synthdata_final.jsonl"
-    with final_path.open("w") as f:
+    with final_path.open("w", encoding="utf-8") as f:
         for ex in kept_only:
             f.write(
                 json.dumps(

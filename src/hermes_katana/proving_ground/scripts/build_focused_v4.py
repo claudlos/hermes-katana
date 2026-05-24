@@ -163,7 +163,7 @@ def main() -> int:
 
     # 1) Confirmed attacks (every row, no sampling — these are the spine)
     if args.confirmed.exists():
-        with args.confirmed.open() as f:
+        with args.confirmed.open(encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -188,7 +188,7 @@ def main() -> int:
         if not synth_path.exists():
             print(f"[skip] synth not found: {synth_path}")
             continue
-        with synth_path.open() as f:
+        with synth_path.open(encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -221,7 +221,7 @@ def main() -> int:
     )
     pools: dict[str, list[dict]] = {s: [] for s in QUALITY_ORDER}
     if args.v3_clean_source.exists():
-        with args.v3_clean_source.open() as f:
+        with args.v3_clean_source.open(encoding="utf-8") as f:
             for line in f:
                 r = json.loads(line)
                 if r.get("label") != "clean":
@@ -258,7 +258,7 @@ def main() -> int:
 
     # Write output
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("w") as f:
+    with args.out.open("w", encoding="utf-8") as f:
         for row in out_rows:
             f.write(json.dumps(row) + "\n")
 

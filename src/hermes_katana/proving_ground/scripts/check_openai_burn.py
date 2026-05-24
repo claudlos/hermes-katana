@@ -49,7 +49,7 @@ def main():
     total_done = 0
     total_effective = 0
     for f in files:
-        m = json.loads(f.read_text())
+        m = json.loads(f.read_text(encoding="utf-8"))
         total_done += m.get("done", 0)
         total_effective += m.get("effective", 0)
 

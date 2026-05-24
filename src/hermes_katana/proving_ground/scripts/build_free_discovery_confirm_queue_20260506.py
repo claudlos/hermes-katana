@@ -552,7 +552,7 @@ def main() -> int:
     write_jsonl(queue_path, queue)
     write_jsonl(shard_path, shard_rows)
     shard_hash = file_sha256(shard_path)
-    spec_path.write_text(json.dumps(make_spec(), indent=2, sort_keys=False) + "\n")
+    spec_path.write_text(json.dumps(make_spec(), indent=2, sort_keys=False) + "\n", encoding="utf-8")
     plan = make_trial_plan(queue, shard_rows, shard_hash)
     write_jsonl(plan_path, plan)
 
@@ -594,9 +594,9 @@ def main() -> int:
         "report": str((REPORT_DIR / "report.md").relative_to(ROOT)),
         "report_summary": str(report_summary_path.relative_to(ROOT)),
     }
-    plan_summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    plan_summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    report_summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    report_summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     write_report(summary, queue)
 
     print(json.dumps(summary, indent=2, sort_keys=True))

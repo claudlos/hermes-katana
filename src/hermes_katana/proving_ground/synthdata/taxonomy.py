@@ -253,14 +253,14 @@ _TOP_LEVEL_DESCRIPTIONS: dict[str, str] = {
 
 def save_taxonomy(nodes: dict[str, TaxonomyNode], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for n in nodes.values():
             f.write(json.dumps(n.to_json()) + "\n")
 
 
 def load_taxonomy(path: Path) -> dict[str, TaxonomyNode]:
     nodes: dict[str, TaxonomyNode] = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         d = json.loads(line)
@@ -281,7 +281,7 @@ def seed_sampler(path: Path, n_per_label: int = 3) -> dict[str, list[str]]:
 
     buckets: dict[str, list[str]] = defaultdict(list)
     rnd = random.Random(42)
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         all_rows = [json.loads(line) for line in f if line.strip()]
     rnd.shuffle(all_rows)
     for r in all_rows:

@@ -177,7 +177,7 @@ class EventStream:
 
     def _load(self) -> None:
         assert self.jsonl_path is not None
-        for line in self.jsonl_path.read_text().splitlines():
+        for line in self.jsonl_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             try:
@@ -189,7 +189,7 @@ class EventStream:
     def append(self, evt: Event) -> Event:
         self._events.append(evt)
         if self.jsonl_path:
-            with self.jsonl_path.open("a") as f:
+            with self.jsonl_path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(evt.to_dict(), default=str) + "\n")
         return evt
 

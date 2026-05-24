@@ -99,7 +99,7 @@ def _load_requests_index(input_path: Path) -> dict[str, dict]:
     idx: dict[str, dict] = {}
     if not input_path.exists():
         return idx
-    for line in input_path.open():
+    for line in input_path.open(encoding="utf-8"):
         try:
             r = json.loads(line)
         except Exception:
@@ -130,14 +130,14 @@ def fingerprint_one_batch(scored_path: Path) -> Path | None:
     job_path = BATCH_JOBS / f"{scored_path.stem}.json"
     if not job_path.exists():
         return None
-    job = json.loads(job_path.read_text())
+    job = json.loads(job_path.read_text(encoding="utf-8"))
     input_path = Path(job["input_path"])
     req_idx = _load_requests_index(input_path)
     if not req_idx:
         return None
 
     # Load the scored rows (we need response_head + attack_id per row).
-    scored_rows = [json.loads(line) for line in scored_path.open() if line.strip()]
+    scored_rows = [json.loads(line) for line in scored_path.open(encoding="utf-8") if line.strip()]
 
     # Build paired lists of (attack text, response text) for a single batched
     # MiniLM encode call. Also pair (task desc, response) for task_adherence.
@@ -169,7 +169,7 @@ def fingerprint_one_batch(scored_path: Path) -> Path | None:
 
     fp_path = scored_path.with_suffix(".fp.jsonl")
     n_enriched = 0
-    with fp_path.open("w") as f:
+    with fp_path.open("w", encoding="utf-8") as f:
         for row, reflect, adhere in zip(scored_rows, reflection_scores, adherence_scores):
             response = row.get("response_head", "") or ""
             req = req_idx.get(row["custom_id"], {})
@@ -211,7 +211,7 @@ def _load_shard_attack_index(shard_id: int) -> dict[str, str]:
     path = SHARDS / f"shard_{shard_id:03d}.jsonl"
     idx: dict[str, str] = {}
     if path.exists():
-        for line in path.open():
+        for line in path.open(encoding="utf-8"):
             try:
                 d = json.loads(line)
             except Exception:
@@ -272,7 +272,7 @@ def fingerprint_one_agent_shard(shard_path: Path) -> Path | None:
         return None
 
     # Load all rows + gather texts for batched MiniLM encode.
-    rows = [json.loads(line) for line in shard_path.open() if line.strip()]
+    rows = [json.loads(line) for line in shard_path.open(encoding="utf-8") if line.strip()]
     if not rows:
         return None
 
@@ -320,7 +320,7 @@ def fingerprint_one_agent_shard(shard_path: Path) -> Path | None:
 
     fp_path = shard_path.with_suffix(".fp.jsonl")
     n_enriched = n_skipped = 0
-    with fp_path.open("w") as f:
+    with fp_path.open("w", encoding="utf-8") as f:
         for row, refl, adhere, drift_cos, skip in zip(rows, refl_scores, adhere_scores, drift_scores, skip_mask):
             if skip:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")

@@ -119,21 +119,23 @@ class HypothesisRegistry:
         p = self._path(hyp_id)
         if not p.exists():
             raise KeyError(f"no hypothesis registered with id={hyp_id}")
-        d = yaml.safe_load(p.read_text()) or {}
+        d = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         return Hypothesis(**d)
 
     def save(self, h: Hypothesis) -> None:
         p = self._path(h.id)
         # Atomic write: tmp + rename
         tmp = p.with_suffix(".yaml.tmp")
-        tmp.write_text(yaml.safe_dump(h.to_dict(), sort_keys=False, default_flow_style=False, width=120))
+        tmp.write_text(
+            yaml.safe_dump(h.to_dict(), sort_keys=False, default_flow_style=False, width=120), encoding="utf-8"
+        )
         tmp.replace(p)
 
     def list_all(self) -> list[Hypothesis]:
         out: list[Hypothesis] = []
         for p in sorted(self.root.glob("*.yaml")):
             try:
-                out.append(Hypothesis(**(yaml.safe_load(p.read_text()) or {})))
+                out.append(Hypothesis(**(yaml.safe_load(p.read_text(encoding="utf-8")) or {})))
             except Exception as e:
                 print(f"WARN: failed to load {p.name}: {e}", file=sys.stderr)
         return out
@@ -297,7 +299,7 @@ def main() -> int:
         return 0
 
     if args.cmd == "register":
-        spec = yaml.safe_load(Path(args.spec).read_text())
+        spec = yaml.safe_load(Path(args.spec).read_text(encoding="utf-8"))
         h = reg.register(spec, allow_overwrite=args.allow_overwrite)
         print(f"registered: {h.id}  at  {reg._path(h.id)}")
         return 0

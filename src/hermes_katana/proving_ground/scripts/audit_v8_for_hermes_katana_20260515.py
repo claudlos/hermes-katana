@@ -61,7 +61,7 @@ VALUE_LIKE_SECRET_PATTERNS = [
 
 
 def read_jsonl(path: Path) -> Iterable[dict[str, Any]]:
-    with path.open(errors="ignore") as f:
+    with path.open(errors="ignore", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -71,7 +71,7 @@ def read_jsonl(path: Path) -> Iterable[dict[str, Any]]:
 
 def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> int:
     count = 0
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
             count += 1

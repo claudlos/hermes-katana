@@ -117,7 +117,7 @@ def main() -> int:
     # Load v3 and index by normalized sha for dedup
     v3_rows: list[dict] = []
     seen_norm: set[str] = set()
-    with args.v3.open() as f:
+    with args.v3.open(encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
@@ -128,7 +128,7 @@ def main() -> int:
     # Load synth, convert, dedup
     synth_converted: list[dict] = []
     dropped_dup = 0
-    with args.synth.open() as f:
+    with args.synth.open(encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
@@ -142,7 +142,7 @@ def main() -> int:
 
     # Write combined
     out = args.out_dir / "combined.jsonl"
-    with out.open("w") as f:
+    with out.open("w", encoding="utf-8") as f:
         for r in v3_rows:
             f.write(json.dumps(r) + "\n")
         for r in synth_converted:

@@ -155,7 +155,7 @@ def _shard_files_for_agent(agent: str | None) -> list[Path]:
 def _iter_rows_stratified(agent: str | None):
     for p in _shard_files_for_agent(agent):
         try:
-            with p.open() as f:
+            with p.open(encoding="utf-8") as f:
                 for line in f:
                     try:
                         row = json.loads(line)
@@ -307,7 +307,7 @@ def main() -> int:
     )
     out_path = ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(out, indent=2))
+    out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
     if args.write_exclusion_list:
         excl_path = ROOT / "results" / "exclusion_list.json"
@@ -321,7 +321,8 @@ def main() -> int:
                     "rows": out.get("exclusion_rows", []),
                 },
                 indent=2,
-            )
+            ),
+            encoding="utf-8",
         )
         print(f"exclusion list: {excl_path}  ({out['n_exclusion_rows']} rows)")
 

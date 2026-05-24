@@ -262,7 +262,7 @@ def _codex_cli_complete(cfg: LLMConfig, system: str, user: str) -> str:
         )
         if proc.returncode != 0:
             raise RuntimeError(f"codex CLI failed rc={proc.returncode}: {proc.stderr[:500]}")
-        with open(outpath) as f:
+        with open(outpath, encoding="utf-8") as f:
             result = f.read().strip()
         return result
     finally:

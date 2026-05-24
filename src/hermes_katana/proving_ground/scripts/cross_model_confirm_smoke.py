@@ -38,7 +38,7 @@ def _is_broken(r: dict) -> bool:
 def _provenance() -> dict[str, dict]:
     out = {}
     for f in sorted(SHARDS.glob("shard_2*.jsonl")):
-        with f.open() as fp:
+        with f.open(encoding="utf-8") as fp:
             for line in fp:
                 r = json.loads(line)
                 out[r["id"]] = {
@@ -61,7 +61,7 @@ def main() -> int:
     )
 
     for f in sorted(AGENT_RUNS.glob("shard_*.jsonl")):
-        with f.open() as fp:
+        with f.open(encoding="utf-8") as fp:
             for line in fp:
                 try:
                     r = json.loads(line)
@@ -121,7 +121,7 @@ def main() -> int:
             print(f"  {label:<28} {n}")
 
         OUT.parent.mkdir(parents=True, exist_ok=True)
-        with OUT.open("w") as f:
+        with OUT.open("w", encoding="utf-8") as f:
             for row in sorted(
                 confirmed_rows,
                 key=lambda r: (-r["n_models_effective"], -r["max_severity"]),

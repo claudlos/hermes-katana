@@ -622,7 +622,7 @@ def fingerprint_db(db_path: str, out_path: str) -> list[Signature]:
 
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w") as f:
+    with out.open("w", encoding="utf-8") as f:
         for sig in sigs:
             f.write(json.dumps(asdict(sig)) + "\n")
     print(f"Wrote {len(sigs)} signatures to {out_path} in {time.time() - t0:.1f}s")

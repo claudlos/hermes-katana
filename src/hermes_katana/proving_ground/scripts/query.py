@@ -47,7 +47,7 @@ def _load_exclusion_keys() -> set[tuple]:
     """Load the parser-audit exclusion list keyed by (agent, shard, channel, attack_id)."""
     if not EXCLUSION_LIST.exists():
         return set()
-    d = json.loads(EXCLUSION_LIST.read_text())
+    d = json.loads(EXCLUSION_LIST.read_text(encoding="utf-8"))
     out: set[tuple] = set()
     for r in d.get("rows", []):
         out.add((r.get("agent_id"), r.get("shard"), r.get("channel"), r.get("attack_id")))
@@ -92,7 +92,7 @@ def _iter_rows(paths: list[Path], args: argparse.Namespace):
         )
     for p in paths:
         try:
-            with p.open() as f:
+            with p.open(encoding="utf-8") as f:
                 for line in f:
                     try:
                         row = json.loads(line)

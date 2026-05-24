@@ -37,7 +37,7 @@ def log(msg: str) -> None:
     ts = time.strftime("%H:%M:%S")
     line = f"[{ts}] {msg}"
     print(line, flush=True)
-    with LOG.open("a") as f:
+    with LOG.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
 
 
@@ -66,7 +66,7 @@ def main() -> int:
             try:
                 rec = submit_minimax_direct(inp, MODEL)
                 job_path = _job_record_path(rec["batch_id"])
-                job_path.write_text(json.dumps(rec, indent=2, default=_json_default))
+                job_path.write_text(json.dumps(rec, indent=2, default=_json_default), encoding="utf-8")
                 done += 1
                 # score immediately since minimax returns completed data
                 subprocess.run(

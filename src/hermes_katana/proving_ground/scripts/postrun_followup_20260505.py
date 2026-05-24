@@ -60,7 +60,7 @@ CHANNEL_TASK = {
 def read_jsonl(path: Path):
     if not path.exists():
         return
-    with path.open(errors="ignore") as f:
+    with path.open(errors="ignore", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
@@ -72,7 +72,7 @@ def read_jsonl(path: Path):
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
 
@@ -491,7 +491,7 @@ def write_report(analysis: dict, queue: list[dict], path: Path) -> None:
         lines.append(f"- `{artifact}`")
     lines.append("")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main() -> int:
@@ -523,7 +523,7 @@ def main() -> int:
 
     spec = make_spec()
     spec_path = ROOT / "scripts" / "fleet_confirm_queue_20260505.json"
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=False) + "\n")
+    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=False) + "\n", encoding="utf-8")
 
     plan = make_trial_plan(queue, shard_rows, shard_hash)
     design_dir = DESIGNS / CONFIRM_DESIGN_ID
@@ -577,12 +577,12 @@ def main() -> int:
         "by_channel": dict(Counter(r["channel"] for r in plan)),
         "by_label": dict(Counter(r["attack_label"] for r in plan)),
     }
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     analysis_path = ROOT / "results" / "analysis" / f"{ANALYSIS_ID}.json"
     analysis_path.parent.mkdir(parents=True, exist_ok=True)
     analysis["artifacts"].append(str(analysis_path.relative_to(ROOT)))
-    analysis_path.write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n")
+    analysis_path.write_text(json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     report_path = REPORTS / ANALYSIS_ID / "report.md"
     write_report(analysis, queue, report_path)

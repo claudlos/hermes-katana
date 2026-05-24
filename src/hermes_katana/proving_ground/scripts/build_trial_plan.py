@@ -57,7 +57,7 @@ def load_shard_rows(shard: int, *, split: str) -> tuple[Path, list[dict]]:
         if alt.exists():
             path = alt
     rows: list[dict] = []
-    with path.open(errors="ignore") as f:
+    with path.open(errors="ignore", encoding="utf-8") as f:
         for idx, line in enumerate(f):
             if not line.strip():
                 continue
@@ -219,7 +219,7 @@ def summarize(trials: list[dict], *, design_id: str, spec_path: Path, seed: int,
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -241,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
     trials = make_trial_plan(spec, design_id=args.design_id, run_id=args.run_id, seed=args.seed, strata=args.strata)
     write_jsonl(out_dir / "trial_plan.jsonl", trials)
     summary = summarize(trials, design_id=args.design_id, spec_path=spec_path, seed=args.seed, strata=args.strata)
-    (out_dir / "trial_plan_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
+    (out_dir / "trial_plan_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "design_id": args.design_id,
@@ -251,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         "trial_plan_sha256": file_sha256(out_dir / "trial_plan.jsonl"),
         "summary_sha256": file_sha256(out_dir / "trial_plan_summary.json"),
     }
-    (out_dir / "design_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
+    (out_dir / "design_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 

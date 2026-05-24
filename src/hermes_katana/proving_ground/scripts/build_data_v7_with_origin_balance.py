@@ -285,7 +285,7 @@ def load_llm_paraphrases(template_id: str, paraphrase_dir: Path) -> list[str]:
     if not p.is_file():
         return []
     out: list[str] = []
-    for line in p.read_text().splitlines():
+    for line in p.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -374,7 +374,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if not path.is_file():
         return rows
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -384,7 +384,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
@@ -475,7 +475,7 @@ def main() -> int:
             "into the recommended 10-15% range for actually learning origin-routing."
         ),
     }
-    (args.out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    (args.out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     print(f"[v7] combined.jsonl: {len(combined):,} rows")
     print(f"[v7] train: {len(train):,}  val: {len(val):,}  test: {len(test):,}")

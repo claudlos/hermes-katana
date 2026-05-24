@@ -161,7 +161,7 @@ def main() -> int:
     for p in paths:
         run = p.parent.name
         added = 0
-        with p.open() as f:
+        with p.open(encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -199,7 +199,7 @@ def main() -> int:
         sid = args.first_shard + s_idx
         chunk = rows[s_idx * args.per_shard : (s_idx + 1) * args.per_shard]
         out_path = args.out_dir / f"shard_{sid:03d}.jsonl"
-        with out_path.open("w") as f:
+        with out_path.open("w", encoding="utf-8") as f:
             for r in chunk:
                 source = f"synthdata/{r['_source_run']}"
                 f.write(
@@ -227,7 +227,7 @@ def main() -> int:
         by_label=by_label,
     )
     manifest_path = args.out_dir / "synth_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     print(f"\nmanifest → {manifest_path}")
     return 0
 

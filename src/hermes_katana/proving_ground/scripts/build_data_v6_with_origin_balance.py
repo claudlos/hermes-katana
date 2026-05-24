@@ -421,7 +421,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if not path.is_file():
         return rows
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -431,7 +431,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
@@ -516,7 +516,7 @@ def main() -> int:
             "to keep variants distinct in the family-hash space."
         ),
     }
-    (args.out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    (args.out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     print(f"[v6] combined.jsonl: {len(combined):,} rows")
     print(f"[v6] train: {len(train):,}  val: {len(val):,}  test: {len(test):,}")

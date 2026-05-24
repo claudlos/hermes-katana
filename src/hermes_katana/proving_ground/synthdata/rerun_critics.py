@@ -48,7 +48,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    cfg = json.loads(args.config.read_text())
+    cfg = json.loads(args.config.read_text(encoding="utf-8"))
     critic_a = LLMClient(LLMConfig(**cfg["critic_a"]))
     critic_b = LLMClient(LLMConfig(**cfg["critic_b"]))
 
@@ -107,11 +107,11 @@ def main() -> int:
     summary = summarize(judged)
 
     save_examples(judged, args.run / "examples_judged.jsonl")
-    (args.run / "critic_summary.json").write_text(json.dumps(summary, indent=2))
+    (args.run / "critic_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     kept = [ex for ex in judged if ex.keep]
     final = args.run / "synthdata_final.jsonl"
-    with final.open("w") as f:
+    with final.open("w", encoding="utf-8") as f:
         for ex in kept:
             f.write(
                 json.dumps(
@@ -132,10 +132,10 @@ def main() -> int:
     # Refresh run_meta counts
     meta_path = args.run / "run_meta.json"
     if meta_path.exists():
-        meta = GenerationRun(**json.loads(meta_path.read_text()))
+        meta = GenerationRun(**json.loads(meta_path.read_text(encoding="utf-8")))
         meta.n_examples_kept = summary["n_kept"]
         meta.critics_done = True
-        meta_path.write_text(json.dumps(meta.to_json(), indent=2))
+        meta_path.write_text(json.dumps(meta.to_json(), indent=2), encoding="utf-8")
 
     print(f"[rerun] done: {summary['n_kept']}/{summary['n_total']} kept (keep_rate={summary['keep_rate']:.1%})")
     print(f"[final] {final}")
