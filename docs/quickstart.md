@@ -81,12 +81,9 @@ Three built-in presets are available:
 
 | Preset       | Philosophy                                         |
 |--------------|----------------------------------------------------|
-| `max`   | Deny everything untrusted, escalate even clean ops |
-| `balanced`   | Smart defaults -- block tainted, allow clean       |
+| `max`        | Deny everything untrusted, escalate even clean ops |
+| `balanced`   | Smart defaults — block tainted, allow clean        |
 | `permissive` | Log only, still blocks exfiltration                |
-
-V3 renamed the previous strict preset to `max`. If an older install or config
-references `paranoid`, reinstall or upgrade and run `katana policy use max`.
 
 See all policies:
 

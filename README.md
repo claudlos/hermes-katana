@@ -9,11 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/claudlos/hermes-katana/actions/workflows/ci.yml"><img src="https://github.com/claudlos/hermes-katana/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/claudlos/hermes-katana/releases/latest"><img src="https://img.shields.io/github/v/release/claudlos/hermes-katana?display_name=tag&sort=semver" alt="Latest release"></a>
+  <a href="https://github.com/claudlos/hermes-katana/blob/master/LICENSE"><img src="https://img.shields.io/github/license/claudlos/hermes-katana" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/tests-unit%20%2B%20eval-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/eval-live%20baselines-blue" alt="Eval">
-  <img src="https://img.shields.io/badge/version-v3.0.0-orange" alt="Version">
 </p>
 
 ---
