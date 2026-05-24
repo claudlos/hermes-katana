@@ -36,7 +36,7 @@ import sys
 import time
 import tracemalloc
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -1351,7 +1351,7 @@ def run_benchmarks(
     print(f"  Behavioral: {len(samples['behavioral'])} samples")
 
     results: dict[str, Any] = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "targets": BENCHMARK_TARGETS,
         "ci_mode": ci_mode,
         "scanners": {},

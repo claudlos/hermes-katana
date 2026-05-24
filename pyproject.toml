@@ -131,6 +131,13 @@ include = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 norecursedirs = [".*", "build", "dist", "CVS", "_darcs", "{arch}", "*.egg", "venv", ".venv", "tests/_archive"]
+filterwarnings = [
+    # SWIG-generated bindings (mitmproxy/pywin32 on Py3.13+) emit these at
+    # C-extension load time; they have no module name we can match by, so
+    # filter on the warning text instead. Upstream noise, not our code.
+    "ignore:builtin type SwigPy.* has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
+]
 
 [tool.ruff]
 target-version = "py310"
