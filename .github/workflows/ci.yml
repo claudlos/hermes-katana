@@ -67,6 +67,13 @@ jobs:
             python-version: "3.10"
           - os: windows-latest
             python-version: "3.11"
+    # Force Bash for every step. GitHub Actions defaults to PowerShell on
+    # windows-latest, which can't parse the `\` line-continuations used in
+    # the multi-line `run:` blocks below. Git Bash is preinstalled on the
+    # Windows runner, so `shell: bash` works uniformly across the matrix.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
