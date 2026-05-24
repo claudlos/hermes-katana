@@ -17,6 +17,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter, defaultdict, deque
 from pathlib import Path
@@ -198,7 +199,15 @@ def run_jobs(jobs: list[dict], log_dir: Path, caps: dict[str, int], global_cap: 
         fh = log_path.open("w", encoding="utf-8")
         fh.write(f"cmd: {' '.join(cmd)}\n")
         fh.flush()
-        proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
+        # POSIX setsid() detach has no Windows equivalent for setsid; use
+        # CREATE_NEW_PROCESS_GROUP there so the worker is detached from
+        # parent signal propagation.
+        detach_kwargs: dict[str, object] = (
+            {"start_new_session": True}
+            if sys.platform != "win32"
+            else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        )
+        proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT, **detach_kwargs)
         job.update({"proc": proc, "fh": fh, "log": str(log_path), "started": time.time(), "provider": p, "tag": tag})
         running.append(job)
         active_by_provider[p] += 1
@@ -324,7 +333,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--recovery-run-id", default="corpus_v2_reset_recovery_20260505_1108")
     parser.add_argument("--recovery-design-id", default="D-corpus-v2-reset-recovery-20260505")
-    parser.add_argument("--log-dir", type=Path, default=Path("/tmp/fleet/corpus_v2_reset_recovery_20260505_1108"))
+    # /tmp/ is POSIX-only; use the platform tempdir so this script also works on
+    # Windows (operators can still override with --log-dir).
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=Path(tempfile.gettempdir()) / "fleet" / "corpus_v2_reset_recovery_20260505_1108",
+    )
     parser.add_argument("--global-cap", type=int, default=8)
     parser.add_argument("--claude-cap", type=int, default=2)
     parser.add_argument("--codex-cap", type=int, default=3)

@@ -34,9 +34,17 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# `preexec_fn=` and `os.nice()` are POSIX-only. The two run_agent_* functions
+# below throttle CPU-heavy agent CLIs on Linux laptops via nice(19). On
+# Windows preexec_fn= raises ValueError unconditionally and os.nice doesn't
+# exist, so each call site builds a `nice_kwargs` dict that's empty on
+# win32 and `{"preexec_fn": _preexec}` elsewhere, then splats it into
+# subprocess.run(). The throttling is laptop-thermal-specific anyway.
 
 
 # Subprocess hard cap. CLI agents can wander forever; this bounds the blast.
@@ -2146,11 +2154,17 @@ def run_agent_multiturn(
     env = _build_subprocess_env(driver, workspace)
 
     # Same nice=19 preexec as run_agent_once — see comment there for why.
-    def _preexec():
-        try:
-            os.nice(19)
-        except Exception:
-            pass
+    # POSIX-only; on Windows `nice_kwargs` stays empty and the splat is a no-op.
+    nice_kwargs: dict[str, object] = {}
+    if sys.platform != "win32":
+
+        def _preexec():
+            try:
+                os.nice(19)
+            except Exception:
+                pass
+
+        nice_kwargs["preexec_fn"] = _preexec
 
     t0 = time.time()
     timed_out = False
@@ -2164,8 +2178,8 @@ def run_agent_multiturn(
             text=True,
             timeout=driver.timeout_sec,
             check=False,
-            preexec_fn=_preexec,
             encoding="utf-8",
+            **nice_kwargs,
         )
         stdout1 = p1.stdout or ""
         stderr1 = p1.stderr or ""
@@ -2203,8 +2217,8 @@ def run_agent_multiturn(
             text=True,
             timeout=max(driver.timeout_sec // 2, 60),
             check=False,
-            preexec_fn=_preexec,
             encoding="utf-8",
+            **nice_kwargs,
         )
         stdout2 = p2.stdout or ""
         stderr2 = p2.stderr or ""
@@ -2326,11 +2340,17 @@ def run_agent_once(
     # laptop's x86_pkg_temp to 95°C+ within seconds of launch. nice=19
     # keeps the same wall-clock throughput (most of the time is HTTPS I/O
     # anyway) but lets the CPU cool between spikes.
-    def _preexec():
-        try:
-            os.nice(19)
-        except Exception:
-            pass
+    # POSIX-only; preexec_fn= raises on Windows.
+    nice_kwargs: dict[str, object] = {}
+    if sys.platform != "win32":
+
+        def _preexec():
+            try:
+                os.nice(19)
+            except Exception:
+                pass
+
+        nice_kwargs["preexec_fn"] = _preexec
 
     t0 = time.time()
     timed_out = False
@@ -2344,8 +2364,8 @@ def run_agent_once(
             text=True,
             timeout=driver.timeout_sec,
             check=False,
-            preexec_fn=_preexec,
             encoding="utf-8",
+            **nice_kwargs,
         )
         stdout = proc.stdout or ""
         stderr = proc.stderr or ""

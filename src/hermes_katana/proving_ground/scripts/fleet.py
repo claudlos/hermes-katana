@@ -409,12 +409,20 @@ def launch(
     def _launch_one(job: Job) -> None:
         job.log_path = dirs.jobs / f"{_safe_tag(job.tag())}.log"
         log_fh = job.log_path.open("w", encoding="utf-8")
+        # `start_new_session=True` is POSIX-only; on Windows the equivalent
+        # is creationflags=CREATE_NEW_PROCESS_GROUP. Set the right one so the
+        # worker detaches from the supervisor on both platforms.
+        detach_kwargs: dict[str, object] = (
+            {"start_new_session": True}
+            if sys.platform != "win32"
+            else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        )
         job.proc = subprocess.Popen(
             job.cmd(),
             stdout=log_fh,
             stderr=subprocess.STDOUT,
             cwd=str(ROOT),
-            start_new_session=True,
+            **detach_kwargs,
         )
         job.started_at = time.time()
         log(f"launched {job.tag()} pid={job.proc.pid} log={job.log_path}")
