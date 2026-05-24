@@ -533,24 +533,33 @@ def doctor(target: str | None) -> None:
         )
         all_ok = False
 
+    # (label, distribution name on PyPI, required-flag).
+    # `mitmproxy` is intentionally `optional` here — it's behind the [proxy]
+    # extra. The system-binary row above already reports the actual
+    # availability of `mitmdump`; reporting the Python package as
+    # `required: Missing` confused operators on minimal installs (Audit
+    # 2026-05-23 #11).
     packages = [
-        ("pydantic", "pydantic"),
-        ("click", "click"),
-        ("rich", "rich"),
-        ("cryptography", "cryptography"),
-        ("keyring", "keyring"),
-        ("mitmproxy", "mitmproxy"),
-        ("requests", "requests"),
-        ("pyyaml", "PyYAML"),
+        ("pydantic", "pydantic", "required"),
+        ("click", "click", "required"),
+        ("rich", "rich", "required"),
+        ("cryptography", "cryptography", "required"),
+        ("keyring", "keyring", "required"),
+        ("mitmproxy", "mitmproxy", "optional"),
+        ("requests", "requests", "required"),
+        ("pyyaml", "PyYAML", "required"),
     ]
 
-    for label, distribution in packages:
+    for label, distribution, required in packages:
         try:
             ver = metadata.version(distribution)
-            table.add_row(f"  {label}", "[green]OK[/green]", str(ver), "required")
+            table.add_row(f"  {label}", "[green]OK[/green]", str(ver), required)
         except metadata.PackageNotFoundError:
-            table.add_row(f"  {label}", "[red]Missing[/red]", "not installed", "required")
-            all_ok = False
+            if required == "optional":
+                table.add_row(f"  {label}", "[yellow]Optional[/yellow]", "not installed", required)
+            else:
+                table.add_row(f"  {label}", "[red]Missing[/red]", "not installed", required)
+                all_ok = False
 
     console.print(table)
 
