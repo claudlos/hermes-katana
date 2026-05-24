@@ -25,6 +25,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -170,7 +171,7 @@ def resolve_endpoint(
         "--chat-template",
         template,
     ]
-    log_path = f"/tmp/llama_shard_{_safe_slug(model_id)}.log"
+    log_path = str(Path(tempfile.gettempdir()) / f"llama_shard_{_safe_slug(model_id)}.log")
     log = open(log_path, "w", encoding="utf-8")
     proc = subprocess.Popen(cmd, stdout=log, stderr=log)
 

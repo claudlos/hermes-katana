@@ -367,12 +367,21 @@ def _launch_fleet_handler(args: dict) -> dict:
     if run_id:
         cmd += ["--run-id", run_id]
     # Blocking would tie up the agent for hours; spawn detached.
+    # Detach the child so it survives the parent. `start_new_session=True` is
+    # POSIX-only (it calls setsid()); Windows uses CREATE_NEW_PROCESS_GROUP via
+    # creationflags=. Silently ignored if we omit the win32 branch — switch
+    # explicitly so the spawned fleet detaches consistently.
+    detach_kwargs: dict[str, object] = (
+        {"start_new_session": True}
+        if sys.platform != "win32"
+        else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    )
     proc = subprocess.Popen(
         cmd,
         cwd=str(ROOT),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        start_new_session=True,
+        **detach_kwargs,
     )
     return {"pid": proc.pid, "spec": spec_path, "run_id": run_id, "spawned": True}
 

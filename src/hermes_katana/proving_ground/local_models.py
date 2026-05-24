@@ -19,6 +19,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -520,8 +521,11 @@ def ollama_has_model(tag: str) -> bool:
 
 MODELS_DIR = Path.home() / "models" / "gguf"
 LLAMA_CPP_DIR = Path.home() / "llama.cpp"
-PID_FILE = Path("/tmp/llama_server.pid")
-LOG_FILE = Path("/tmp/llama_server.log")
+# Use the platform tempdir rather than hardcoded /tmp/ so the local-models
+# manager works on Windows (where /tmp/ doesn't exist) as well as POSIX.
+_TMP = Path(tempfile.gettempdir())
+PID_FILE = _TMP / "llama_server.pid"
+LOG_FILE = _TMP / "llama_server.log"
 DEFAULT_PORT = 8080
 
 
