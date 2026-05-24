@@ -86,17 +86,20 @@ def test_trial_plan_slice_filters_and_resumes_by_planned_trial_id(tmp_path):
 
 
 def test_fleet_job_threads_trial_plan_and_updates_run_meta(tmp_path):
+    expected_path = Path("results/designs/D/trial_plan.jsonl")
     job = fleet.Job(
         agent="agent_a",
         shard=1,
         channel="file_content",
         max_attacks=5,
         run_id="runx",
-        trial_plan=Path("results/designs/D/trial_plan.jsonl"),
+        trial_plan=expected_path,
     )
     cmd = job.cmd()
     assert "--trial-plan" in cmd
-    assert "results/designs/D/trial_plan.jsonl" in cmd
+    # Compare via Path so the assertion passes on both POSIX ("/") and Windows ("\\").
+    trial_idx = cmd.index("--trial-plan")
+    assert Path(cmd[trial_idx + 1]) == expected_path
 
     dirs = fleet.RunDirs("meta-test")
     monkey_base = tmp_path / "fleet_runs"

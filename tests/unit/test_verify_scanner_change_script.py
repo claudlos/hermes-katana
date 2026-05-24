@@ -6,11 +6,24 @@ from pathlib import Path
 import os
 import stat
 import subprocess
+import sys
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "verify_scanner_change.sh"
 RELEASE_SCRIPT = ROOT / "scripts" / "release_gate.sh"
+
+# The verification helper is a POSIX shell script: it relies on the +x bit,
+# a working bash interpreter, and the shebang line. Windows has none of those
+# (CreateProcess raises WinError 193 on a .sh file). Skip the whole module
+# there — operators on Windows are expected to run the equivalent pytest /
+# ruff commands directly.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="verify_scanner_change.sh is a POSIX shell script; not executable on Windows",
+)
 
 
 def test_verify_scanner_change_script_is_executable():

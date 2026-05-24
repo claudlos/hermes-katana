@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import sys
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,10 @@ def test_workspace_safe_path_rejects_sibling_prefix_traversal(tmp_path):
     assert "Path traversal blocked" in result.error
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="printenv is a POSIX utility; the env-scrub assertion is covered by the agent_cli_runner path on Windows.",
+)
 def test_workspace_run_command_uses_scrubbed_env(monkeypatch, tmp_path):
     """Model-controlled commands must not inherit parent secrets.
 
@@ -88,6 +93,10 @@ def test_agent_cli_runner_scrubs_unrelated_secret_env(monkeypatch):
     assert env.get("PATH") == "/usr/bin:/bin"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows refuses os.symlink() to a non-admin/non-developer-mode process (WinError 1314); the same traversal gate is exercised by the sibling-prefix and parent-directory tests.",
+)
 def test_workspace_safe_path_blocks_symlink_escape(tmp_path):
     """A symlink inside the workspace pointing outside must not let reads escape."""
     root = tmp_path / "ws"
