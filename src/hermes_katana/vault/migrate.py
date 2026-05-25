@@ -455,7 +455,7 @@ def migrate_secrets(
             vault.set(key, value)
             result.migrated += 1
             result.sources[key] = source
-            logger.info("Migrated secret from %s", source)
+            logger.info("Migrated secret into vault")
 
             # Secure delete from source
             if secure_delete:
