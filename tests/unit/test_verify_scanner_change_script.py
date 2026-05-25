@@ -14,6 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "verify_scanner_change.sh"
 RELEASE_SCRIPT = ROOT / "scripts" / "release_gate.sh"
+RELEASE_CHECKLIST_SCRIPT = ROOT / "scripts" / "release_checklist.sh"
 
 # The verification helper is a POSIX shell script: it relies on the +x bit,
 # a working bash interpreter, and the shebang line. Windows has none of those
@@ -29,6 +30,12 @@ pytestmark = pytest.mark.skipif(
 def test_verify_scanner_change_script_is_executable():
     assert SCRIPT.exists()
     mode = SCRIPT.stat().st_mode
+    assert mode & stat.S_IXUSR
+
+
+def test_release_checklist_script_is_executable():
+    assert RELEASE_CHECKLIST_SCRIPT.exists()
+    mode = RELEASE_CHECKLIST_SCRIPT.stat().st_mode
     assert mode & stat.S_IXUSR
 
 
@@ -104,3 +111,31 @@ def test_release_gate_dry_run_lists_required_release_gates():
     assert "python3 -m twine check" in output
     assert "katana artifacts status" in output
     assert "gitleaks detect --source . --redact --no-banner --config .gitleaks.toml" in output
+
+
+def test_release_checklist_dry_run_lists_release_readiness_gates():
+    result = subprocess.run(
+        [
+            str(RELEASE_CHECKLIST_SCRIPT),
+            "--dry-run",
+            "--allow-untagged",
+            "--allow-missing-gitleaks",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "git working tree clean" in output
+    assert "python3 scripts/generate_policy_assets.py --check" in output
+    assert "scripts/release_gate.sh --dry-run --allow-missing-gitleaks" in output
+    assert "Generate CycloneDX SBOM" in output
+    assert "Attest release artifact provenance" in output
+    assert "Attest release artifact SBOM" in output
+    assert "trusted publishing" in output
+    assert "OIDC" in output

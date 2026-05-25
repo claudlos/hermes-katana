@@ -13,12 +13,13 @@ Usage: scripts/release_gate.sh [--dry-run] [--skip-full-tests] [--with-artifact-
 
 Runs the V3 release gate:
   1. Ruff lint/format checks
-  2. Full pytest suite
-  3. Scanner-change verification gate
-  4. Wheel/sdist build
-  5. Twine metadata check
-  6. Artifact status smoke
-  7. Gitleaks secret scan
+  2. Generated policy asset check
+  3. Full pytest suite
+  4. Scanner-change verification gate
+  5. Wheel/sdist build
+  6. Twine metadata check
+  7. Artifact status smoke
+  8. Gitleaks secret scan
 
 Options:
   --dry-run                 Print commands without executing them.
@@ -89,6 +90,7 @@ run_shell() {
 
 run_cmd "ruff check src/ tests/" "${PYTHON_BIN}" -m ruff check src/ tests/
 run_cmd "ruff format --check src/ tests/" "${PYTHON_BIN}" -m ruff format --check src/ tests/
+run_cmd "python3 scripts/generate_policy_assets.py --check" "${PYTHON_BIN}" scripts/generate_policy_assets.py --check
 run_cmd "scripts/mypy_smoke.sh" scripts/mypy_smoke.sh
 
 if [[ "${SKIP_FULL_TESTS}" -eq 0 ]]; then

@@ -24,10 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      attestations: write
-      artifact-metadata: write
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -100,7 +97,6 @@ jobs:
             --pyproject pyproject.toml \
             --mc-type library \
             --sv 1.6 \
-            --output-reproducible \
             --of JSON \
             -o dist/sbom/hermes-katana.cdx.json \
             /tmp/katana-wheel-smoke/bin/python
@@ -114,15 +110,31 @@ jobs:
             dist/sbom/*.json
           if-no-files-found: error
           retention-days: 30
+
+  attest-release-artifacts:
+    name: Attest Release Artifacts
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: release-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      attestations: write
+      artifact-metadata: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-dist
+          path: dist
       - name: Attest release artifact provenance
-        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: |
             dist/*.tar.gz
             dist/*.whl
       - name: Attest release artifact SBOM
-        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: |
