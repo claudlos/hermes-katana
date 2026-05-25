@@ -16,6 +16,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
+
 jobs:
   python-sast:
     name: Python SAST
@@ -305,3 +309,84 @@ jobs:
           path: scorecard.json
           if-no-files-found: ignore
           retention-days: 14
+
+  deep-security-snapshot:
+    name: Deep Security Snapshot
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Install deep scan tools
+        run: |
+          python -m pip install --no-cache-dir --upgrade pip==26.1.1
+          python -m pip install --no-cache-dir "bandit[toml]==1.9.4" semgrep==1.163.0 pip-audit==2.10.0 zizmor==1.25.2
+      - name: Prepare deep scan report
+        run: |
+          mkdir -p security-reports/deep
+          cat > security-reports/deep/README.md <<'EOF'
+          # Deep Security Snapshot
+
+          This scheduled/manual report is artifact-only. Do not upload these
+          results as SARIF unless a tool is producing actionable code findings
+          with low enough noise for the code-scanning alert queue.
+          EOF
+      - name: Semgrep deep JSON
+        continue-on-error: true
+        run: |
+          semgrep scan \
+            --metrics=off \
+            --config p/python \
+            --config p/owasp-top-ten \
+            --config p/secrets \
+            --json-output security-reports/deep/semgrep.json \
+            .
+      - name: Bandit deep JSON
+        continue-on-error: true
+        run: |
+          bandit -c pyproject.toml -r src examples scripts \
+            --severity-level low \
+            --confidence-level low \
+            -f json \
+            -o security-reports/deep/bandit.json
+      - name: pip-audit deep JSON
+        continue-on-error: true
+        run: |
+          python -m pip_audit . \
+            --progress-spinner=off \
+            --format=json \
+            --desc=auto \
+            --output=security-reports/deep/pip-audit.json
+      - name: zizmor deep JSON
+        continue-on-error: true
+        run: zizmor --format=json . > security-reports/deep/zizmor.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Trivy deep filesystem JSON
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig,license
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          format: json
+          output: security-reports/deep/trivy-fs.json
+          exit-code: "0"
+          skip-dirs: tests/fixtures,training,results,.pytest_tmp,.venv
+          skip-files: .gitleaks.toml
+      - name: Upload deep security snapshot
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deep-security-snapshot
+          path: security-reports/deep/
+          if-no-files-found: ignore
+          retention-days: 30

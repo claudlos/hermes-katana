@@ -1,0 +1,37 @@
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "Analyze (actions)",
+      "Analyze (python)",
+      "Build, Test, and Package",
+      "Docker Hygiene",
+      "GitHub Actions Hardening",
+      "Gitleaks Secret Scan",
+      "Lint & Type Check",
+      "OSV Dependency Scan / osv-scan",
+      "OpenSSF Scorecard",
+      "Python Dependency Audit",
+      "Python SAST",
+      "Test (ubuntu-latest / Python 3.10)",
+      "Test (ubuntu-latest / Python 3.11)",
+      "Test (ubuntu-latest / Python 3.12)",
+      "Test (windows-latest / Python 3.12)"
+    ]
+  },
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": true,
+    "require_code_owner_reviews": true,
+    "required_approving_review_count": 1,
+    "require_last_push_approval": false
+  },
+  "restrictions": null,
+  "required_linear_history": false,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "block_creations": false,
+  "required_conversation_resolution": true,
+  "lock_branch": false,
+  "allow_fork_syncing": true
+}
