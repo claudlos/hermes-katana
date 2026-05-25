@@ -68,11 +68,11 @@ Rules:
 
 
 def _meta_id(leaf_id: str, idx: int) -> str:
-    return hashlib.sha1(f"{leaf_id}:{idx}".encode()).hexdigest()[:12]
+    return hashlib.sha256(f"{leaf_id}:{idx}".encode()).hexdigest()[:12]
 
 
 def _example_id(meta_id: str, idx: int) -> str:
-    return hashlib.sha1(f"{meta_id}:{idx}".encode()).hexdigest()[:12]
+    return hashlib.sha256(f"{meta_id}:{idx}".encode()).hexdigest()[:12]
 
 
 def generate_meta_prompts_for_leaf(

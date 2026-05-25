@@ -74,7 +74,7 @@ class BloomFilter:
     # -- hashing ------------------------------------------------------------
 
     def _hash_indices(self, item: str) -> list[int]:
-        digest = hashlib.md5(item.encode("utf-8")).digest()  # noqa: S324
+        digest = hashlib.blake2b(item.encode("utf-8"), digest_size=16).digest()
         h1 = struct.unpack_from("<Q", digest, 0)[0]
         h2 = struct.unpack_from("<Q", digest, 8)[0]
         return [(h1 + i * h2) % self._size for i in range(self._num_hashes)]

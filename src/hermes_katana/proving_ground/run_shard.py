@@ -298,7 +298,7 @@ async def run(
     endpoint = resolve_endpoint(model_id, startup_timeout=startup_timeout, ngl_override=ngl_override)
     if endpoint is None:
         return 1
-    base_url, api_model, api_key, cleanup = endpoint
+    base_url, api_model, endpoint_token, cleanup = endpoint
 
     try:
         attacks = _load_shard(shard_id)
@@ -349,7 +349,7 @@ async def run(
                 honeypot_channel=HoneypotChannel(channel),
                 model=api_model,
                 base_url=base_url,
-                api_key=api_key,
+                api_key=endpoint_token,
                 max_turns=max_turns,
                 trigger_after_turns=trigger_after,
             )
@@ -408,7 +408,6 @@ async def run(
                     "severity_components": sev.components,
                     "severity_top_signal": sev.top_signal,
                 }
-                # codeql[py/clear-text-storage-sensitive-data]
                 sess_f.write(json.dumps(out_row) + "\n")
                 sess_f.flush()
 

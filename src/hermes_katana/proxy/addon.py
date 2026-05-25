@@ -599,7 +599,7 @@ class KatanaAddon:
             if injection:
                 self._increment_stat("credentials_injected")
                 injected_secret_values.add(injection.secret_value)
-                logger.debug("Injected credentials for %s", injection.provider_name)
+                logger.debug("Injected provider auth header")
 
         # --- Scan request URL, headers, query params, cookies (GAP 3.1) ---
         # Collect only headers actually added/changed by the injector so
