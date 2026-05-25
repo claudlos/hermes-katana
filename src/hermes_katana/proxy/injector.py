@@ -12,10 +12,12 @@ and HuggingFace.
 from __future__ import annotations
 
 __all__ = [
+    "InjectedCredential",
     "Provider",
     "PROVIDER_REGISTRY",
     "get_provider_for_domain",
     "inject_credentials",
+    "inject_credentials_with_metadata",
     "list_providers",
 ]
 
@@ -48,6 +50,16 @@ class Provider:
     key_name: str = ""
     header_field: str = "Authorization"
     auth_scheme: str = "Bearer"
+
+
+@dataclass(frozen=True, slots=True)
+class InjectedCredential:
+    """Metadata for a credential injection performed on a request."""
+
+    provider_name: str
+    header_field: str
+    header_value: str
+    secret_value: str
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +189,15 @@ def inject_credentials(
     flow: Any,
     vault: "Vault",
 ) -> Optional[str]:
+    """Inject API credentials from the vault and return the provider name."""
+    result = inject_credentials_with_metadata(flow, vault)
+    return result.provider_name if result is not None else None
+
+
+def inject_credentials_with_metadata(
+    flow: Any,
+    vault: "Vault",
+) -> Optional[InjectedCredential]:
     """Inject API credentials from the vault into an HTTP flow.
 
     Looks up the flow's target domain in the provider registry. If a match
@@ -189,7 +210,7 @@ def inject_credentials(
         vault: The Vault instance to retrieve credentials from.
 
     Returns:
-        The provider name if credentials were injected, None otherwise.
+        Injection metadata if credentials were injected, None otherwise.
 
     Note:
         This function does NOT overwrite existing authorization headers
@@ -242,7 +263,12 @@ def inject_credentials(
         provider.name,
         provider.header_field,
     )
-    return provider.name
+    return InjectedCredential(
+        provider_name=provider.name,
+        header_field=provider.header_field,
+        header_value=header_value,
+        secret_value=api_key,
+    )
 
 
 def list_providers() -> list[dict[str, Any]]:

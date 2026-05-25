@@ -1387,7 +1387,6 @@ _cp(
 
 _RE_BACKTICK = re.compile(r"`([^`]+)`")
 _RE_DOLLAR_PAREN = re.compile(r"\$\(([^()]*)\)")
-_RE_ANSI_C_QUOTE = re.compile(r"\$'((?:\\.|[^'])*)'")
 _RE_PATH_PREFIX = re.compile(r"(?:/usr)?(?:/local)?/s?bin/")
 _RE_VAR_ASSIGN = re.compile(r"(?:^|[;\s])([A-Za-z_][A-Za-z0-9_]*)=([^;\s|&]+)")
 
@@ -1415,15 +1414,43 @@ def _strip_shell_quotes(cmd: str) -> str:
 
 def _decode_ansi_c_quotes(cmd: str) -> str:
     """Decode simple bash ANSI-C quoted strings like ``$'\\x72m'``."""
+    out: list[str] = []
+    idx = 0
+    while idx < len(cmd):
+        if not cmd.startswith("$'", idx):
+            out.append(cmd[idx])
+            idx += 1
+            continue
 
-    def repl(match: re.Match[str]) -> str:
-        body = match.group(1)
+        body: list[str] = []
+        scan = idx + 2
+        closed = False
+        while scan < len(cmd):
+            char = cmd[scan]
+            if char == "'":
+                closed = True
+                break
+            if char == "\\" and scan + 1 < len(cmd):
+                body.append(char)
+                body.append(cmd[scan + 1])
+                scan += 2
+                continue
+            body.append(char)
+            scan += 1
+
+        if not closed:
+            out.append(cmd[idx])
+            idx += 1
+            continue
+
+        encoded = "".join(body)
         try:
-            return bytes(body, "utf-8").decode("unicode_escape")
+            out.append(bytes(encoded, "utf-8").decode("unicode_escape"))
         except UnicodeDecodeError:
-            return body
+            out.append(encoded)
+        idx = scan + 1
 
-    return _RE_ANSI_C_QUOTE.sub(repl, cmd)
+    return "".join(out)
 
 
 def _expand_basic_shell_vars(cmd: str) -> str:

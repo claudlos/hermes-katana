@@ -1,0 +1,306 @@
+name: Security Scans
+
+on:
+  push:
+    branches: [main, master, "release/**"]
+  pull_request:
+    branches: [main, master, "release/**"]
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python-sast:
+    name: Python SAST
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install scanners
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "bandit[toml]" semgrep
+      - name: Semgrep
+        continue-on-error: true
+        run: |
+          mkdir -p security-reports
+          semgrep scan \
+            --metrics=off \
+            --config p/python \
+            --config p/owasp-top-ten \
+            --config p/secrets \
+            --sarif \
+            --output security-reports/semgrep.sarif \
+            src examples scripts
+      - name: Upload Semgrep SARIF
+        if: ${{ always() && hashFiles('security-reports/semgrep.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          category: semgrep
+          sarif_file: security-reports/semgrep.sarif
+      - name: Bandit
+        continue-on-error: true
+        run: |
+          mkdir -p security-reports
+          bandit -c pyproject.toml -r src examples scripts \
+            --severity-level medium \
+            --confidence-level medium \
+            -f sarif \
+            -o security-reports/bandit.sarif
+      - name: Upload Bandit SARIF
+        if: ${{ always() && hashFiles('security-reports/bandit.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          category: bandit
+          sarif_file: security-reports/bandit.sarif
+      - name: Upload Python SAST reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-sast-reports
+          path: security-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  python-dependencies:
+    name: Python Dependency Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+      - name: pip-audit JSON report
+        continue-on-error: true
+        run: |
+          mkdir -p security-reports
+          python -m pip_audit . \
+            --progress-spinner=off \
+            --format=json \
+            --desc=auto \
+            --output=security-reports/pip-audit.json
+      - name: pip-audit Markdown report
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          mkdir -p security-reports
+          python -m pip_audit . \
+            --progress-spinner=off \
+            --format=markdown \
+            --desc=on \
+            --output=security-reports/pip-audit.md
+      - name: Upload dependency audit reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-dependency-audit
+          path: security-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  osv:
+    name: OSV Dependency Scan
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    with:
+      fail-on-vuln: false
+      results-file-name: osv-scanner.sarif
+      scan-args: |-
+        --recursive
+        ./
+
+  workflow-hardening:
+    name: GitHub Actions Hardening
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install zizmor
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install zizmor
+      - name: zizmor SARIF
+        run: |
+          mkdir -p security-reports
+          zizmor --format=sarif . > security-reports/zizmor.sarif
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Upload zizmor SARIF
+        if: ${{ always() && hashFiles('security-reports/zizmor.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          category: zizmor
+          sarif_file: security-reports/zizmor.sarif
+      - name: Upload workflow hardening report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: workflow-hardening-report
+          path: security-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  docker-hygiene:
+    name: Docker Hygiene
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare report directory
+        run: mkdir -p security-reports
+      - name: Hadolint Dockerfile
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+        with:
+          dockerfile: docker/proving-ground/Dockerfile
+          format: sarif
+          output-file: security-reports/hadolint.sarif
+          no-fail: true
+      - name: Upload Hadolint SARIF
+        if: ${{ always() && hashFiles('security-reports/hadolint.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          category: hadolint
+          sarif_file: security-reports/hadolint.sarif
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: security-reports/trivy-fs.sarif
+          exit-code: "0"
+          skip-dirs: tests/fixtures,training,results,.pytest_tmp,.venv
+          skip-files: .gitleaks.toml
+      - name: Upload Trivy filesystem SARIF
+        if: ${{ always() && hashFiles('security-reports/trivy-fs.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          category: trivy-fs
+          sarif_file: security-reports/trivy-fs.sarif
+      - name: Upload Docker hygiene reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: docker-hygiene-reports
+          path: security-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  container-image:
+    name: Container Image Scan
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare report directory
+        run: mkdir -p security-reports
+      - name: Build proving ground image
+        run: |
+          docker build \
+            -f docker/proving-ground/Dockerfile \
+            -t hermes-katana-proving-ground:${{ github.sha }} \
+            .
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: hermes-katana-proving-ground:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          format: sarif
+          output: security-reports/trivy-image.sarif
+          exit-code: "0"
+      - name: Upload Trivy image SARIF
+        if: ${{ always() && hashFiles('security-reports/trivy-image.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          category: trivy-image
+          sarif_file: security-reports/trivy-image.sarif
+      - name: Upload container image report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: container-image-report
+          path: security-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  scorecard:
+    name: OpenSSF Scorecard
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: false
+      - name: Upload Scorecard SARIF
+        if: ${{ always() && hashFiles('scorecard.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+        with:
+          category: openssf-scorecard
+          sarif_file: scorecard.sarif

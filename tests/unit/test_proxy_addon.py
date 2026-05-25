@@ -384,8 +384,13 @@ class TestAddonRequestEdgeCases:
         addon.vault = mock_vault
         addon.config.inject_credentials = True
         flow = _make_flow(host="api.openai.com")
-        with patch("hermes_katana.proxy.addon.inject_credentials") as mock_inject:
-            mock_inject.return_value = "OpenAI"
+        with patch("hermes_katana.proxy.addon.inject_credentials_with_metadata") as mock_inject:
+            mock_inject.return_value = SimpleNamespace(
+                provider_name="OpenAI",
+                header_field="Authorization",
+                header_value="Bearer sk-test",
+                secret_value="sk-test",
+            )
             addon.request(flow)
             mock_inject.assert_called_once()
 

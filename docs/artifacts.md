@@ -69,6 +69,16 @@ harness dependencies:
 katana setup
 ```
 
+For the simplest non-interactive full setup:
+
+```bash
+katana setup full
+```
+
+This downloads every registered model artifact, installs the ONNX Runtime CPU,
+PyTorch CPU, and Proving Ground dependency groups, then verifies that all of
+them are present.
+
 For model artifacts only:
 
 ```bash
@@ -87,6 +97,7 @@ katana setup --fast-cpu               # ONNX Runtime dependencies only
 katana setup --torch-cpu              # PyTorch CPU dependencies only
 katana setup --proving-ground         # install Proving Ground dependencies
 katana setup --yes --proving-ground   # small ONNX model, ONNX Runtime, plus Proving Ground
+katana setup full                     # all registered models, setup dependencies, and verification
 ```
 
 ## Direct download
