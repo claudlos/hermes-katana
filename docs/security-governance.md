@@ -9,13 +9,14 @@ The expected `master` branch protection payload is tracked in `.github/branch-pr
 Apply it with:
 
 ```bash
+repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 gh api \
   --method PUT \
-  repos/claudlos/hermes-katana/branches/master/protection \
+  "repos/${repo}/branches/master/protection" \
   --input .github/branch-protection-master.json
 ```
 
-The rule requires the CI matrix, release gate, CodeQL analyses, and security scan jobs before merge. It also requires one approving review, CODEOWNERS review, stale-review dismissal, and conversation resolution. Admin enforcement is intentionally disabled so the repository owner can recover from broken protection settings.
+The rule requires the CI matrix, release gate, CodeQL analyses, and security scan jobs before merge. The `Analyze (python)` and `Analyze (actions)` checks come from GitHub CodeQL default setup; enable default setup or add an equivalent CodeQL workflow before applying this payload to a fresh fork. The rule also requires one approving review, CODEOWNERS review, stale-review dismissal, and conversation resolution. Admin enforcement is intentionally disabled so the repository owner can recover from broken protection settings.
 
 ## GitHub security settings
 
