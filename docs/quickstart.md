@@ -23,7 +23,9 @@ katana setup
 `katana setup` prompts for the default MiniLM artifact, the larger optional
 model, and the Proving Ground research harness. Use `katana setup --yes` for
 the default unattended path: small model only, no larger model, no Proving
-Ground dependencies.
+Ground dependencies. Use `katana setup full` for the simple full path: every
+registered model artifact, ONNX/PyTorch CPU runtime dependencies, Proving
+Ground dependencies, and a final verification check.
 
 When a PyPI release exists, the equivalent install commands are:
 

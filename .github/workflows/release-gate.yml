@@ -41,6 +41,8 @@ jobs:
         run: python -m ruff format --check src/ tests/
       - name: Generated policy assets check
         run: python scripts/generate_policy_assets.py --check
+      - name: Mypy smoke
+        run: scripts/mypy_smoke.sh
       - name: Full tests
         run: PYTHONPATH=src python -m pytest tests/ -q
       - name: Scanner gate

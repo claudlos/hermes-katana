@@ -725,6 +725,88 @@ class TestCLIContracts:
         assert onnx_calls == []
         assert torch_calls == ["torch-cpu"]
 
+    def test_setup_full_downloads_all_installs_everything_and_verifies(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_dir / "artifacts"))
+        downloaded = set()
+        artifact_calls = []
+        status_calls = []
+        install_calls = []
+        missing_dependencies = {
+            "onnx": ["onnxruntime"],
+            "torch": ["torch"],
+            "proving_ground": ["openai"],
+        }
+
+        def fake_status(spec, target_dir=None):
+            path = Path(target_dir or tmp_dir / spec.name)
+            status_calls.append((spec.name, path))
+            present = spec.name in downloaded
+            missing_files = () if present else ("artifact_manifest.json",)
+            return artifacts_mod.ArtifactStatus(
+                spec=spec,
+                path=path,
+                present=present,
+                missing_files=missing_files,
+                source="test",
+            )
+
+        def fake_download(spec, target_dir=None, *, force=False):
+            path = Path(target_dir or tmp_dir / spec.name)
+            downloaded.add(spec.name)
+            artifact_calls.append((spec.name, path, force))
+            return artifacts_mod.ArtifactStatus(spec=spec, path=path, present=True, missing_files=(), source="test")
+
+        def install_onnx():
+            install_calls.append("fast-cpu")
+            missing_dependencies["onnx"] = []
+
+        def install_torch():
+            install_calls.append("torch-cpu")
+            missing_dependencies["torch"] = []
+
+        def install_proving_ground():
+            install_calls.append("proving-ground")
+            missing_dependencies["proving_ground"] = []
+
+        monkeypatch.setattr(artifacts_mod, "artifact_status", fake_status)
+        monkeypatch.setattr(artifacts_mod, "download_artifact", fake_download)
+        monkeypatch.setattr(cli_main, "_missing_onnx_runtime_dependencies", lambda: missing_dependencies["onnx"])
+        monkeypatch.setattr(cli_main, "_missing_torch_cpu_dependencies", lambda: missing_dependencies["torch"])
+        monkeypatch.setattr(
+            cli_main,
+            "_missing_proving_ground_dependencies",
+            lambda: missing_dependencies["proving_ground"],
+        )
+        monkeypatch.setattr(cli_main, "_install_onnx_runtime_extra", install_onnx)
+        monkeypatch.setattr(cli_main, "_install_torch_cpu_extra", install_torch)
+        monkeypatch.setattr(cli_main, "_install_proving_ground_extra", install_proving_ground)
+
+        result = self.runner.invoke(
+            cli_main.main,
+            ["setup", "full", "--target-dir", str(tmp_dir / "cache")],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert [call[0] for call in artifact_calls] == [
+            "katana_v15_distill_minilm_onnx",
+            "katana_v15_distill_minilm_torch",
+            "katana_v15_large",
+        ]
+        assert artifact_calls[0][1] == tmp_dir / "cache" / "katana_v15_distill_minilm_onnx"
+        assert artifact_calls[1][1] == tmp_dir / "cache" / "katana_v15_distill_minilm_torch"
+        assert artifact_calls[2][1] == tmp_dir / "cache" / "katana_v15_large"
+        assert install_calls == ["fast-cpu", "torch-cpu", "proving-ground"]
+        assert status_calls[-3:] == [
+            ("katana_v15_distill_minilm_onnx", tmp_dir / "cache" / "katana_v15_distill_minilm_onnx"),
+            ("katana_v15_distill_minilm_torch", tmp_dir / "cache" / "katana_v15_distill_minilm_torch"),
+            ("katana_v15_large", tmp_dir / "cache" / "katana_v15_large"),
+        ]
+        assert "Full setup verified" in stdout.getvalue()
+
     def test_setup_proving_ground_installs_extra_without_artifact_choice(self, monkeypatch, tmp_dir):
         stdout = StringIO()
         stderr = StringIO()
@@ -771,7 +853,7 @@ class TestCLIContracts:
         result = self.runner.invoke(cli_main.main, ["setup", "--fast-cpu", "--no-fast-cpu"])
 
         assert result.exit_code != 0
-        assert "--onnx-runtime and --no-onnx-runtime cannot be used together" in result.output
+        assert "--fast-cpu and --no-fast-cpu cannot be used together" in result.output
 
     def test_setup_rejects_conflicting_torch_cpu_options(self, monkeypatch, tmp_dir):
         stdout = StringIO()
@@ -784,3 +866,25 @@ class TestCLIContracts:
 
         assert result.exit_code != 0
         assert "--torch-cpu and --no-torch-cpu cannot be used together" in result.output
+
+    @pytest.mark.parametrize(
+        ("flag", "expected_flag"),
+        [
+            ("--no-large", "--no-large"),
+            ("--no-fast-cpu", "--no-fast-cpu"),
+            ("--no-torch-cpu", "--no-torch-cpu"),
+            ("--no-proving-ground", "--no-proving-ground"),
+        ],
+    )
+    def test_setup_full_rejects_opt_out_flags(self, monkeypatch, tmp_dir, flag, expected_flag):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_dir / "artifacts"))
+
+        result = self.runner.invoke(cli_main.main, ["setup", "full", flag])
+
+        assert result.exit_code != 0
+        assert "`katana setup full` cannot be combined" in result.output
+        assert expected_flag in result.output

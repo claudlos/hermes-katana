@@ -1,6 +1,6 @@
 # Hermes Katana v3 Audit Status
 
-Last reconciled: 2026-05-21
+Last reconciled: 2026-05-23
 
 Source audit: an external v3 audit report (the original HTML was authored
 off-tree against this repository's `c3f3db2` snapshot — findings are mirrored
@@ -29,6 +29,13 @@ on the current tree plus spot checks run during reconciliation.
   - Full suite: `4186 passed, 88 skipped, 22 xfailed, 2 xpassed`.
   - Static manual link check and Playwright desktop/mobile screenshot smoke passed.
   - Built sdist/wheel in a clean build venv; `twine check` passed; wheel install/version/policy/CLI smoke passed.
+- Current local verification after release-gate rerun and proxy hardening tranche:
+  - Created repo-local `.venv` and installed `.[dev,security,fast-cpu,proving-ground]` for a clean local release-gate path.
+  - `scripts/release_gate.sh --allow-missing-gitleaks` passed end-to-end.
+  - Full suite: `4257 passed, 75 skipped`.
+  - `scripts/verify_scanner_change.sh --skip-lint` passed: smoke gates plus `380 passed`.
+  - `python -m build` and `python -m twine check` passed from the release-gate dist output directory.
+  - `gitleaks detect --source . --redact --no-banner --config .gitleaks.toml` passed with `no leaks found`.
 
 ## P0 Findings
 
@@ -48,8 +55,8 @@ on the current tree plus spot checks run during reconciliation.
 | 12 | Audit chain broke at rotation | Fixed in `dd84f65` | Chain verification covers rotated files and active file. |
 | 13 | `audit clear` destroyed history without sentinel | Fixed in `dd84f65` | Clear now appends `trail_cleared` and preserves history. |
 | 14 | JSONL append is not crash-atomic | Open | Writes fsync, but a partial trailing line can still poison verification. |
-| 15 | Proxy keeps vault secrets in plaintext set | Open | `KatanaAddon._vault_values` still stores plaintext values. |
-| 16 | Proxy scrubbing bypassed by compression/multipart/binary | Open | Needs body decoding and content-type aware scanning work. |
+| 15 | Proxy keeps vault secrets in plaintext set | Fixed locally | Proxy now collects vault values per scan instead of keeping a long-lived `KatanaAddon._vault_values` plaintext cache. |
+| 16 | Proxy scrubbing bypassed by compression/multipart/binary | Fixed locally | Request/response scanning now decodes gzip/deflate bodies and parses `multipart/*` payloads part-by-part before scanning; binary bodies still route through `scan_bytes`. |
 | 17 | `HERMES_KATANA_VAULT_KEY` is popped | Needs decision | Current tests assert consumption; decide whether this is intended security behavior or a usability bug. |
 | 18 | `katana run` launches without Katana protection | Fixed before this tranche | Current CLI composes runtime env and tests assert `KATANA_ACTIVE`/policy state. |
 | 19 | CA private-key passphrase derived from on-disk salt | Open | Needs key handling redesign or documentation downgrade. |
@@ -75,8 +82,8 @@ on the current tree plus spot checks run during reconciliation.
 | 34 | Audit `compute_hash` uses `json.dumps(..., default=str)` | Open | Still present in `audit/trail.py`. |
 | 35 | Headless Linux degrades to in-memory master key | Open | Needs explicit fail/opt-in behavior. |
 | 36 | `vault.set()` lost-update race | Open | Needs file lock around read-modify-write. |
-| 37 | `tls_verify=False` still injects vault credentials | Open | Needs fail-closed or explicit audited opt-in. |
-| 38 | mitmproxy subprocess inherits full env | Open | Proxy runner still passes `os.environ.copy()` after targeted deletions. |
+| 37 | `tls_verify=False` still injects vault credentials | Fixed locally | Proxy startup/request handling now refuses credential injection when `tls_verify` is false. |
+| 38 | mitmproxy subprocess inherits full env | Fixed locally | Proxy runner now builds an allowlisted child environment instead of inheriting `os.environ.copy()`. |
 | 39 | ProtectAI middleware fails open on scan exception/stub | Open | Current middleware returns ALLOW on exception and unavailable model. |
 | 40 | No regex timeout in `_safe_compile` | Open | No central regex timeout guard found. |
 | 41 | ESCALATE has no built-in approval handler | Needs decision | Current plugin raises escalation; interactive approval flow is still a product decision. |
@@ -98,7 +105,7 @@ on the current tree plus spot checks run during reconciliation.
 | 57 | Internal one-shot scripts ship publicly | Fixed locally | Root `scripts/` now keeps only public maintenance/benchmark helpers; proving-ground research helpers live under the package namespace. |
 | 58 | Three different copyright names | Open | README and LICENSE still disagree. |
 | 59 | Top-level repo clutter duplicates `src/` | Fixed locally | Removed root compatibility shims plus duplicate `sandbox/` and `synthdata/` trees. |
-| 60 | CI `mypy` step uses `|| true` | Verified fixed | Current CI mypy step is fail-closed and now covers policy/version modules. |
+| 60 | CI `mypy` step uses `|| true` | Verified fixed | CI and release-gate now use `scripts/mypy_smoke.sh`; the smoke is fail-closed and covers the public CLI/proxy release path in addition to policy/version modules. |
 | 61 | CI workflow triggers only on main/master | Fixed locally | CI and release-gate now cover `release/**` branches. |
 | 62 | `SECURITY.md` lacks 3.0.x row | Verified fixed | `SECURITY.md` lists 3.0.x as supported. |
 | 63 | CHANGELOG 3.0.0 references missing scripts | Fixed locally | Removed references to unavailable one-off scripts and added current unreleased cleanup notes. |
@@ -106,5 +113,5 @@ on the current tree plus spot checks run during reconciliation.
 ## Next Batch Queue
 
 1. Vault cryptography/concurrency: rollback protection, HKDF separation, AAD, and locked read-modify-write.
-2. Proxy hardening: plaintext vault cache, compression/multipart/binary scanning, TLS-verify credential injection, and subprocess env scrubbing.
-3. CLI/operator polish: JSON scan output, stdout/stderr cleanup, copyright cleanup, and remaining stdout/stderr cleanup.
+2. Proxy/platform security follow-up: CA private-key handling, remaining key-management decisions, and any additional content-encoding coverage beyond gzip/deflate if needed.
+3. CLI/operator polish: JSON scan output, stdout/stderr cleanup, copyright cleanup, and broader full-tree mypy cleanup beyond the enforced smoke gate.
