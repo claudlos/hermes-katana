@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import time
 
 import pytest
 
@@ -258,6 +259,12 @@ class TestCommandDetection:
         findings = detect_dangerous_command(cmd)
         assert any(f.category == CommandCategory.FILESYSTEM_DESTRUCTION for f in findings)
 
+    def test_ansi_c_quote_decoder_is_linear_on_unclosed_escape_run(self):
+        started = time.perf_counter()
+        findings = detect_dangerous_command("$'" + ("\\&" * 5000))
+        assert isinstance(findings, list)
+        assert time.perf_counter() - started < 1.0
+
     def test_root_deletion_does_not_match_child_directory(self):
         findings = detect_dangerous_command("rm --recursive /tmp/")
         names = {finding.pattern_name for finding in findings}
@@ -271,6 +278,12 @@ class TestCommandDetection:
     def test_eval_base64_decode_substitution(self):
         findings = detect_dangerous_command('eval "$(echo cm0gLXJmIC8= | base64 -d)"')
         assert any(f.pattern_name == "eval_base64_decode" for f in findings)
+
+    def test_data_uri_header_scan_is_linear_on_semicolon_run(self):
+        started = time.perf_counter()
+        result = scan_input("data:!;" + (";" * 5000) + ",abc", security_level="low")
+        assert result is not None
+        assert time.perf_counter() - started < 1.0
 
 
 # ======================================================================
@@ -303,6 +316,10 @@ class TestContentScanning:
         text = '<script>alert("XSS")</script>'
         findings = scan_content(text)
         assert len(findings) > 0
+
+    def test_script_tag_with_spaced_close_is_detected(self):
+        findings = scan_content("<script>alert(1)</script >")
+        assert any(f.pattern_name == "script_tag" for f in findings)
 
     def test_clean_content(self):
         text = "This is a perfectly normal paragraph about weather."

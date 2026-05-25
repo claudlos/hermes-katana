@@ -22,7 +22,7 @@ import urllib.parse
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 __all__ = [
     "MultimodalCategory",
@@ -758,13 +758,46 @@ def _check_url_param_loose(
 # ---------------------------------------------------------------------------
 
 _MAX_DATA_URI_RECURSION = 3
-_DATA_URI_START_RE = re.compile(
-    r"""data\s*:\s*[^,\s"'<>`]+(?:\s*;\s*[^,\s"'<>`]*)*\s*,""",
-    re.IGNORECASE,
-)
 _BASE64_URI_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
 _DATA_URI_TRAILING = ".,;)]}"
 _DATA_URI_TERMINATORS = frozenset("\"'<>`")
+_DATA_URI_HEADER_TERMINATORS = frozenset("\"'<>`\r\n")
+_DATA_URI_MAX_HEADER_CHARS = 512
+
+
+def _iter_data_uri_header_spans(text: str) -> Iterable[tuple[int, int]]:
+    """Yield `data:` URI header spans with linear-time scanning."""
+    lowered = text.casefold()
+    pos = 0
+    while True:
+        start = lowered.find("data", pos)
+        if start < 0:
+            return
+
+        idx = start + 4
+        while idx < len(text) and text[idx].isspace():
+            idx += 1
+        if idx >= len(text) or text[idx] != ":":
+            pos = start + 4
+            continue
+
+        idx += 1
+        header_start = idx
+        while idx < len(text):
+            if idx - header_start > _DATA_URI_MAX_HEADER_CHARS:
+                pos = start + 4
+                break
+            char = text[idx]
+            if char == ",":
+                yield start, idx + 1
+                pos = idx + 1
+                break
+            if char in _DATA_URI_HEADER_TERMINATORS:
+                pos = start + 4
+                break
+            idx += 1
+        else:
+            return
 
 
 def _extract_data_uri_candidates(text: str) -> list[str]:
@@ -776,11 +809,11 @@ def _extract_data_uri_candidates(text: str) -> list[str]:
     """
     candidates: list[str] = []
     normalized = html.unescape(text)
-    for match in _DATA_URI_START_RE.finditer(normalized):
-        header = match.group(0)
+    for header_start, header_end in _iter_data_uri_header_spans(normalized):
+        header = normalized[header_start:header_end]
         is_base64 = "base64" in header.lower()
         payload_chars: list[str] = []
-        index = match.end()
+        index = header_end
         while index < len(normalized):
             char = normalized[index]
             if char in _DATA_URI_TERMINATORS:

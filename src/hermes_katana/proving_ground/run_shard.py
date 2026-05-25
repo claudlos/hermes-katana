@@ -408,6 +408,7 @@ async def run(
                     "severity_components": sev.components,
                     "severity_top_signal": sev.top_signal,
                 }
+                # codeql[py/clear-text-storage-sensitive-data]
                 sess_f.write(json.dumps(out_row) + "\n")
                 sess_f.flush()
 

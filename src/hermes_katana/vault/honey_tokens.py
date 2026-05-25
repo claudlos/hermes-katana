@@ -631,6 +631,7 @@ class HoneyFileMonitor:
             fake_value = _generate_value(kind)
             content = json.dumps({"api_key": fake_value, "_kind": kind.value}, indent=2)
 
+        # codeql[py/clear-text-storage-sensitive-data]
         dest.write_text(content, encoding="utf-8")
 
         with self._lock:
