@@ -41,7 +41,7 @@ print(f"  Stored {len(vault.list_keys())} secrets: {vault.list_keys()}")
 # 2. Retrieve a secret
 print("\n=== Retrieving Secrets ===")
 key = vault.get("api_key")
-print(f"  api_key = {key[:10]}...{key[-4:]}")
+print(f"  api_key retrieved: {'yes' if key else 'no'}")
 
 # 3. Verify integrity (hash chain is intact)
 print("\n=== Integrity Verification ===")
@@ -53,7 +53,7 @@ print("\n=== Key Rotation ===")
 vault.rotate_key()
 print("  Master key rotated — all secrets re-encrypted")
 val = vault.get("db_password")
-print(f"  db_password still accessible: {val[:6]}...")
+print(f"  db_password still accessible: {'yes' if val else 'no'}")
 
 # Cleanup
 vault.close()

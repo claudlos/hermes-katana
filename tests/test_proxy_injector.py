@@ -224,7 +224,7 @@ class TestBuildDomainIndex:
     def test_builds_index(self):
         idx = _build_domain_index()
         assert isinstance(idx, dict)
-        assert "api.openai.com" in idx
+        assert idx.get("api.openai.com") is not None
 
     def test_all_domains_indexed(self):
         idx = _build_domain_index()

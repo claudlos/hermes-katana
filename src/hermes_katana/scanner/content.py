@@ -473,12 +473,6 @@ def _check_markdown_injection(text: str) -> list[ContentFinding]:
 
 _HTML_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
     (
-        "script_tag",
-        re.compile(r"<script[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL),
-        "Script tag - direct JavaScript execution.",
-        ContentSeverity.CRITICAL,
-    ),
-    (
         "event_handler",
         re.compile(
             r"<[^>]+\s+on(?:load|error|click|mouseover|focus|blur|submit|change|input|keyup|keydown|mouseenter|abort|animationend)\s*=",
@@ -556,6 +550,61 @@ _HTML_PATTERNS: list[tuple[str, re.Pattern, str, ContentSeverity]] = [
 ]
 
 
+def _iter_script_tag_ranges(text: str) -> list[tuple[int, int]]:
+    """Find script tags without regex-based HTML matching."""
+    ranges: list[tuple[int, int]] = []
+    lowered = text.casefold()
+    pos = 0
+    while True:
+        start = lowered.find("<", pos)
+        if start < 0:
+            return ranges
+
+        idx = start + 1
+        while idx < len(text) and text[idx].isspace():
+            idx += 1
+        if not lowered.startswith("script", idx):
+            pos = start + 1
+            continue
+
+        after_name = idx + len("script")
+        if after_name < len(text) and (text[after_name].isalnum() or text[after_name] in "_:-"):
+            pos = start + 1
+            continue
+
+        open_end = text.find(">", after_name)
+        if open_end < 0:
+            ranges.append((start, min(len(text), after_name + 100)))
+            return ranges
+
+        close = _find_script_close(lowered, open_end + 1)
+        end = close if close is not None else open_end + 1
+        ranges.append((start, end))
+        pos = end
+
+
+def _find_script_close(lowered: str, start: int) -> int | None:
+    pos = start
+    while True:
+        close_start = lowered.find("</", pos)
+        if close_start < 0:
+            return None
+
+        idx = close_start + 2
+        while idx < len(lowered) and lowered[idx].isspace():
+            idx += 1
+        if not lowered.startswith("script", idx):
+            pos = close_start + 2
+            continue
+
+        idx += len("script")
+        while idx < len(lowered) and lowered[idx].isspace():
+            idx += 1
+        if idx < len(lowered) and lowered[idx] == ">":
+            return idx + 1
+        pos = close_start + 2
+
+
 def _check_html_injection(text: str) -> list[ContentFinding]:
     """Detect HTML/SVG/CSS injection patterns.
 
@@ -566,6 +615,20 @@ def _check_html_injection(text: str) -> list[ContentFinding]:
     - Exfiltrate data via CSS
     """
     findings: list[ContentFinding] = []
+
+    for start, end in _iter_script_tag_ranges(text):
+        matched = text[start:end]
+        findings.append(
+            ContentFinding(
+                pattern_name="script_tag",
+                category=ContentCategory.HTML_INJECTION,
+                severity=ContentSeverity.CRITICAL,
+                matched_text=matched[:100] + ("..." if len(matched) > 100 else ""),
+                position=(start, end),
+                description="Script tag - direct JavaScript execution.",
+                recommendation="Strip or escape HTML before rendering",
+            )
+        )
 
     for name, pattern, description, severity in _HTML_PATTERNS:
         for match in pattern.finditer(text):
