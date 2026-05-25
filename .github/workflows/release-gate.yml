@@ -24,7 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
+      attestations: write
+      artifact-metadata: write
       contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -36,6 +39,7 @@ jobs:
         run: |
           python -m pip install --no-cache-dir --upgrade pip==26.1.1
           python -m pip install --no-cache-dir build==1.5.0 twine==6.2.0
+          python -m pip install --no-cache-dir cyclonedx-bom==7.3.0
           python -m pip install --no-cache-dir -e ".[dev,security,fast-cpu,proving-ground]"
       - name: Ruff lint
         run: python -m ruff check src/ tests/
@@ -89,6 +93,42 @@ jobs:
           PY
       - name: Artifact status smoke
         run: PYTHONPATH=src python -m hermes_katana.cli.main artifacts status --all
+      - name: Generate CycloneDX SBOM
+        run: |
+          mkdir -p dist/sbom
+          cyclonedx-py environment \
+            --pyproject pyproject.toml \
+            --mc-type library \
+            --sv 1.6 \
+            --output-reproducible \
+            --of JSON \
+            -o dist/sbom/hermes-katana.cdx.json \
+            "$(python -c 'import sys; print(sys.executable)')"
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-dist
+          path: |
+            dist/*.tar.gz
+            dist/*.whl
+            dist/sbom/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Attest release artifact provenance
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.whl
+      - name: Attest release artifact SBOM
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.whl
+          sbom-path: dist/sbom/hermes-katana.cdx.json
 
   secret-scan:
     name: Gitleaks Secret Scan
