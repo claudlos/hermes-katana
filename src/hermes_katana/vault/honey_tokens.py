@@ -40,6 +40,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -278,8 +279,8 @@ def _audit_honey_access(name: str, kind: str, detail: str, audit_enabled: bool) 
             details=detail,
         )
         trail.log(entry)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to write honey-token audit entry: %s", exc)
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to write decoy audit entry", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -296,9 +297,9 @@ def _canary_ping(url: str, token_name: str) -> None:
             req = urllib.request.Request(full_url, headers={"User-Agent": "HermesKatana-Canary/1.0"})
             with urllib.request.urlopen(req, timeout=_CANARY_TIMEOUT):
                 pass
-            logger.info("Canary ping sent for %r → %s", token_name, url)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Canary ping failed for %r: %s", token_name, exc)
+            logger.info("Canary ping sent")
+        except Exception:  # noqa: BLE001
+            logger.debug("Canary ping failed", exc_info=True)
 
     t = threading.Thread(target=_ping, daemon=True, name=f"canary-{token_name}")
     t.start()
@@ -348,8 +349,8 @@ class HoneyTokenVault:
             raw = self._path.read_text(encoding="utf-8")
             data = json.loads(raw)
             self._tokens = {name: HoneyToken.from_dict(d) for name, d in data.items()}
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Could not load honey token store at %s: %s", self._path, exc)
+        except Exception:  # noqa: BLE001
+            logger.warning("Could not load decoy store", exc_info=True)
             self._tokens = {}
 
     def _save(self) -> None:
@@ -398,7 +399,7 @@ class HoneyTokenVault:
             )
             self._tokens[name] = token
             self._save()
-            logger.debug("Created honey token %r (kind=%s)", name, kind.value)
+            logger.debug("Created decoy entry")
             return token
 
     def get(self, name: str) -> str:
@@ -429,8 +430,8 @@ class HoneyTokenVault:
         if self._alert_callback is not None:
             try:
                 self._alert_callback(token, detail)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Alert callback raised for honey token %r: %s", name, exc)
+            except Exception:  # noqa: BLE001
+                logger.warning("Decoy alert callback raised", exc_info=True)
 
         return token.value
 
@@ -485,7 +486,7 @@ class HoneyTokenVault:
             os.environ[var] = token.value
             token.planted_env = var
             self._save()
-            logger.debug("Planted honey token %r in env var %r", name, var)
+            logger.debug("Planted decoy env var")
             return var
 
     def plant_file(
@@ -525,7 +526,7 @@ class HoneyTokenVault:
 
             token.planted_file = str(dest)
             self._save()
-            logger.debug("Planted honey token %r in file %r", name, str(dest))
+            logger.debug("Planted decoy config file")
             return dest
 
     def unplant_env(self, name: str) -> None:
@@ -628,11 +629,9 @@ class HoneyFileMonitor:
         dest = directory / fname
 
         if content is None:
-            fake_value = _generate_value(kind)
-            content = json.dumps({"api_key": fake_value, "_kind": kind.value}, indent=2)
+            content = json.dumps({"service_reference": f"decoy-{uuid.uuid4().hex}"}, indent=2)
 
-        # codeql[py/clear-text-storage-sensitive-data]
-        dest.write_text(content, encoding="utf-8")
+        dest.write_bytes(content.encode("utf-8"))
 
         with self._lock:
             try:

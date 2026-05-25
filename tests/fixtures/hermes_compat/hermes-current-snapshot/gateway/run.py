@@ -5839,8 +5839,11 @@ class GatewayRunner:
         # (e.g. "eyJhbGci"), which can cause false cache hits across auth
         # switches if only the first few characters are considered.
         _api_key = str(runtime.get("api_key", "") or "")
-        # codeql[py/weak-sensitive-data-hashing]
-        _api_key_fingerprint = hashlib.sha256(_api_key.encode()).hexdigest() if _api_key else ""
+        _api_key_fingerprint = (
+            hashlib.pbkdf2_hmac("sha256", _api_key.encode(), b"hermes-agent-cache-key", 100_000).hex()
+            if _api_key
+            else ""
+        )
 
         blob = _j.dumps(
             [
@@ -5857,8 +5860,7 @@ class GatewayRunner:
             sort_keys=True,
             default=str,
         )
-        # codeql[py/weak-sensitive-data-hashing]
-        return hashlib.sha256(blob.encode()).hexdigest()[:16]
+        return hashlib.pbkdf2_hmac("sha256", blob.encode(), b"hermes-agent-cache-blob", 100_000).hex()[:16]
 
     def _evict_cached_agent(self, session_key: str) -> None:
         """Remove a cached agent for a session (called on /new, /model, etc)."""

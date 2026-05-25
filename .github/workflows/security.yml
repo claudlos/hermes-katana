@@ -34,8 +34,8 @@ jobs:
           python-version: "3.12"
       - name: Install scanners
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install "bandit[toml]" semgrep
+          python -m pip install --no-cache-dir --upgrade pip==26.1.1
+          python -m pip install --no-cache-dir "bandit[toml]==1.9.4" semgrep==1.163.0
       - name: Semgrep
         continue-on-error: true
         run: |
@@ -93,8 +93,8 @@ jobs:
           python-version: "3.12"
       - name: Install pip-audit
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install pip-audit
+          python -m pip install --no-cache-dir --upgrade pip==26.1.1
+          python -m pip install --no-cache-dir pip-audit==2.10.0
       - name: pip-audit JSON report
         continue-on-error: true
         run: |
@@ -155,8 +155,8 @@ jobs:
           python-version: "3.12"
       - name: Install zizmor
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install zizmor
+          python -m pip install --no-cache-dir --upgrade pip==26.1.1
+          python -m pip install --no-cache-dir zizmor==1.25.2
       - name: zizmor SARIF
         run: |
           mkdir -p security-reports
@@ -287,7 +287,6 @@ jobs:
       actions: read
       contents: read
       id-token: write
-      security-events: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -295,12 +294,14 @@ jobs:
       - name: Run Scorecard
         uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
         with:
-          results_file: scorecard.sarif
-          results_format: sarif
+          results_file: scorecard.json
+          results_format: json
           publish_results: false
-      - name: Upload Scorecard SARIF
-        if: ${{ always() && hashFiles('scorecard.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57 # v3
+      - name: Upload Scorecard report
+        if: ${{ always() && hashFiles('scorecard.json') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          category: openssf-scorecard
-          sarif_file: scorecard.sarif
+          name: openssf-scorecard-report
+          path: scorecard.json
+          if-no-files-found: ignore
+          retention-days: 14

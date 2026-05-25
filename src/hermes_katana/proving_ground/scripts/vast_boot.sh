@@ -42,9 +42,9 @@ log "katana vast bootstrap starting — model=$HF_MODEL port=$VLLM_PORT"
 # -------- 1. Install vLLM --------
 if ! python3 -c "import vllm" 2>/dev/null; then
     log "installing vllm..."
-    python3 -m pip install --upgrade pip wheel 2>&1 | tail -5 | tee -a "$LOG"
+    python3 -m pip install --no-cache-dir --upgrade pip==26.1.1 wheel==0.47.0 2>&1 | tail -5 | tee -a "$LOG"
     # vllm 0.6+ needed for NVFP4; pin to known-good range.
-    python3 -m pip install "vllm>=0.6,<0.8" "huggingface_hub[cli]" 2>&1 | tail -20 | tee -a "$LOG"
+    python3 -m pip install --no-cache-dir "vllm==0.21.0" "huggingface_hub[cli]==1.16.1" 2>&1 | tail -20 | tee -a "$LOG"
 else
     log "vllm already installed"
 fi
