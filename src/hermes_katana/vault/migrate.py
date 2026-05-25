@@ -455,7 +455,7 @@ def migrate_secrets(
             vault.set(key, value)
             result.migrated += 1
             result.sources[key] = source
-            logger.info("Migrated secret into vault")
+            logger.info("Migrated item into vault")
 
             # Secure delete from source
             if secure_delete:
@@ -477,8 +477,7 @@ def migrate_secrets(
                     result.deleted += 1
 
         except Exception as exc:
-            error_msg = f"Failed to migrate secret from {source}: {_exception_summary(exc)}"
-            result.errors.append(error_msg)
-            logger.error(error_msg)
+            result.errors.append(f"Failed to migrate secret from {source}: {_exception_summary(exc)}")
+            logger.error("Failed to migrate item during vault migration")
 
     return result

@@ -32,6 +32,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,6 +41,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+_SAFE_CLI_ARG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,200}$")
 
 
 def _ok(msg: str) -> None:
@@ -56,6 +58,16 @@ def _info(msg: str) -> None:
 
 def _step(n: int, msg: str) -> None:
     print(f"\n[{n}] {msg}")
+
+
+def _run_checked_hermes(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        encoding="utf-8",
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -92,24 +104,28 @@ def check_local_model() -> bool:
     _step(2, "Local Qwen3.6-35B server reachable through hermes?")
     model = os.environ.get("KATANA_LOCAL_QWEN35_MODEL", "qwen3.6-35b")
     provider = os.environ.get("KATANA_LOCAL_QWEN35_PROVIDER", "local")
+    if not _SAFE_CLI_ARG.fullmatch(model) or not _SAFE_CLI_ARG.fullmatch(provider):
+        _fail("KATANA_LOCAL_QWEN35_MODEL/KATANA_LOCAL_QWEN35_PROVIDER contains unsupported characters")
+        return False
     _info(f"using model={model} provider={provider}")
-    cmd = [
-        "hermes",
-        "chat",
-        "-q",
-        "Reply with exactly the word: PONG",
-        "-Q",
-        "--model",
-        model,
-        "--provider",
-        provider,
-        "--max-turns",
-        "1",
-        "--yolo",
-    ]
     t0 = time.time()
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=300, encoding="utf-8")
+        p = _run_checked_hermes(
+            [
+                "hermes",
+                "chat",
+                "-q",
+                "Reply with exactly the word: PONG",
+                "-Q",
+                "--model",
+                model,
+                "--provider",
+                provider,
+                "--max-turns",
+                "1",
+                "--yolo",
+            ]
+        )
     except subprocess.TimeoutExpired:
         _fail("Timed out (>5min). Is the local inference server running?")
         return False

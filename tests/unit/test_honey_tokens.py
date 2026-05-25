@@ -285,7 +285,7 @@ def test_honey_file_monitor_plant_creates_file(tmp_path: Path):
     dest = monitor.plant(tmp_path, filename="credentials.json")
     assert dest.exists()
     data = json.loads(dest.read_text())
-    assert "api_key" in data
+    assert "service_reference" in data
 
 
 def test_honey_file_monitor_detects_access(tmp_path: Path):

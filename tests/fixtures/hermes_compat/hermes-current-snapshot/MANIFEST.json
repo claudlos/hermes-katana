@@ -7,8 +7,8 @@
       "size": 64119
     },
     "gateway/run.py": {
-      "sha256": "6d5fa50ec61ca50cf31135a421affb84f9b3d89db863c4aabc4872aa04e61446",
-      "size": 323426
+      "sha256": "c56de81b84a339096ec7b0a6caa0a4c2bd215cbef6c916b3624e9e15da2837dd",
+      "size": 323467
     },
     "hermes_cli/banner.py": {
       "sha256": "b1634fb28ba978cde2304c4a100825ff702f54c08c8305fcc4992a71f82d2918",

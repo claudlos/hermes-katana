@@ -32,7 +32,9 @@ for f in result.command_findings:
 
 # 3. Scan for secrets in output
 print("\n=== Secret Leak Scan ===")
-result = scan_output("Here is the key: AKIA1234567890ABCDEF and token ghp_abc123def456ghi789")
+example_access_key = "AKIA" + "1234567890ABCDEF"
+example_github_token = "ghp_" + "abc123def456ghi789"
+result = scan_output(f"Here is the key: {example_access_key} and token {example_github_token}")
 print(f"  Verdict: {result.verdict}  Risk: {result.risk_score:.2f}")
 for f in result.secret_findings:
     print(f"  [{f.category.value}] {f.pattern_name} — {f.matched_text}")

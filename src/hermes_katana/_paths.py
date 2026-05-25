@@ -31,6 +31,7 @@ from __future__ import annotations
 import getpass
 import logging
 import os
+import stat
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -43,6 +44,7 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+_PRIVATE_DIR_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR
 
 # Module-level flags so warnings fire at most once per process even
 # though safe_home() / fallback_root() are called many times.
@@ -122,12 +124,11 @@ def fallback_root() -> Path:
     root = Path(tempfile.gettempdir()) / f"hermes-katana-fallback-{_fallback_user_token()}"
     if not _fallback_dir_created:
         try:
-            # mkdir(mode=0o700) is honored on POSIX; Windows ignores mode.
-            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            root.mkdir(parents=True, exist_ok=True)
             # If the dir already existed with looser perms, tighten them.
             if hasattr(os, "chmod"):
                 try:
-                    os.chmod(root, 0o700)
+                    os.chmod(root, _PRIVATE_DIR_MODE)
                 except OSError:
                     pass
         except OSError:

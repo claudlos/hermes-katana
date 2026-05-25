@@ -230,11 +230,7 @@ def inject_credentials_with_metadata(
     # Skip if the header already has a value
     existing = flow.request.headers.get(provider.header_field, "")
     if existing.strip():
-        logger.debug(
-            "Skipping credential injection for %s: header '%s' already set",
-            provider.name,
-            provider.header_field,
-        )
+        logger.debug("Skipping provider auth injection because target header is already set")
         return None
 
     # Retrieve key from vault
@@ -258,11 +254,7 @@ def inject_credentials_with_metadata(
         header_value = api_key
 
     flow.request.headers[provider.header_field] = header_value
-    logger.info(
-        "Injected credentials for %s via header '%s'",
-        provider.name,
-        provider.header_field,
-    )
+    logger.info("Injected provider auth header")
     return InjectedCredential(
         provider_name=provider.name,
         header_field=provider.header_field,
