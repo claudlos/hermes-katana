@@ -100,7 +100,6 @@ jobs:
             --pyproject pyproject.toml \
             --mc-type library \
             --sv 1.6 \
-            --output-reproducible \
             --of JSON \
             -o dist/sbom/hermes-katana.cdx.json \
             /tmp/katana-wheel-smoke/bin/python
