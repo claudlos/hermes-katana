@@ -162,3 +162,14 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+
+[tool.bandit]
+targets = ["src", "examples", "scripts"]
+exclude_dirs = [
+    ".venv",
+    "build",
+    "dist",
+    "tests",
+    "tests/fixtures",
+    "tests/_archive",
+]

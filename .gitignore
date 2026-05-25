@@ -25,6 +25,8 @@ htmlcov/
 # Tools
 .ruff_cache/
 .mypy_cache/
+security-reports/
+*.sarif
 
 # IDE
 .vscode/
