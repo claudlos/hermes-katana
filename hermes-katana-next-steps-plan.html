@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hermes Katana Next Steps Plan</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18212f;
+      --muted: #5c6878;
+      --line: #d8dee7;
+      --panel: #f7f9fc;
+      --panel-2: #eef4fb;
+      --accent: #0f766e;
+      --accent-2: #1d4ed8;
+      --warn: #9a3412;
+      --high: #b91c1c;
+      --med: #92400e;
+      --low: #166534;
+      --bg: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 40px 24px 64px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.25rem);
+      max-width: 900px;
+    }
+
+    h2 {
+      font-size: 1.45rem;
+      margin-top: 34px;
+      margin-bottom: 14px;
+    }
+
+    h3 {
+      font-size: 1.05rem;
+      margin-top: 22px;
+      margin-bottom: 10px;
+    }
+
+    p {
+      max-width: 860px;
+      margin: 8px 0;
+    }
+
+    .meta {
+      color: var(--muted);
+      margin-top: 14px;
+      font-size: 0.96rem;
+    }
+
+    .callout {
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--accent);
+      background: var(--panel);
+      padding: 16px 18px;
+      margin: 20px 0;
+    }
+
+    .callout strong {
+      color: var(--accent);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin: 18px 0 8px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 14px;
+      border-radius: 8px;
+      min-height: 116px;
+    }
+
+    .metric b {
+      display: block;
+      font-size: 0.92rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+
+    .metric span {
+      display: block;
+      font-size: 1.4rem;
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      font-size: 0.94rem;
+      margin-top: 14px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      padding: 10px 11px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--panel-2);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #314155;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) td {
+      background: #fbfcfe;
+    }
+
+    td:last-child,
+    th:last-child {
+      border-right: 0;
+    }
+
+    .num {
+      text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tag {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      background: #fff;
+      white-space: nowrap;
+    }
+
+    .do-now {
+      color: #064e3b;
+      border-color: #99d5c9;
+      background: #ecfdf5;
+    }
+
+    .queue {
+      color: #1e3a8a;
+      border-color: #bfdbfe;
+      background: #eff6ff;
+    }
+
+    .later {
+      color: #7c2d12;
+      border-color: #fed7aa;
+      background: #fff7ed;
+    }
+
+    .maybe {
+      color: #374151;
+      border-color: #d1d5db;
+      background: #f9fafb;
+    }
+
+    .risk-high {
+      color: var(--high);
+      font-weight: 700;
+    }
+
+    .risk-med {
+      color: var(--med);
+      font-weight: 700;
+    }
+
+    .risk-low {
+      color: var(--low);
+      font-weight: 700;
+    }
+
+    ol,
+    ul {
+      padding-left: 22px;
+      max-width: 940px;
+    }
+
+    li {
+      margin: 7px 0;
+    }
+
+    code {
+      background: #eef2f7;
+      border: 1px solid #d9e1ec;
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.9em;
+    }
+
+    .phase {
+      border: 1px solid var(--line);
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin: 12px 0;
+      background: #fff;
+    }
+
+    .phase h3 {
+      margin-top: 0;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 900px) {
+      main {
+        padding: 28px 16px 44px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+
+      td:nth-child(3) {
+        white-space: normal;
+        min-width: 280px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Hermes Katana Next Steps Plan</h1>
+      <p class="meta">Prepared for review on May 25, 2026. This is a planning artifact only. No implementation work should start until the plan, sequencing, and first tranche are approved.</p>
+    </header>
+
+    <section class="callout">
+      <p><strong>Current baseline:</strong> Code scanning is at 0 open alerts after the CodeQL/Semgrep/Hadolint/Trivy fixes and cleanup of stale Scorecard analyses. The next work should preserve that baseline while adding governance, release integrity, and regression coverage.</p>
+    </section>
+
+    <section class="grid" aria-label="Plan summary">
+      <div class="metric">
+        <b>Recommended first tranche</b>
+        <span>7 items</span>
+        <p class="small">Branch protection, CODEOWNERS, provenance, SBOM, scheduled scans, Dependabot policy, and security settings audit.</p>
+      </div>
+      <div class="metric">
+        <b>Total backlog ideas</b>
+        <span>32</span>
+        <p class="small">Each item is rated for impact, effort, risk, confidence, and priority.</p>
+      </div>
+      <div class="metric">
+        <b>Implementation posture</b>
+        <span>approval gated</span>
+        <p class="small">Start with small PRs. Keep every tranche mergeable and independently verifiable.</p>
+      </div>
+    </section>
+
+    <h2>Scoring Model</h2>
+    <p>Ratings use a 1 to 5 scale. Higher impact is better. Higher effort and risk mean more cost or implementation risk. Priority is a 1 to 100 planning score, based on security value, operational value, sequencing importance, and expected effort.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Meaning</th>
+          <th>How to read it</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Impact</td>
+          <td>Security, release, operational, or maintainability value.</td>
+          <td>5 means strong project-level value.</td>
+        </tr>
+        <tr>
+          <td>Effort</td>
+          <td>Expected engineering and review cost.</td>
+          <td>1 is tiny. 5 is multi-PR or cross-cutting.</td>
+        </tr>
+        <tr>
+          <td>Risk</td>
+          <td>Chance of workflow breakage, runtime behavior change, or user friction.</td>
+          <td>1 is low. 5 needs careful rollout.</td>
+        </tr>
+        <tr>
+          <td>Confidence</td>
+          <td>How clear the implementation path is from the current repo state.</td>
+          <td>5 means straightforward and well bounded.</td>
+        </tr>
+        <tr>
+          <td>Priority</td>
+          <td>Recommended ordering score.</td>
+          <td>80+ is first-tranche material.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Rated Backlog</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Item</th>
+          <th>Why it matters</th>
+          <th>Impact</th>
+          <th>Effort</th>
+          <th>Risk</th>
+          <th>Confidence</th>
+          <th>Priority</th>
+          <th>Decision</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">1</td>
+          <td>Branch protection for <code>master</code></td>
+          <td>Require CI, release gate, CodeQL, security scans, and review before merge. This protects the clean baseline we just established.</td>
+          <td class="num">5</td>
+          <td class="num">1</td>
+          <td class="num">2</td>
+          <td class="num">5</td>
+          <td class="num">96</td>
+          <td><span class="tag do-now">Do now</span></td>
+        </tr>
+        <tr>
+          <td class="num">2</td>
+          <td><code>CODEOWNERS</code> for sensitive paths</td>
+          <td>Require intentional review on workflows, release scripts, vault, proxy, scanner, Docker, and security policy files.</td>
+          <td class="num">5</td>
+          <td class="num">1</td>
+          <td class="num">1</td>
+          <td class="num">5</td>
+          <td class="num">94</td>
+          <td><span class="tag do-now">Do now</span></td>
+        </tr>
+        <tr>
+          <td class="num">3</td>
+          <td>GitHub security settings audit</td>
+          <td>Confirm Dependabot alerts, Dependabot security updates, secret scanning, push protection, private vulnerability reporting, and code scanning are enabled as intended.</td>
+          <td class="num">5</td>
+          <td class="num">2</td>
+          <td class="num">1</td>
+          <td class="num">4</td>
+          <td class="num">92</td>
+          <td><span class="tag do-now">Do now</span></td>
+        </tr>
+        <tr>
+          <td class="num">4</td>
+          <td>Release provenance and artifact attestations</td>
+          <td>Add signed release artifacts and attestations so consumers can verify where builds came from.</td>
+          <td class="num">5</td>
+          <td class="num">3</td>
+          <td class="num">3</td>
+          <td class="num">4</td>
+          <td class="num">90</td>
+          <td><span class="tag do-now">Do now</span></td>
+        </tr>
+        <tr>
+          <td class="num">5</td>
+          <td>SBOM generation in release gate</td>
+          <td>Produce CycloneDX or Syft SBOM artifacts for release traceability and dependency review.</td>
+          <td class="num">4</td>
+          <td class="num">2</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">88</td>
+          <td><span class="tag do-now">Do now</span></td>
+        </tr>
+        <tr>
+          <td class="num">6</td>
+          <td>Scheduled full security scan workflow</td>
+          <td>Run deeper weekly checks for Semgrep, Trivy, pip-audit, OSV, Gitleaks, zizmor, Hadolint, and Scorecard without blocking ordinary PR velocity.</td>
+          <td class="num">5</td>
+          <td class="num">2</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">87</td>
+          <td><span class="tag do-now">Do now</span></td>
+        </tr>
+        <tr>
+          <td class="num">7</td>
+          <td>Dependabot policy and merge workflow</td>
+          <td>Define grouping, cooldown, allowed ecosystems, and optional auto-merge rules for low-risk patch updates after checks pass.</td>
+          <td class="num">4</td>
+          <td class="num">2</td>
+          <td class="num">2</td>
+          <td class="num">5</td>
+          <td class="num">86</td>
+          <td><span class="tag do-now">Do now</span></td>
+        </tr>
+        <tr>
+          <td class="num">8</td>
+          <td>Workflow least-privilege permissions pass</td>
+          <td>Review every workflow job for explicit minimal <code>permissions</code>, especially code scanning, Pages, release, and artifact upload jobs.</td>
+          <td class="num">5</td>
+          <td class="num">2</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">84</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">9</td>
+          <td>Proxy and vault threat model</td>
+          <td>Document assets, trust boundaries, attacker paths, mitigations, and residual risks for vault, proxy, scanner, injector, and CLI setup flows.</td>
+          <td class="num">5</td>
+          <td class="num">3</td>
+          <td class="num">1</td>
+          <td class="num">4</td>
+          <td class="num">83</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">10</td>
+          <td>Security runbook and alert SLA</td>
+          <td>Define severity handling, ownership, triage steps, allowed dismissals, stale analysis cleanup, and expected response times.</td>
+          <td class="num">4</td>
+          <td class="num">2</td>
+          <td class="num">1</td>
+          <td class="num">5</td>
+          <td class="num">82</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">11</td>
+          <td>Negative tests for proxy scanning</td>
+          <td>Cover malformed multipart, nested compression, invalid encodings, oversized inputs, empty boundaries, and decompression failure behavior.</td>
+          <td class="num">5</td>
+          <td class="num">4</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">80</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">12</td>
+          <td>Property tests for credential injection boundaries</td>
+          <td>Use generated inputs to prove credentials are injected only under allowed provider, TLS, header, and vault states.</td>
+          <td class="num">5</td>
+          <td class="num">4</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">79</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">13</td>
+          <td>Log redaction snapshot tests</td>
+          <td>Assert that proxy, vault, setup, migration, and runner logs never include secret values, provider tokens, or credential-like material.</td>
+          <td class="num">5</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">78</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">14</td>
+          <td>OIDC publishing path</td>
+          <td>Replace long-lived package publishing credentials with trusted publishing or OIDC where supported.</td>
+          <td class="num">5</td>
+          <td class="num">3</td>
+          <td class="num">3</td>
+          <td class="num">3</td>
+          <td class="num">77</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">15</td>
+          <td>Release checklist with dry-run mode</td>
+          <td>Create a repeatable release procedure that verifies tests, generated assets, SBOM, provenance, tags, artifacts, and changelog before publishing.</td>
+          <td class="num">4</td>
+          <td class="num">2</td>
+          <td class="num">1</td>
+          <td class="num">5</td>
+          <td class="num">76</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">16</td>
+          <td>Docker rebuild and base image cadence</td>
+          <td>Define when to refresh digest-pinned base images and how to verify image scans after a refresh.</td>
+          <td class="num">4</td>
+          <td class="num">2</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">74</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">17</td>
+          <td>Security-sensitive fixture policy</td>
+          <td>Document how compat snapshots and test fixtures avoid live secrets, secret-shaped strings, and weak crypto false positives.</td>
+          <td class="num">4</td>
+          <td class="num">2</td>
+          <td class="num">1</td>
+          <td class="num">5</td>
+          <td class="num">73</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">18</td>
+          <td>Pre-commit hook bundle</td>
+          <td>Offer local hooks for ruff, format check, secret scan, whitespace, generated asset checks, and selected mypy smoke checks.</td>
+          <td class="num">4</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">72</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">19</td>
+          <td>Scanner result retention policy</td>
+          <td>Define which scanners upload SARIF, which publish artifacts only, how long artifacts are retained, and who owns cleanup.</td>
+          <td class="num">4</td>
+          <td class="num">2</td>
+          <td class="num">1</td>
+          <td class="num">5</td>
+          <td class="num">71</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">20</td>
+          <td>Proxy scanner performance budget</td>
+          <td>Add benchmarks for compressed, multipart, large-body, and normal request paths so hardening does not create unacceptable latency.</td>
+          <td class="num">4</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">70</td>
+          <td><span class="tag queue">Queue</span></td>
+        </tr>
+        <tr>
+          <td class="num">21</td>
+          <td>Vault recovery and rotation drill</td>
+          <td>Test key rotation, vault backup, restore, failure modes, and operator messaging without exposing live secrets.</td>
+          <td class="num">5</td>
+          <td class="num">4</td>
+          <td class="num">3</td>
+          <td class="num">3</td>
+          <td class="num">69</td>
+          <td><span class="tag later">Later</span></td>
+        </tr>
+        <tr>
+          <td class="num">22</td>
+          <td>Contributor security docs refresh</td>
+          <td>Make it clear how to run local scans, write safe fixtures, avoid real tokens, and interpret scanner failures.</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">1</td>
+          <td class="num">5</td>
+          <td class="num">68</td>
+          <td><span class="tag later">Later</span></td>
+        </tr>
+        <tr>
+          <td class="num">23</td>
+          <td>Issue and PR templates for security risk</td>
+          <td>Add prompts for security impact, scanner output, tests run, threat model notes, and release risk.</td>
+          <td class="num">3</td>
+          <td class="num">1</td>
+          <td class="num">1</td>
+          <td class="num">5</td>
+          <td class="num">67</td>
+          <td><span class="tag later">Later</span></td>
+        </tr>
+        <tr>
+          <td class="num">24</td>
+          <td>Package verification docs</td>
+          <td>Document how users verify tags, artifacts, checksums, attestations, and SBOMs.</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">1</td>
+          <td class="num">4</td>
+          <td class="num">66</td>
+          <td><span class="tag later">Later</span></td>
+        </tr>
+        <tr>
+          <td class="num">25</td>
+          <td>Compatibility snapshot governance</td>
+          <td>Define when snapshots update, how manifests are validated, and how security-sensitive fixture changes are reviewed.</td>
+          <td class="num">4</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">65</td>
+          <td><span class="tag later">Later</span></td>
+        </tr>
+        <tr>
+          <td class="num">26</td>
+          <td>Runtime canary validation tests</td>
+          <td>Assert canary generation, placement, non-secret decoy shape, and detection behavior across proving-ground paths.</td>
+          <td class="num">4</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">64</td>
+          <td><span class="tag later">Later</span></td>
+        </tr>
+        <tr>
+          <td class="num">27</td>
+          <td>Static analysis baseline report</td>
+          <td>Generate a checked-in or artifact-only report explaining scanner coverage, exclusions, and known accepted false-positive classes.</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">1</td>
+          <td class="num">4</td>
+          <td class="num">62</td>
+          <td><span class="tag later">Later</span></td>
+        </tr>
+        <tr>
+          <td class="num">28</td>
+          <td>Local developer bootstrap check</td>
+          <td>Improve setup validation for scanner tools, GitHub CLI auth, Docker availability, and Python environment drift.</td>
+          <td class="num">3</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">4</td>
+          <td class="num">61</td>
+          <td><span class="tag later">Later</span></td>
+        </tr>
+        <tr>
+          <td class="num">29</td>
+          <td>Security dashboard artifact</td>
+          <td>Create a generated HTML or Markdown status artifact summarizing scanners, counts, last run, and next maintenance actions.</td>
+          <td class="num">3</td>
+          <td class="num">3</td>
+          <td class="num">2</td>
+          <td class="num">3</td>
+          <td class="num">58</td>
+          <td><span class="tag maybe">Maybe</span></td>
+        </tr>
+        <tr>
+          <td class="num">30</td>
+          <td>Mutation tests for scanner rules</td>
+          <td>Inject known bad patterns in controlled fixtures and prove local scanner configs detect them.</td>
+          <td class="num">4</td>
+          <td class="num">5</td>
+          <td class="num">3</td>
+          <td class="num">3</td>
+          <td class="num">56</td>
+          <td><span class="tag maybe">Maybe</span></td>
+        </tr>
+        <tr>
+          <td class="num">31</td>
+          <td>Chaos tests for proxy/vault failure modes</td>
+          <td>Exercise missing vault, locked vault, scan timeout, decompressor failure, partial body, and upstream failure behavior.</td>
+          <td class="num">4</td>
+          <td class="num">5</td>
+          <td class="num">3</td>
+          <td class="num">3</td>
+          <td class="num">54</td>
+          <td><span class="tag maybe">Maybe</span></td>
+        </tr>
+        <tr>
+          <td class="num">32</td>
+          <td>Public security posture badges</td>
+          <td>Add concise README badges for CI, release gate, CodeQL, security scans, and package provenance once governance is stable.</td>
+          <td class="num">2</td>
+          <td class="num">1</td>
+          <td class="num">1</td>
+          <td class="num">5</td>
+          <td class="num">44</td>
+          <td><span class="tag later">Later</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Recommended Sequencing</h2>
+    <div class="phase">
+      <h3>Phase 1: Lock the clean baseline</h3>
+      <p>Do items 1 through 7. This phase protects the zero-alert state, improves release integrity, and gives Dependabot a cleaner operating model. Keep it to small PRs, ideally one to three changes per PR.</p>
+      <p><strong>Exit criteria:</strong> <code>master</code> requires checks and review, security settings are documented, release artifacts have SBOM/provenance coverage, and weekly deep scans are running without creating noisy code-scanning alerts.</p>
+    </div>
+
+    <div class="phase">
+      <h3>Phase 2: Expand assurance around high-risk runtime paths</h3>
+      <p>Do items 8 through 15. This phase strengthens the proxy, vault, scanner, and release workflow through tests and documentation rather than broad refactors.</p>
+      <p><strong>Exit criteria:</strong> new regression tests cover credential injection, scanning boundaries, log redaction, and release dry-run behavior.</p>
+    </div>
+
+    <div class="phase">
+      <h3>Phase 3: Operational maturity</h3>
+      <p>Do items 16 through 28 as capacity allows. These improve maintenance discipline, fixture governance, developer workflow, and recurring validation.</p>
+      <p><strong>Exit criteria:</strong> scanner ownership, Docker refresh cadence, fixture policy, and local developer checks are documented and easy to run.</p>
+    </div>
+
+    <div class="phase">
+      <h3>Phase 4: Optional depth work</h3>
+      <p>Consider items 29 through 32 after the main security and release posture is stable. These are useful, but less urgent than governance, provenance, and regression coverage.</p>
+    </div>
+
+    <h2>Approval Gates</h2>
+    <ol>
+      <li>Approve or edit the Phase 1 scope before implementation starts.</li>
+      <li>Confirm whether repository settings changes, such as branch protection and secret scanning options, should be done through GitHub UI, GitHub CLI, or documented for manual application.</li>
+      <li>Confirm whether release provenance should target GitHub release artifacts only first, or also package publishing.</li>
+      <li>Confirm whether scheduled deep scans should upload SARIF only for tools with actionable code findings, keeping posture tools such as Scorecard artifact-only.</li>
+      <li>Confirm whether Dependabot patch updates may be auto-merged after required checks pass, or should remain manual.</li>
+    </ol>
+
+    <h2>First Tranche Proposal</h2>
+    <p>If approved, the first implementation tranche should be:</p>
+    <ol>
+      <li>Add <code>CODEOWNERS</code> for security-sensitive paths.</li>
+      <li>Document and, if approved, apply <code>master</code> branch protection.</li>
+      <li>Audit GitHub security settings and record the expected settings in a short operator note.</li>
+      <li>Add release SBOM generation as a release-gate artifact.</li>
+      <li>Add artifact attestations or provenance for release outputs.</li>
+      <li>Add a scheduled deep security workflow that avoids noisy SARIF for posture-only tools.</li>
+      <li>Refine Dependabot policy for grouped updates and safe patch handling.</li>
+    </ol>
+
+    <section class="callout">
+      <p><strong>Approval needed:</strong> Do not begin implementation until the first tranche and repository-settings approach are approved. This plan intentionally avoids touching README or existing docs so minor documentation edits can happen independently.</p>
+    </section>
+  </main>
+</body>
+</html>

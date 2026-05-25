@@ -8,8 +8,22 @@ updates:
       time: "10:00"
       timezone: "America/Chicago"
     open-pull-requests-limit: 5
+    rebase-strategy: "auto"
     cooldown:
       default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+    groups:
+      github-actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "github-actions"
     commit-message:
       prefix: "ci"
 
@@ -26,9 +40,19 @@ updates:
       semver-major-days: 30
       semver-minor-days: 7
       semver-patch-days: 3
+    rebase-strategy: "auto"
     groups:
+      python-security-tools:
+        patterns:
+          - "bandit*"
+          - "pip-audit"
+          - "semgrep"
+          - "zizmor"
       python-runtime:
         patterns:
           - "*"
+    labels:
+      - "dependencies"
+      - "python"
     commit-message:
       prefix: "deps"

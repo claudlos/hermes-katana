@@ -1,0 +1,27 @@
+# Default owner for all repository changes. Branch protection should require
+# CODEOWNERS review so security-sensitive changes cannot merge accidentally.
+* @claudlos
+
+# High-risk repository control planes.
+.github/ @claudlos
+.github/workflows/ @claudlos
+.github/dependabot.yml @claudlos
+.github/CODEOWNERS @claudlos
+
+# Release, packaging, and supply-chain surfaces.
+pyproject.toml @claudlos
+scripts/ @claudlos
+docker/ @claudlos
+.gitleaks.toml @claudlos
+
+# Runtime security boundaries.
+src/hermes_katana/cli/ @claudlos
+src/hermes_katana/policy/ @claudlos
+src/hermes_katana/proxy/ @claudlos
+src/hermes_katana/scanner/ @claudlos
+src/hermes_katana/taint/ @claudlos
+src/hermes_katana/vault/ @claudlos
+
+# Tests and fixtures that influence security scanner behavior.
+tests/ @claudlos
+tests/fixtures/ @claudlos
