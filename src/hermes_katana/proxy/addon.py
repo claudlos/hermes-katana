@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 from hermes_katana.proxy.config import ProxyConfig
 from hermes_katana.proxy.injector import inject_credentials_with_metadata
+from hermes_katana.security_logging import redact_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -428,6 +429,11 @@ class KatanaAddon:
         combined = "|".join(args)
         return hashlib.sha256(combined.encode("utf-8")).hexdigest()[:16]
 
+    @staticmethod
+    def _safe_log_text(text: object, redaction_values: Optional[Iterable[str]] = None) -> str:
+        """Return text safe for logs, audit details, and proxy block messages."""
+        return redact_text_for_log(str(text), extra_values=redaction_values or ())
+
     # ------------------------------------------------------------------
     # mitmproxy hooks
     # ------------------------------------------------------------------
@@ -624,8 +630,15 @@ class KatanaAddon:
                 url_result = self._scan_text(url_text, direction="request", vault_values=scan_vault_values)
                 if url_result["is_blocked"]:
                     self._increment_stat("requests_blocked_scan")
-                    flow.response = _make_block_response(400, f"URL blocked: {url_result['summary']}")
-                    self._log_audit("SCAN_RESULT", f"url_scan:{host}", "deny", url_result["summary"])
+                    safe_summary = self._safe_log_text(url_result["summary"], scan_vault_values)
+                    flow.response = _make_block_response(400, f"URL blocked: {safe_summary}")
+                    self._log_audit(
+                        "SCAN_RESULT",
+                        f"url_scan:{host}",
+                        "deny",
+                        url_result["summary"],
+                        redaction_values=scan_vault_values,
+                    )
                     return
         except Exception as exc:
             self._fail_request_scan(flow, host, "url", exc)
@@ -639,8 +652,15 @@ class KatanaAddon:
                 hdr_result = self._scan_text(hdr_value, direction="request", vault_values=scan_vault_values)
                 if hdr_result["is_blocked"]:
                     self._increment_stat("requests_blocked_scan")
-                    flow.response = _make_block_response(400, f"Header blocked: {hdr_result['summary']}")
-                    self._log_audit("SCAN_RESULT", f"header_scan:{host}:{hdr_name}", "deny", hdr_result["summary"])
+                    safe_summary = self._safe_log_text(hdr_result["summary"], scan_vault_values)
+                    flow.response = _make_block_response(400, f"Header blocked: {safe_summary}")
+                    self._log_audit(
+                        "SCAN_RESULT",
+                        f"header_scan:{host}:{hdr_name}",
+                        "deny",
+                        hdr_result["summary"],
+                        redaction_values=scan_vault_values,
+                    )
                     return
         except Exception as exc:
             self._fail_request_scan(flow, host, "header", exc)
@@ -653,8 +673,15 @@ class KatanaAddon:
                     q_result = self._scan_text(qvalue, direction="request", vault_values=scan_vault_values)
                     if q_result["is_blocked"]:
                         self._increment_stat("requests_blocked_scan")
-                        flow.response = _make_block_response(400, f"Query param blocked: {q_result['summary']}")
-                        self._log_audit("SCAN_RESULT", f"query_scan:{host}:{qname}", "deny", q_result["summary"])
+                        safe_summary = self._safe_log_text(q_result["summary"], scan_vault_values)
+                        flow.response = _make_block_response(400, f"Query param blocked: {safe_summary}")
+                        self._log_audit(
+                            "SCAN_RESULT",
+                            f"query_scan:{host}:{qname}",
+                            "deny",
+                            q_result["summary"],
+                            redaction_values=scan_vault_values,
+                        )
                         return
         except Exception as exc:
             self._fail_request_scan(flow, host, "query", exc)
@@ -670,8 +697,15 @@ class KatanaAddon:
                         c_result = self._scan_text(cval.strip(), direction="request", vault_values=scan_vault_values)
                         if c_result["is_blocked"]:
                             self._increment_stat("requests_blocked_scan")
-                            flow.response = _make_block_response(400, f"Cookie blocked: {c_result['summary']}")
-                            self._log_audit("SCAN_RESULT", f"cookie_scan:{host}", "deny", c_result["summary"])
+                            safe_summary = self._safe_log_text(c_result["summary"], scan_vault_values)
+                            flow.response = _make_block_response(400, f"Cookie blocked: {safe_summary}")
+                            self._log_audit(
+                                "SCAN_RESULT",
+                                f"cookie_scan:{host}",
+                                "deny",
+                                c_result["summary"],
+                                redaction_values=scan_vault_values,
+                            )
                             return
         except Exception as exc:
             self._fail_request_scan(flow, host, "cookie", exc)
@@ -727,10 +761,11 @@ class KatanaAddon:
 
                 if scan_result["is_blocked"]:
                     self._increment_stat("requests_blocked_scan")
+                    safe_summary = self._safe_log_text(scan_result["summary"], scan_vault_values)
                     logger.warning(
                         "Request blocked by scan: %s -> %s",
                         host,
-                        scan_result["summary"],
+                        safe_summary,
                     )
                     flow.response = _make_block_response(
                         400,
@@ -741,6 +776,7 @@ class KatanaAddon:
                         f"request_scan:{host}",
                         "deny",
                         scan_result["summary"],
+                        redaction_values=scan_vault_values,
                     )
                     return
                 elif scan_result["finding_count"] > 0:
@@ -750,6 +786,7 @@ class KatanaAddon:
                         f"request_scan:{host}",
                         "warn",
                         scan_result["summary"],
+                        redaction_values=scan_vault_values,
                     )
 
                 if oversized:
@@ -816,13 +853,16 @@ class KatanaAddon:
                 rh_result = self._scan_text(hdr_value, direction="response", vault_values=scan_vault_values)
                 if rh_result["is_blocked"]:
                     self._increment_stat("responses_blocked_scan")
-                    logger.warning("Response header blocked: %s -> %s", hdr_name, rh_result["summary"])
-                    flow.response.set_content(
-                        f"[HermesKatana] Response header blocked: {rh_result['summary']}".encode()
-                    )
+                    safe_summary = self._safe_log_text(rh_result["summary"], scan_vault_values)
+                    logger.warning("Response header blocked: %s -> %s", hdr_name, safe_summary)
+                    flow.response.set_content(f"[HermesKatana] Response header blocked: {safe_summary}".encode())
                     flow.response.status_code = 502
                     self._log_audit(
-                        "SCAN_RESULT", f"response_header_scan:{host}:{hdr_name}", "deny", rh_result["summary"]
+                        "SCAN_RESULT",
+                        f"response_header_scan:{host}:{hdr_name}",
+                        "deny",
+                        rh_result["summary"],
+                        redaction_values=scan_vault_values,
                     )
                     return
         except Exception as exc:
@@ -879,10 +919,11 @@ class KatanaAddon:
 
                 if scan_result["is_blocked"]:
                     self._increment_stat("responses_blocked_scan")
+                    safe_summary = self._safe_log_text(scan_result["summary"], scan_vault_values)
                     logger.warning(
                         "Response blocked by scan: %s -> %s",
                         host,
-                        scan_result["summary"],
+                        safe_summary,
                     )
                     # Replace response body with warning
                     flow.response.set_content(b"[HermesKatana] Response blocked by security policy.")
@@ -892,6 +933,7 @@ class KatanaAddon:
                         f"response_scan:{host}",
                         "deny",
                         scan_result["summary"],
+                        redaction_values=scan_vault_values,
                     )
                     # Inject header and return early — do not count as passed
                     if self.config.add_scanned_header:
@@ -907,6 +949,7 @@ class KatanaAddon:
                         f"response_scan:{host}",
                         "warn",
                         scan_result["summary"],
+                        redaction_values=scan_vault_values,
                     )
 
                 if oversized:
@@ -971,7 +1014,7 @@ class KatanaAddon:
                 "Request %s scan failed for %s; allowing in permissive mode: %s",
                 scope,
                 host,
-                exc,
+                self._safe_log_text(exc),
             )
             self._log_audit(
                 "SCAN_RESULT",
@@ -980,7 +1023,12 @@ class KatanaAddon:
                 f"Scanner failure ({type(exc).__name__}); request allowed (permissive mode)",
             )
             return
-        logger.warning("Request %s scan failed for %s; blocking fail-closed: %s", scope, host, exc)
+        logger.warning(
+            "Request %s scan failed for %s; blocking fail-closed: %s",
+            scope,
+            host,
+            self._safe_log_text(exc),
+        )
         flow.response = _make_block_response(
             502,
             "HermesKatana scanner failed; request blocked fail-closed.",
@@ -1000,7 +1048,7 @@ class KatanaAddon:
                 "Response %s scan failed for %s; allowing in permissive mode: %s",
                 scope,
                 host,
-                exc,
+                self._safe_log_text(exc),
             )
             self._log_audit(
                 "SCAN_RESULT",
@@ -1009,7 +1057,12 @@ class KatanaAddon:
                 f"Scanner failure ({type(exc).__name__}); response allowed (permissive mode)",
             )
             return
-        logger.warning("Response %s scan failed for %s; blocking fail-closed: %s", scope, host, exc)
+        logger.warning(
+            "Response %s scan failed for %s; blocking fail-closed: %s",
+            scope,
+            host,
+            self._safe_log_text(exc),
+        )
         try:
             flow.response.set_content(b"[HermesKatana] Scanner failed; response blocked fail-closed.")
             flow.response.status_code = 502
@@ -1033,6 +1086,8 @@ class KatanaAddon:
         tool_name: str,
         decision: str,
         details: str,
+        *,
+        redaction_values: Optional[Iterable[str]] = None,
     ) -> None:
         """Log an event to the audit trail if available."""
         if self.audit is None:
@@ -1040,18 +1095,19 @@ class KatanaAddon:
         try:
             from hermes_katana.audit.trail import AuditEntry, AuditEventType
 
+            safe_details = self._safe_log_text(details, redaction_values)
             entry = AuditEntry(
                 event_type=AuditEventType(event_type.lower())
                 if hasattr(AuditEventType, event_type)
                 else AuditEventType.SCAN_RESULT,
                 tool_name=tool_name,
-                args_hash=self._args_hash(tool_name, details),
+                args_hash=self._args_hash(tool_name, safe_details),
                 decision=decision,
-                details=details,
+                details=safe_details,
             )
             self.audit.log(entry)
         except Exception as exc:
-            logger.debug("Audit logging failed: %s", exc)
+            logger.debug("Audit logging failed: %s", self._safe_log_text(exc))
 
     def websocket_message(self, flow: Any) -> None:
         """mitmproxy WebSocket message hook (GAP 3.3).
@@ -1108,13 +1164,15 @@ class KatanaAddon:
 
             if scan_result["is_blocked"]:
                 self._increment_stat("ws_messages_blocked")
-                logger.warning("WebSocket message blocked: %s", scan_result["summary"])
+                safe_summary = self._safe_log_text(scan_result["summary"], scan_vault_values)
+                logger.warning("WebSocket message blocked: %s", safe_summary)
                 msg.content = b"[HermesKatana] Message blocked by security policy."
                 self._log_audit(
                     "SCAN_RESULT",
                     "websocket_scan",
                     "deny",
                     scan_result["summary"],
+                    redaction_values=scan_vault_values,
                 )
             elif scan_result["finding_count"] > 0:
                 self._increment_stat("ws_messages_warned")
@@ -1123,11 +1181,12 @@ class KatanaAddon:
                     "websocket_scan",
                     "warn",
                     scan_result["summary"],
+                    redaction_values=scan_vault_values,
                 )
         except Exception as exc:
             self._increment_stat("ws_messages_scan_errors")
             if not self._fail_closed_active():
-                logger.warning("WebSocket scan failed; allowing in permissive mode: %s", exc)
+                logger.warning("WebSocket scan failed; allowing in permissive mode: %s", self._safe_log_text(exc))
                 self._log_audit(
                     "SCAN_RESULT",
                     "websocket_scan",
@@ -1135,7 +1194,7 @@ class KatanaAddon:
                     f"Scanner failure ({type(exc).__name__}); websocket message allowed (permissive mode)",
                 )
                 return
-            logger.warning("WebSocket scan failed; blocking fail-closed: %s", exc)
+            logger.warning("WebSocket scan failed; blocking fail-closed: %s", self._safe_log_text(exc))
             self._increment_stat("ws_messages_blocked")
             msg.content = b"[HermesKatana] Scanner failed; WebSocket message blocked fail-closed."
             self._log_audit(
