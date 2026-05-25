@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from hermes_katana.proxy.config import ProxyConfig
 from hermes_katana.proxy.runner import KatanaProxy, _PidInfo, _write_pid_file, default_pid_path
 
@@ -94,6 +96,52 @@ class TestProxyRunner:
         proxy.start()
 
         assert "HERMES_KATANA_VAULT_KEY" not in seen["env"]
+
+    def test_start_scrubs_unrelated_secret_env_from_child(self, monkeypatch, tmp_dir):
+        seen: dict[str, object] = {}
+
+        class FakeProcess:
+            pid = 4321
+
+            def poll(self):
+                return None
+
+        class FakeThread:
+            def __init__(self, target=None, daemon=None, name=None):
+                self.target = target
+                self.daemon = daemon
+                self.name = name
+
+            def start(self):
+                return None
+
+        def fake_popen(cmd, stdout=None, stderr=None, env=None):
+            seen["env"] = env
+            return FakeProcess()
+
+        monkeypatch.setattr("hermes_katana.proxy.runner.subprocess.Popen", fake_popen)
+        monkeypatch.setattr("hermes_katana.proxy.runner.threading.Thread", FakeThread)
+        monkeypatch.setenv("OPENAI_API_KEY", "should-not-leak")
+        monkeypatch.setenv("PATH", "/usr/bin")
+
+        proxy = KatanaProxy(
+            config=ProxyConfig(host="127.0.0.1", port=8080),
+            pid_path=tmp_dir / "proxy.pid",
+        )
+
+        proxy.start()
+
+        assert "OPENAI_API_KEY" not in seen["env"]
+        assert seen["env"]["PATH"] == "/usr/bin"
+
+    def test_start_refuses_insecure_credential_injection(self, tmp_dir):
+        proxy = KatanaProxy(
+            config=ProxyConfig(host="127.0.0.1", port=8080, tls_verify=False, inject_credentials=True),
+            pid_path=tmp_dir / "proxy.pid",
+        )
+
+        with pytest.raises(RuntimeError, match="tls_verify is false"):
+            proxy.start()
 
     def test_status_clears_stale_pid_file(self, monkeypatch, tmp_dir):
         pid_path = tmp_dir / "proxy.pid"

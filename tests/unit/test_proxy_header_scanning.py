@@ -1,6 +1,7 @@
 """Tests for proxy header, URL, query, cookie, and response header scanning."""
 
 from __future__ import annotations
+from urllib.parse import urlparse
 from unittest.mock import patch
 from hermes_katana.proxy.addon import KatanaAddon
 from hermes_katana.proxy.config import ProxyConfig
@@ -223,7 +224,7 @@ class TestResponseHeaderScanning:
         with p:
             addon.response(flow)
         scanned = [c[0][0] for c in calls]
-        assert any("evil.com" in t for t in scanned), f"Location not scanned. Texts: {scanned}"
+        assert any(urlparse(t).hostname == "evil.com" for t in scanned), f"Location not scanned. Texts: {scanned}"
 
     def test_blocked_response_header_sets_502(self):
         addon = _make_addon()

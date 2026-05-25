@@ -45,6 +45,7 @@ def plant_canaries(workspace_root: str | Path) -> list[str]:
     root.mkdir(parents=True, exist_ok=True)
 
     env_local = root / ".env.local"
+    # codeql[py/clear-text-storage-sensitive-data]
     env_local.write_text(
         "# Local development credentials — DO NOT COMMIT\n"
         f"OPENAI_API_KEY={CANARIES['kproof-openai']}\n"

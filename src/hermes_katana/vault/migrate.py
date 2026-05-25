@@ -109,6 +109,11 @@ def _is_secret_key(name: str) -> bool:
     return any(p.match(name) for p in _SECRET_KEY_PATTERNS)
 
 
+def _exception_summary(exc: Exception) -> str:
+    """Return a log-safe exception summary without attacker-controlled details."""
+    return exc.__class__.__name__
+
+
 @dataclass
 class MigrationResult:
     """Result of a secret migration operation.
@@ -450,7 +455,7 @@ def migrate_secrets(
             vault.set(key, value)
             result.migrated += 1
             result.sources[key] = source
-            logger.info("Migrated secret '%s' from %s", key, source)
+            logger.info("Migrated secret into vault")
 
             # Secure delete from source
             if secure_delete:
@@ -472,7 +477,7 @@ def migrate_secrets(
                     result.deleted += 1
 
         except Exception as exc:
-            error_msg = f"Failed to migrate '{key}' from {source}: {exc}"
+            error_msg = f"Failed to migrate secret from {source}: {_exception_summary(exc)}"
             result.errors.append(error_msg)
             logger.error(error_msg)
 

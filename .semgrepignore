@@ -1,0 +1,11 @@
+tests/fixtures/
+tests/_archive/
+.pytest_tmp/
+.venv/
+build/
+dist/
+security-reports/
+training/
+results/
+*.jsonl
+*.sarif

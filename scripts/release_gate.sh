@@ -89,6 +89,7 @@ run_shell() {
 
 run_cmd "ruff check src/ tests/" "${PYTHON_BIN}" -m ruff check src/ tests/
 run_cmd "ruff format --check src/ tests/" "${PYTHON_BIN}" -m ruff format --check src/ tests/
+run_cmd "scripts/mypy_smoke.sh" scripts/mypy_smoke.sh
 
 if [[ "${SKIP_FULL_TESTS}" -eq 0 ]]; then
   run_shell "python3 -m pytest tests/ -q" "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src '${PYTHON_BIN}' -m pytest tests/ -q"

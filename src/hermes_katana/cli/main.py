@@ -228,7 +228,7 @@ def _prompt_install_onnx_runtime(
     selected_onnx_artifact: bool,
 ) -> bool:
     if install_onnx_runtime and no_onnx_runtime:
-        raise click.ClickException("--onnx-runtime and --no-onnx-runtime cannot be used together")
+        raise click.ClickException("--fast-cpu and --no-fast-cpu cannot be used together")
     if install_onnx_runtime:
         return True
     if no_onnx_runtime:
@@ -388,7 +388,7 @@ def _run_artifacts_setup(
     target_root = Path(target_dir).expanduser().resolve() if target_dir else None
     multiple = len(selected) > 1
     for spec in selected:
-        spec_target = target_root / spec.name if target_root is not None and multiple else target_root
+        spec_target = _setup_artifact_target(spec.name, target_root, multiple=multiple)
         status = artifact_status(spec, spec_target)
         if status.present and not force:
             console.print(f"[green]Present[/green] {spec.name}: {status.path}")
@@ -400,6 +400,58 @@ def _run_artifacts_setup(
             raise SystemExit(EXIT_ERROR)
         console.print(f"[green]Downloaded[/green] {spec.name}: {downloaded.path}")
     return tuple(spec.name for spec in selected)
+
+
+def _setup_artifact_target(spec_name: str, target_root: Path | None, *, multiple: bool) -> Path | None:
+    if target_root is not None and multiple:
+        return target_root / spec_name
+    return target_root
+
+
+def _verify_full_setup(*, target_dir: str | None) -> None:
+    """Verify that the full setup profile left artifacts and dependency groups ready."""
+    from hermes_katana.artifacts import artifact_specs, artifact_status
+
+    importlib.invalidate_caches()
+    failures: list[str] = []
+
+    specs = artifact_specs()
+    target_root = Path(target_dir).expanduser().resolve() if target_dir else None
+    multiple = len(specs) > 1
+    for spec in specs:
+        spec_target = _setup_artifact_target(spec.name, target_root, multiple=multiple)
+        status = artifact_status(spec, spec_target)
+        if status.present:
+            console.print(f"[green]Verified[/green] {spec.name}: {status.path}")
+            continue
+
+        details: list[str] = []
+        if status.missing_files:
+            details.append(f"missing files: {', '.join(status.missing_files)}")
+        if status.errors:
+            details.append(f"verification errors: {'; '.join(status.errors)}")
+        failures.append(f"{spec.name} at {status.path}: {'; '.join(details) or 'not ready'}")
+
+    dependency_checks = (
+        ("ONNX Runtime CPU dependencies", _missing_onnx_runtime_dependencies()),
+        ("PyTorch CPU dependencies", _missing_torch_cpu_dependencies()),
+        ("Proving Ground dependencies", _missing_proving_ground_dependencies()),
+    )
+    for label, missing in dependency_checks:
+        if missing:
+            failures.append(f"{label}: missing {', '.join(missing)}")
+        else:
+            console.print(f"[green]Verified[/green] {label}")
+
+    if failures:
+        err_console.print("[red]Full setup verification failed[/red]")
+        for failure in failures:
+            err_console.print(f"  - {failure}")
+        raise click.ClickException("Full setup verification failed")
+
+    console.print(
+        "[green]Full setup verified[/green] all registered artifacts and optional setup dependencies are present."
+    )
 
 
 def _build_preflight_summary(target: str | None = None) -> dict[str, object]:
@@ -882,6 +934,7 @@ def preflight(target: str | None, json_output: bool) -> None:
 
 
 @main.command()
+@click.argument("profile", required=False, type=click.Choice(["full"], case_sensitive=False))
 @click.option("--yes", "-y", is_flag=True, help="Accept default setup choices without prompting.")
 @click.option("--small", is_flag=True, help="Download the small MiniLM ONNX model artifact.")
 @click.option("--small-torch", is_flag=True, help="Download the small MiniLM PyTorch checkpoint artifact.")
@@ -890,17 +943,29 @@ def preflight(target: str | None, json_output: bool) -> None:
 @click.option("--no-large", is_flag=True, help="Skip optional large models.")
 @click.option(
     "--fast-cpu",
-    "--onnx-runtime",
-    "install_onnx_runtime",
-    is_flag=True,
+    "onnx_runtime_opt_in",
+    flag_value="--fast-cpu",
+    default=None,
     help="Install ONNX Runtime CPU dependencies for the small ONNX model.",
 )
 @click.option(
+    "--onnx-runtime",
+    "onnx_runtime_opt_in",
+    flag_value="--onnx-runtime",
+    hidden=True,
+)
+@click.option(
     "--no-fast-cpu",
-    "--no-onnx-runtime",
-    "no_onnx_runtime",
-    is_flag=True,
+    "onnx_runtime_opt_out",
+    flag_value="--no-fast-cpu",
+    default=None,
     help="Skip ONNX Runtime CPU dependencies.",
+)
+@click.option(
+    "--no-onnx-runtime",
+    "onnx_runtime_opt_out",
+    flag_value="--no-onnx-runtime",
+    hidden=True,
 )
 @click.option(
     "--torch-cpu", "install_torch_cpu", is_flag=True, help="Install PyTorch CPU dependencies for checkpoint models."
@@ -911,14 +976,15 @@ def preflight(target: str | None, json_output: bool) -> None:
 @click.option("--target-dir", default=None, type=click.Path(), help="Local artifact directory or cache root.")
 @click.option("--force", is_flag=True, help="Force re-download when using huggingface_hub.")
 def setup(
+    profile: str | None,
     yes: bool,
     small: bool,
     small_torch: bool,
     large: bool,
     all_models: bool,
     no_large: bool,
-    install_onnx_runtime: bool,
-    no_onnx_runtime: bool,
+    onnx_runtime_opt_in: str | None,
+    onnx_runtime_opt_out: str | None,
     install_torch_cpu: bool,
     no_torch_cpu: bool,
     install_proving_ground: bool,
@@ -926,11 +992,41 @@ def setup(
     target_dir: str | None,
     force: bool,
 ) -> None:
-    """Run first-use setup for optional models and research harness extras."""
+    """Run first-use setup for optional models and research harness extras.
+
+    Pass full to install every setup dependency group, download every
+    registered model artifact, and verify readiness after installation.
+    """
+    install_onnx_runtime = onnx_runtime_opt_in is not None
+    no_onnx_runtime = onnx_runtime_opt_out is not None
+    used_onnx_runtime_opt_in = onnx_runtime_opt_in or "--fast-cpu"
+    used_onnx_runtime_opt_out = onnx_runtime_opt_out or "--no-fast-cpu"
+    setup_profile = profile.lower() if profile else None
+    if setup_profile == "full":
+        full_conflicts = []
+        if no_large:
+            full_conflicts.append("--no-large")
+        if no_onnx_runtime:
+            full_conflicts.append(used_onnx_runtime_opt_out)
+        if no_torch_cpu:
+            full_conflicts.append("--no-torch-cpu")
+        if no_proving_ground:
+            full_conflicts.append("--no-proving-ground")
+        if full_conflicts:
+            joined = ", ".join(full_conflicts)
+            raise click.ClickException(f"`katana setup full` cannot be combined with {joined}")
+        yes = True
+        all_models = True
+        install_onnx_runtime = True
+        install_torch_cpu = True
+        install_proving_ground = True
+
     if install_proving_ground and no_proving_ground:
         raise click.ClickException("--proving-ground and --no-proving-ground cannot be used together")
     if install_onnx_runtime and no_onnx_runtime:
-        raise click.ClickException("--onnx-runtime and --no-onnx-runtime cannot be used together")
+        raise click.ClickException(
+            f"{used_onnx_runtime_opt_in} and {used_onnx_runtime_opt_out} cannot be used together"
+        )
     if install_torch_cpu and no_torch_cpu:
         raise click.ClickException("--torch-cpu and --no-torch-cpu cannot be used together")
     explicit_artifact_choice = yes or small or small_torch or large or all_models
@@ -974,6 +1070,8 @@ def setup(
     )
     if install_pg:
         _install_proving_ground_extra()
+    if setup_profile == "full":
+        _verify_full_setup(target_dir=target_dir)
 
 
 # ---------------------------------------------------------------------------

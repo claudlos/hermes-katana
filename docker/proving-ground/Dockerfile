@@ -21,6 +21,7 @@ RUN apt-get update && \
 WORKDIR /app
 COPY pyproject.toml README.md /app/
 COPY src /app/src
+COPY policies /app/policies
 RUN pip install -e ".[proving-ground,hf]"
 
 RUN mkdir -p "$HERMES_HOME" "$PROVING_GROUND" && chmod 700 "$HERMES_HOME"

@@ -26,6 +26,9 @@ and records decisions in a tamper-evident audit trail.
 
 The user manual and command map are published at
 [claudlos.github.io/hermes-katana](https://claudlos.github.io/hermes-katana/).
+The checked-in manual source lives at [`docs/index.html`](docs/index.html), and
+release-thread captions for the twelve infographic cards are in
+[`docs/v3_release_thread.md`](docs/v3_release_thread.md).
 
 Feature highlights:
 

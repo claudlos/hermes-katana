@@ -39,6 +39,40 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_PROXY_ENV_EXACT = {
+    "ALL_PROXY",
+    "CURL_CA_BUNDLE",
+    "HOME",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "LANG",
+    "NO_PROXY",
+    "PATH",
+    "PYTHONHOME",
+    "PYTHONIOENCODING",
+    "PYTHONPATH",
+    "PYTHONUTF8",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "SYSTEMROOT",
+    "TERM",
+    "TMP",
+    "TMPDIR",
+    "TEMP",
+    "TZ",
+    "VIRTUAL_ENV",
+    "WINDIR",
+}
+_PROXY_ENV_PREFIXES = (
+    "CONDA_",
+    "KATANA_",
+    "HERMES_KATANA_",
+    "LC_",
+    "LD_LIBRARY_PATH",
+    "DYLD_LIBRARY_PATH",
+)
+
 
 # ---------------------------------------------------------------------------
 # PID file management
@@ -222,6 +256,30 @@ def _invoke_kill_process(kill_process: Any, pid: int, info: Optional[_PidInfo]) 
         kill_process(pid)
 
 
+def _build_proxy_env(
+    *,
+    config_json: str,
+    inject_credentials_enabled: bool,
+    vault_path: Optional[Path],
+    audit_path: Optional[Path],
+) -> dict[str, str]:
+    """Build a minimally-scoped child environment for the proxy process."""
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key in _PROXY_ENV_EXACT or key.startswith(_PROXY_ENV_PREFIXES)
+    }
+    env.pop("HERMES_KATANA_VAULT_KEY", None)
+    env["KATANA_PROXY_CONFIG_JSON"] = config_json
+    env["KATANA_PROXY_ENABLE_VAULT"] = "1" if inject_credentials_enabled else "0"
+    env["KATANA_PROXY_ENABLE_AUDIT"] = "1"
+    if vault_path is not None:
+        env["KATANA_PROXY_VAULT_PATH"] = str(vault_path)
+    if audit_path is not None:
+        env["KATANA_PROXY_AUDIT_PATH"] = str(audit_path)
+    return env
+
+
 # ---------------------------------------------------------------------------
 # Health check server
 # ---------------------------------------------------------------------------
@@ -361,6 +419,9 @@ class KatanaProxy:
         """Internal: start the mitmproxy process."""
         addon_script = Path(__file__).with_name("addon_script.py")
 
+        if self.config.inject_credentials and not self.config.tls_verify:
+            raise RuntimeError("Proxy refuses to start with credential injection enabled while tls_verify is false.")
+
         # Build the mitmdump command
         cmd = [
             sys.executable,
@@ -390,19 +451,14 @@ class KatanaProxy:
             self.config.port,
         )
 
-        env = os.environ.copy()
-        env.pop("HERMES_KATANA_VAULT_KEY", None)
-        env["KATANA_PROXY_CONFIG_JSON"] = self.config.model_dump_json()
-        env["KATANA_PROXY_ENABLE_VAULT"] = "1" if self.config.inject_credentials else "0"
-        env["KATANA_PROXY_ENABLE_AUDIT"] = "1"
-
         vault_path = getattr(self.vault, "path", None)
-        if vault_path:
-            env["KATANA_PROXY_VAULT_PATH"] = str(vault_path)
-
         audit_path = getattr(self.audit, "path", None)
-        if audit_path:
-            env["KATANA_PROXY_AUDIT_PATH"] = str(audit_path)
+        env = _build_proxy_env(
+            config_json=self.config.model_dump_json(),
+            inject_credentials_enabled=self.config.inject_credentials,
+            vault_path=vault_path,
+            audit_path=audit_path,
+        )
 
         try:
             self._process = subprocess.Popen(

@@ -143,7 +143,7 @@ class TestAddonScriptModule:
             from hermes_katana.proxy.addon_script import _load_config
 
             cfg = _load_config()
-            assert "openai.com" in cfg.allowed_domains
+            assert cfg.allowed_domains == ["openai.com", "anthropic.com"]
 
     def test_config_with_ignore_hosts(self):
         payload = json.dumps({"ignore_hosts": ["localhost"]})
