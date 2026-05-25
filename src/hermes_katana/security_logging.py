@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Mapping
 
 SENSITIVE_KEY_MARKERS = (
@@ -19,6 +20,15 @@ SENSITIVE_KEY_MARKERS = (
 MAX_STRING_LEN = 120
 MAX_COLLECTION_ITEMS = 20
 REDACTED = "<redacted>"
+MIN_EXACT_SECRET_LEN = 4
+
+CREDENTIAL_TEXT_PATTERNS = (
+    re.compile(r"(?i)\b(authorization\s*:\s*bearer\s+)[^\s,;]+"),
+    re.compile(r"(?i)\b((?:api[_-]?key|token|password|secret|credential)\s*[=:]\s*)['\"]?[^'\"\s,;]+"),
+    re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9_]{20,})\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+)
 
 
 def _looks_sensitive_key(key: str) -> bool:
@@ -30,7 +40,31 @@ def _looks_sensitive_key(key: str) -> bool:
     return any(marker in lowered for marker in SENSITIVE_KEY_MARKERS)
 
 
+def redact_text_for_log(value: str, *, extra_values: Any = ()) -> str:
+    """Redact credential-like strings and caller-supplied secret values."""
+    redacted = value
+    if isinstance(extra_values, str):
+        candidates = [extra_values]
+    else:
+        try:
+            candidates = [str(item) for item in extra_values if item]
+        except TypeError:
+            candidates = []
+
+    for secret in sorted(set(candidates), key=len, reverse=True):
+        if len(secret) >= MIN_EXACT_SECRET_LEN:
+            redacted = redacted.replace(secret, REDACTED)
+
+    for pattern in CREDENTIAL_TEXT_PATTERNS:
+        if pattern.groups:
+            redacted = pattern.sub(lambda match: match.group(1) + REDACTED, redacted)
+        else:
+            redacted = pattern.sub(REDACTED, redacted)
+    return redacted
+
+
 def _sanitize_string(value: str) -> str:
+    value = redact_text_for_log(value)
     compact = " ".join(value.split())
     if len(compact) <= MAX_STRING_LEN:
         return compact

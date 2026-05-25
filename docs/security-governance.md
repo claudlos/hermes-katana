@@ -2,6 +2,12 @@
 
 This repository treats GitHub repository settings, workflow permissions, release artifacts, and scanner outputs as part of the security boundary.
 
+Runtime assurance references:
+
+- Proxy and vault trust boundaries: `docs/proxy-vault-threat-model.md`.
+- Alert triage and SLAs: `docs/security-alert-runbook.md`.
+- Release dry-run and publishing checklist: `docs/release-checklist.md`.
+
 ## Branch protection
 
 The expected `master` branch protection payload is tracked in `.github/branch-protection-master.json`.
@@ -57,6 +63,10 @@ Publish artifact-only reports for posture and deep scheduled context:
 ## Release artifacts
 
 The release gate builds the wheel and source distribution, generates a CycloneDX SBOM, uploads all release artifacts, and creates GitHub artifact attestations on non-PR events. Pull requests generate the SBOM and upload artifacts, but attestation is skipped because fork and PR token permissions should stay constrained.
+
+Artifact attestation runs in a separate non-PR job with `attestations: write` and `id-token: write`. The build/test/package job keeps only `contents: read`, so ordinary pull requests do not receive release signing scopes.
+
+Package publishing should use PyPI trusted publishing through GitHub Actions OIDC. Long-lived PyPI API tokens are not part of the intended release path.
 
 ## Dependabot policy
 
