@@ -1,0 +1,34 @@
+{
+  "all_gold_stress": {
+    "attack_labels": {
+      "behavioral_control": 55,
+      "cognitive_state_attack": 44,
+      "content_injection": 94,
+      "encoding_evasion": 56,
+      "exfiltration_attempt": 38,
+      "jailbreak": 49,
+      "persona_jailbreak": 56,
+      "semantic_manipulation": 46
+    },
+    "clean": 207,
+    "gold_attacks": 438,
+    "rows": 645
+  },
+  "generated_at": "2026-05-25T01:08:07Z",
+  "strict": {
+    "attack_labels": {
+      "behavioral_control": 48,
+      "cognitive_state_attack": 71,
+      "content_injection": 68,
+      "encoding_evasion": 35,
+      "exfiltration_attempt": 58,
+      "jailbreak": 62,
+      "persona_jailbreak": 17,
+      "semantic_manipulation": 63
+    },
+    "clean": 207,
+    "confirmed_trainable_test_attacks": 392,
+    "rows": 629,
+    "test_family_gold_attacks": 30
+  }
+}
