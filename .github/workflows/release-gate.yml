@@ -34,9 +34,9 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install build twine
-          python -m pip install -e ".[dev,security,fast-cpu,proving-ground]"
+          python -m pip install --no-cache-dir --upgrade pip==26.1.1
+          python -m pip install --no-cache-dir build==1.5.0 twine==6.2.0
+          python -m pip install --no-cache-dir -e ".[dev,security,fast-cpu,proving-ground]"
       - name: Ruff lint
         run: python -m ruff check src/ tests/
       - name: Ruff format check
@@ -71,7 +71,7 @@ jobs:
               raise SystemExit(f"wheel missing policy YAMLs: {missing}")
           PY
           python -m venv /tmp/katana-wheel-smoke
-          /tmp/katana-wheel-smoke/bin/python -m pip install --upgrade pip
+          /tmp/katana-wheel-smoke/bin/python -m pip install --no-cache-dir --upgrade pip==26.1.1
           /tmp/katana-wheel-smoke/bin/python -m pip install dist/*.whl
           HOME="$(mktemp -d)" PYTHONPATH= /tmp/katana-wheel-smoke/bin/python - <<'PY'
           from hermes_katana.policy.defaults import builtin_policy_path, load_builtin_policy_set

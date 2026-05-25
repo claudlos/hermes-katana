@@ -75,7 +75,7 @@ JSON only, no prose.
 
 def _node_id_for(parent_id: str | None, title: str) -> str:
     s = f"{parent_id or ''}/{title}"
-    return hashlib.sha1(s.encode("utf-8")).hexdigest()[:12]
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()[:12]
 
 
 def _propose_children(

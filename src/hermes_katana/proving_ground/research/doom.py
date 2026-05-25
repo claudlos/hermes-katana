@@ -29,7 +29,7 @@ def _fingerprint(tool: str, args: dict, salient_keys: tuple[str, ...] = ()) -> s
     """Canonical hash of a tool call."""
     salient = {k: args.get(k) for k in salient_keys} if salient_keys else args
     payload = f"{tool}::{sorted(salient.items())}" if isinstance(salient, dict) else f"{tool}::{salient}"
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
 @dataclass
