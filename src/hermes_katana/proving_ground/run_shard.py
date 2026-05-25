@@ -70,6 +70,23 @@ def _safe_slug(s: str) -> str:
     return s.replace("/", "_").replace(":", "_").replace(" ", "_").replace(".", "-")
 
 
+def _public_api_model_name(model_id: str) -> str:
+    """Return the non-secret provider model name used for result metadata."""
+    m = local_models.MODELS.get(model_id)
+    if not m:
+        return model_id
+    backend = m.get("backend", "llama_cpp")
+    if backend == "openrouter":
+        return str(m.get("openrouter_slug") or model_id)
+    if backend == "minimax":
+        return str(m.get("minimax_slug") or model_id)
+    if backend == "remote_api":
+        return str(m.get("api_model_slug") or model_id)
+    if backend == "ollama":
+        return str(m.get("ollama_tag") or model_id)
+    return model_id
+
+
 def resolve_endpoint(
     model_id: str,
     port: int = 8080,
@@ -295,6 +312,7 @@ async def run(
     if swept.deleted_empty + swept.deleted_stale > 0:
         print(f"    [sweep] {swept.summary()}")
 
+    public_api_model = _public_api_model_name(model_id)
     endpoint = resolve_endpoint(model_id, startup_timeout=startup_timeout, ngl_override=ngl_override)
     if endpoint is None:
         return 1
@@ -390,7 +408,7 @@ async def run(
                     "session_id": result.session_id,
                     "shard": shard_id,
                     "model_id": model_id,
-                    "api_model": api_model,
+                    "api_model": public_api_model,
                     "attack_id": attack.id,
                     "attack_label": attack.label,
                     "task": task_name,
