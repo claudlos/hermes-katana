@@ -37,18 +37,8 @@ jobs:
         run: ruff format --check src/ tests/
       - name: Generated policy assets check
         run: python scripts/generate_policy_assets.py --check
-      - name: Mypy security/core smoke
-        run: >
-          mypy
-          src/hermes_katana/_version.py
-          src/hermes_katana/artifacts.py
-          src/hermes_katana/ml_artifacts.py
-          src/hermes_katana/runtime_artifacts.py
-          src/hermes_katana/policy/defaults.py
-          src/hermes_katana/policy/yaml_loader.py
-          src/hermes_katana/taint/codecs.py
-          --ignore-missing-imports
-          --no-error-summary
+      - name: Mypy smoke
+        run: scripts/mypy_smoke.sh
 
   test:
     name: Test (${{ matrix.os }} / Python ${{ matrix.python-version }})

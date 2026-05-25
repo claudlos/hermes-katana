@@ -18,11 +18,16 @@ __all__ = [
 ]
 
 import hashlib
+import gzip
 import logging
 import threading
 import time
+import zlib
+from collections.abc import Iterable
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from email import policy
+from email.parser import BytesParser
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
@@ -30,7 +35,7 @@ if TYPE_CHECKING:
     from hermes_katana.vault.store import Vault
 
 from hermes_katana.proxy.config import ProxyConfig
-from hermes_katana.proxy.injector import inject_credentials
+from hermes_katana.proxy.injector import inject_credentials_with_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -153,24 +158,9 @@ class KatanaAddon:
             max_requests=config.rate_limit_requests,
             window_seconds=config.rate_limit_window,
         )
-        self._vault_values: Optional[set[str]] = None
-        self._vault_values_lock = threading.Lock()
+        self._vault_lock = threading.Lock()
         self._stats_lock = threading.Lock()
         self._stats: dict[str, int] = defaultdict(int)
-
-        # Pre-cache vault values for secret scanning
-        self._refresh_vault_values()
-
-    def _refresh_vault_values(self) -> None:
-        """Refresh the cached set of vault values for secret scanning."""
-        if self.vault is None:
-            return
-        try:
-            with self._vault_values_lock:
-                all_vals = self.vault._get_all_values()
-                self._vault_values = set(all_vals.values()) if all_vals else None
-        except Exception:
-            logger.debug("Could not refresh vault values for scanning")
 
     def _increment_stat(self, key: str) -> None:
         """Thread-safe stat increment."""
@@ -231,10 +221,130 @@ class KatanaAddon:
             return True
         return False
 
+    @staticmethod
+    def _decode_content_encoding(data: bytes, content_encoding: str) -> bytes:
+        """Decode supported HTTP content encodings before scanning."""
+        decoded = data
+        encodings = [entry.strip().lower() for entry in content_encoding.split(",") if entry.strip()]
+        for encoding in reversed(encodings):
+            if encoding == "identity":
+                continue
+            if encoding == "gzip":
+                decoded = gzip.decompress(decoded)
+                continue
+            if encoding == "deflate":
+                try:
+                    decoded = zlib.decompress(decoded)
+                except zlib.error:
+                    decoded = zlib.decompress(decoded, -zlib.MAX_WBITS)
+                continue
+            raise ValueError(f"Unsupported content encoding: {encoding}")
+        return decoded
+
+    def _collect_scan_vault_values(self, *, extra_values: Iterable[str] = ()) -> Optional[set[str]]:
+        """Collect vault secrets for the current scan without keeping a long-lived plaintext cache."""
+        values = {value for value in extra_values if value}
+        if self.vault is None:
+            return values or None
+        try:
+            with self._vault_lock:
+                all_vals = self.vault._get_all_values()
+        except Exception:
+            logger.debug("Could not collect vault values for scanning")
+            return values or None
+        if all_vals:
+            values.update(value for value in all_vals.values() if value)
+        return values or None
+
+    def _decode_body_for_scan(self, body: bytes, headers: Any) -> tuple[bytes, str, bool]:
+        """Decode supported encodings and apply the scan-size cap to the decoded payload."""
+        try:
+            content_type = str(headers.get("content-type", ""))
+            content_encoding = str(headers.get("content-encoding", ""))
+        except AttributeError:
+            content_type = ""
+            content_encoding = ""
+
+        decoded_body = self._decode_content_encoding(body, content_encoding)
+        decoded_oversized = False
+        if self.config.max_body_scan_size and len(decoded_body) > self.config.max_body_scan_size:
+            decoded_body = decoded_body[: self.config.max_body_scan_size]
+            decoded_oversized = True
+        return decoded_body, content_type, decoded_oversized
+
+    def _scan_multipart_body(
+        self,
+        body: bytes,
+        *,
+        content_type: str,
+        direction: str,
+        vault_values: Optional[set[str]] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Scan each non-container part of a multipart payload."""
+        if "multipart/" not in content_type.lower():
+            return None
+
+        parser_input = b"MIME-Version: 1.0\nContent-Type: " + content_type.encode("utf-8") + b"\n\n" + body
+        message = BytesParser(policy=policy.default).parsebytes(parser_input)
+        part_summaries: list[str] = []
+        total_findings = 0
+        max_risk_score = 0.0
+        saw_part = False
+
+        for part in message.walk():
+            if part.is_multipart():
+                continue
+
+            raw_payload = part.get_payload(decode=True)
+            if isinstance(raw_payload, bytearray):
+                payload = bytes(raw_payload)
+            elif isinstance(raw_payload, bytes):
+                payload = raw_payload
+            elif raw_payload is None:
+                payload = b""
+            else:
+                payload = str(raw_payload).encode("utf-8", errors="replace")
+
+            if not payload:
+                continue
+            saw_part = True
+            part_content_type = part.get_content_type() or "application/octet-stream"
+            if self._needs_binary_scan(payload, part_content_type):
+                part_result = self._scan_bytes(
+                    payload,
+                    direction=direction,
+                    content_type=part_content_type,
+                    vault_values=vault_values,
+                )
+            else:
+                part_text = payload.decode("utf-8", errors="replace")
+                part_result = self._scan_text(part_text, direction=direction, vault_values=vault_values)
+
+            max_risk_score = max(max_risk_score, float(part_result["risk_score"]))
+            total_findings += int(part_result["finding_count"])
+            if part_result["summary"]:
+                part_summaries.append(str(part_result["summary"]))
+            if part_result["is_blocked"]:
+                return part_result
+
+        if not saw_part:
+            return None
+
+        summary = "; ".join(part_summaries[:3])
+        return {
+            "verdict": "warn" if total_findings > 0 else "pass",
+            "risk_score": max_risk_score,
+            "is_blocked": False,
+            "finding_count": total_findings,
+            "summary": summary,
+        }
+
     def _scan_text(
         self,
         text: str,
         direction: str = "request",
+        *,
+        vault_values: Optional[set[str]] = None,
     ) -> dict[str, Any]:
         """Run the scanner on text content.
 
@@ -249,14 +359,11 @@ class KatanaAddon:
         from hermes_katana.scanner import scan_input, scan_output
 
         modes = self.config.scan_modes
-        vault_vals = None
-        with self._vault_values_lock:
-            vault_vals = self._vault_values
 
         if direction == "request":
             result = scan_input(
                 text,
-                vault_values=vault_vals,
+                vault_values=vault_values,
                 check_injection=modes.injection,
                 check_secrets=modes.secrets,
                 check_unicode=modes.unicode,
@@ -267,7 +374,7 @@ class KatanaAddon:
             # Response scanning includes indirect injection detection
             result = scan_output(
                 text,
-                vault_values=vault_vals,
+                vault_values=vault_values,
                 check_content=modes.content,
                 check_secrets=modes.secrets,
                 check_unicode=modes.unicode,
@@ -287,19 +394,19 @@ class KatanaAddon:
         data: bytes,
         direction: str = "request",
         content_type: str = "",
+        *,
+        vault_values: Optional[set[str]] = None,
     ) -> dict[str, Any]:
         """Run the scanner on raw request/response body bytes."""
         from hermes_katana.scanner import scan_bytes
 
         modes = self.config.scan_modes
-        with self._vault_values_lock:
-            vault_vals = self._vault_values
 
         result = scan_bytes(
             data,
             content_type=content_type,
             direction="output" if direction == "response" else "input",
-            vault_values=vault_vals,
+            vault_values=vault_values,
             check_injection=modes.injection,
             check_secrets=modes.secrets,
             check_unicode=modes.unicode,
@@ -472,11 +579,27 @@ class KatanaAddon:
 
         # Credential injection
         pre_injection_headers = _normalise_header_values(flow.request.headers)
+        injected_secret_values: set[str] = set()
         if self.config.inject_credentials and self.vault is not None:
-            provider_name = inject_credentials(flow, self.vault)
-            if provider_name:
+            if not self.config.tls_verify:
+                self._increment_stat("requests_blocked_insecure_tls")
+                flow.response = _make_block_response(
+                    502,
+                    "Proxy credential injection requires tls_verify=true.",
+                )
+                self._log_audit(
+                    "SCAN_RESULT",
+                    f"request_tls:{host}",
+                    "deny",
+                    "Credential injection refused because tls_verify is disabled",
+                )
+                return
+            with self._vault_lock:
+                injection = inject_credentials_with_metadata(flow, self.vault)
+            if injection:
                 self._increment_stat("credentials_injected")
-                logger.debug("Injected credentials for %s", provider_name)
+                injected_secret_values.add(injection.secret_value)
+                logger.debug("Injected credentials for %s", injection.provider_name)
 
         # --- Scan request URL, headers, query params, cookies (GAP 3.1) ---
         # Collect only headers actually added/changed by the injector so
@@ -491,12 +614,14 @@ class KatanaAddon:
                 if name in post_injection_headers
                 and post_injection_headers.get(name) != pre_injection_headers.get(name)
             }
+        self._last_injected_headers = set(_injected_headers)
+        scan_vault_values = self._collect_scan_vault_values(extra_values=injected_secret_values)
 
         # Scan URL path segments
         try:
             url_text = flow.request.url
             if url_text:
-                url_result = self._scan_text(url_text, direction="request")
+                url_result = self._scan_text(url_text, direction="request", vault_values=scan_vault_values)
                 if url_result["is_blocked"]:
                     self._increment_stat("requests_blocked_scan")
                     flow.response = _make_block_response(400, f"URL blocked: {url_result['summary']}")
@@ -511,7 +636,7 @@ class KatanaAddon:
             for hdr_name, hdr_value in flow.request.headers.items():
                 if hdr_name.lower() in _injected_headers:
                     continue
-                hdr_result = self._scan_text(hdr_value, direction="request")
+                hdr_result = self._scan_text(hdr_value, direction="request", vault_values=scan_vault_values)
                 if hdr_result["is_blocked"]:
                     self._increment_stat("requests_blocked_scan")
                     flow.response = _make_block_response(400, f"Header blocked: {hdr_result['summary']}")
@@ -525,7 +650,7 @@ class KatanaAddon:
         try:
             if hasattr(flow.request, "query") and flow.request.query:
                 for qname, qvalue in flow.request.query.items():
-                    q_result = self._scan_text(qvalue, direction="request")
+                    q_result = self._scan_text(qvalue, direction="request", vault_values=scan_vault_values)
                     if q_result["is_blocked"]:
                         self._increment_stat("requests_blocked_scan")
                         flow.response = _make_block_response(400, f"Query param blocked: {q_result['summary']}")
@@ -542,7 +667,7 @@ class KatanaAddon:
                 for part in cookie_header.split(";"):
                     if "=" in part:
                         _, cval = part.split("=", 1)
-                        c_result = self._scan_text(cval.strip(), direction="request")
+                        c_result = self._scan_text(cval.strip(), direction="request", vault_values=scan_vault_values)
                         if c_result["is_blocked"]:
                             self._increment_stat("requests_blocked_scan")
                             flow.response = _make_block_response(400, f"Cookie blocked: {c_result['summary']}")
@@ -574,11 +699,31 @@ class KatanaAddon:
                 self._increment_stat("requests_oversized")
             try:
                 content_type = flow.request.headers.get("content-type", "")
-                if self._needs_binary_scan(scan_body, content_type):
-                    scan_result = self._scan_bytes(scan_body, direction="request", content_type=content_type)
+                if not oversized:
+                    scan_body, content_type, decoded_oversized = self._decode_body_for_scan(
+                        scan_body, flow.request.headers
+                    )
+                    if decoded_oversized:
+                        oversized = True
+                        self._increment_stat("requests_oversized")
+                multipart_result = self._scan_multipart_body(
+                    scan_body,
+                    content_type=content_type,
+                    direction="request",
+                    vault_values=scan_vault_values,
+                )
+                if multipart_result is not None:
+                    scan_result = multipart_result
+                elif self._needs_binary_scan(scan_body, content_type):
+                    scan_result = self._scan_bytes(
+                        scan_body,
+                        direction="request",
+                        content_type=content_type,
+                        vault_values=scan_vault_values,
+                    )
                 else:
                     text = scan_body.decode("utf-8", errors="replace")
-                    scan_result = self._scan_text(text, direction="request")
+                    scan_result = self._scan_text(text, direction="request", vault_values=scan_vault_values)
 
                 if scan_result["is_blocked"]:
                     self._increment_stat("requests_blocked_scan")
@@ -654,6 +799,8 @@ class KatanaAddon:
         if self._is_ignored_host(host):
             return
 
+        scan_vault_values = self._collect_scan_vault_values()
+
         # Scan response body
         scanned = False
         oversized_response = False  # tracked for Codex audit #2: differentiate
@@ -666,7 +813,7 @@ class KatanaAddon:
         # Scan response headers (GAP 3.2)
         try:
             for hdr_name, hdr_value in flow.response.headers.items():
-                rh_result = self._scan_text(hdr_value, direction="response")
+                rh_result = self._scan_text(hdr_value, direction="response", vault_values=scan_vault_values)
                 if rh_result["is_blocked"]:
                     self._increment_stat("responses_blocked_scan")
                     logger.warning("Response header blocked: %s -> %s", hdr_name, rh_result["summary"])
@@ -702,11 +849,32 @@ class KatanaAddon:
                 self._increment_stat("responses_oversized")
             try:
                 content_type = flow.response.headers.get("content-type", "")
-                if self._needs_binary_scan(scan_body, content_type):
-                    scan_result = self._scan_bytes(scan_body, direction="response", content_type=content_type)
+                if not oversized:
+                    scan_body, content_type, decoded_oversized = self._decode_body_for_scan(
+                        scan_body, flow.response.headers
+                    )
+                    if decoded_oversized:
+                        oversized = True
+                        oversized_response = True
+                        self._increment_stat("responses_oversized")
+                multipart_result = self._scan_multipart_body(
+                    scan_body,
+                    content_type=content_type,
+                    direction="response",
+                    vault_values=scan_vault_values,
+                )
+                if multipart_result is not None:
+                    scan_result = multipart_result
+                elif self._needs_binary_scan(scan_body, content_type):
+                    scan_result = self._scan_bytes(
+                        scan_body,
+                        direction="response",
+                        content_type=content_type,
+                        vault_values=scan_vault_values,
+                    )
                 else:
                     text = scan_body.decode("utf-8", errors="replace")
-                    scan_result = self._scan_text(text, direction="response")
+                    scan_result = self._scan_text(text, direction="response", vault_values=scan_vault_values)
                 scanned = True
 
                 if scan_result["is_blocked"]:
@@ -904,6 +1072,7 @@ class KatanaAddon:
             return
 
         self._increment_stat("ws_messages_total")
+        scan_vault_values = self._collect_scan_vault_values()
 
         # Codex #7: pre-decode size gate.
         cap = getattr(self.config, "max_body_scan_size", 0) or 0
@@ -930,12 +1099,12 @@ class KatanaAddon:
             direction = "request" if getattr(msg, "from_client", True) else "response"
             if isinstance(content, bytes):
                 if self._needs_binary_scan(content):
-                    scan_result = self._scan_bytes(content, direction=direction)
+                    scan_result = self._scan_bytes(content, direction=direction, vault_values=scan_vault_values)
                 else:
                     text = content.decode("utf-8", errors="replace")
-                    scan_result = self._scan_text(text, direction=direction)
+                    scan_result = self._scan_text(text, direction=direction, vault_values=scan_vault_values)
             else:
-                scan_result = self._scan_text(str(content), direction=direction)
+                scan_result = self._scan_text(str(content), direction=direction, vault_values=scan_vault_values)
 
             if scan_result["is_blocked"]:
                 self._increment_stat("ws_messages_blocked")
