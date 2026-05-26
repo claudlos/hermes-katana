@@ -22,7 +22,9 @@ def runtime_artifact_manifest_path() -> Path:
 
 
 def _safe_manifest_path(rel_path: str) -> bool:
-    if not rel_path or rel_path.startswith("/") or "\\" in rel_path:
+    if not rel_path or rel_path.startswith("/") or "\\" in rel_path or "\x00" in rel_path:
+        return False
+    if len(rel_path) >= 2 and rel_path[1] == ":":
         return False
     return ".." not in PurePosixPath(rel_path).parts
 
@@ -30,10 +32,10 @@ def _safe_manifest_path(rel_path: str) -> bool:
 def _resolve_manifest_artifact_path(repo_root: Path, rel_path: str) -> Path | None:
     if not _safe_manifest_path(rel_path):
         return None
-    target = (repo_root / rel_path).resolve()
     try:
+        target = (repo_root / rel_path).resolve()
         target.relative_to(repo_root)
-    except ValueError:
+    except (OSError, RuntimeError, ValueError):
         return None
     return target
 
