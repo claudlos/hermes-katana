@@ -223,19 +223,37 @@ class KatanaAddon:
 
     @staticmethod
     def _decompress_with_limit(data: bytes, wbits: int, max_output_size: int) -> tuple[bytes, bool]:
-        """Decompress one stream without producing more than max_output_size bytes."""
-        decompressor = zlib.decompressobj(wbits)
-        if max_output_size <= 0:
-            return decompressor.decompress(data) + decompressor.flush(), False
+        """Decompress concatenated streams without producing more than max_output_size bytes."""
+        decoded = bytearray()
+        remaining_input = data
 
-        decoded = decompressor.decompress(data, max_output_size + 1)
-        oversized = len(decoded) > max_output_size or bool(decompressor.unconsumed_tail)
-        if len(decoded) <= max_output_size:
-            remaining = max_output_size + 1 - len(decoded)
-            tail = decompressor.flush(remaining)
-            decoded += tail
-            oversized = oversized or len(decoded) > max_output_size
-        return decoded[:max_output_size], oversized
+        while remaining_input:
+            decompressor = zlib.decompressobj(wbits)
+            if max_output_size <= 0:
+                decoded.extend(decompressor.decompress(remaining_input))
+                decoded.extend(decompressor.flush())
+            else:
+                allowance = max_output_size + 1 - len(decoded)
+                if allowance <= 0:
+                    return bytes(decoded[:max_output_size]), True
+                decoded.extend(decompressor.decompress(remaining_input, allowance))
+                if decompressor.unconsumed_tail:
+                    return bytes(decoded[:max_output_size]), True
+                allowance = max_output_size + 1 - len(decoded)
+                if allowance > 0:
+                    decoded.extend(decompressor.flush(allowance))
+                if len(decoded) > max_output_size:
+                    return bytes(decoded[:max_output_size]), True
+
+            if not decompressor.eof:
+                raise zlib.error("incomplete compressed stream")
+            if not decompressor.unused_data:
+                break
+            remaining_input = decompressor.unused_data
+
+        if max_output_size > 0 and len(decoded) > max_output_size:
+            return bytes(decoded[:max_output_size]), True
+        return bytes(decoded), False
 
     @classmethod
     def _decode_content_encoding(
