@@ -242,6 +242,41 @@ def test_workspace_run_command_blocks_absolute_redirection_escape(tmp_path):
     assert not target.exists()
 
 
+def test_workspace_command_path_checker_blocks_eval_nested_absolute_path():
+    reason = workspace_module._unsafe_command_path_reason("eval 'printf escaped > /tmp/outside'")
+
+    assert reason is not None
+    assert "outside the workspace" in reason
+
+
+def test_workspace_command_path_checker_blocks_ansi_c_quoted_path():
+    reason = workspace_module._unsafe_command_path_reason(r"printf escaped > $'\057tmp\057outside'")
+
+    assert reason == "dynamic shell expansion is not allowed in workspace commands"
+
+
+def test_workspace_command_path_checker_blocks_windows_absolute_path():
+    reason = workspace_module._unsafe_command_path_reason(r"printf escaped > C:\Users\runner\outside.txt")
+
+    assert reason is not None
+    assert "Windows absolute path" in reason
+
+
+def test_workspace_run_command_returns_structured_error_when_shell_is_missing(tmp_path, monkeypatch):
+    tools = WorkspaceTools(str(tmp_path))
+
+    def missing_shell(*args, **kwargs):
+        raise FileNotFoundError("missing shell")
+
+    monkeypatch.setattr(workspace_module.subprocess, "run", missing_shell)
+
+    output, metadata = tools._tool_run_command({"command": "printf safe", "timeout": 10})
+
+    assert output == ""
+    assert metadata["exit_code"] == 127
+    assert metadata["sandbox_error"] == "missing shell"
+
+
 @pytest.mark.skipif(
     sys.platform != "linux" or not workspace_module._landlock_command_sandbox_available(),
     reason="Linux Landlock is required to verify script-level filesystem containment.",
@@ -261,7 +296,7 @@ def test_workspace_run_command_landlock_blocks_script_escape(tmp_path):
 
     assert metadata.get("landlock") is True
     assert metadata.get("exit_code") != 0
-    assert "Permission denied" in output
+    assert any(phrase in output for phrase in ("Permission denied", "Operation not permitted"))
     assert not target.exists()
 
 
