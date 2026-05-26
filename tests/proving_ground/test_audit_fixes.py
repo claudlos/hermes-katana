@@ -226,6 +226,45 @@ def test_workspace_run_command_blocks_find_delete(tmp_path):
     assert metadata.get("blocked") is True
 
 
+def test_workspace_run_command_blocks_absolute_redirection_escape(tmp_path):
+    """A model-controlled shell redirection must not write outside the workspace."""
+    root = tmp_path / "ws"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    target = outside / "escaped.txt"
+    tools = WorkspaceTools(str(root))
+
+    output, metadata = tools._tool_run_command({"command": f"printf escaped > {target}", "timeout": 10})
+
+    assert metadata.get("blocked") is True
+    assert "workspace escape" in output
+    assert not target.exists()
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or not workspace_module._landlock_command_sandbox_available(),
+    reason="Linux Landlock is required to verify script-level filesystem containment.",
+)
+def test_workspace_run_command_landlock_blocks_script_escape(tmp_path):
+    """A script launched from the workspace must not write to host paths."""
+    root = tmp_path / "ws"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    target = outside / "escaped.txt"
+    script = root / "escape.sh"
+    script.write_text(f"printf escaped > {target}\n", encoding="utf-8")
+
+    tools = WorkspaceTools(str(root))
+    output, metadata = tools._tool_run_command({"command": "sh escape.sh", "timeout": 10})
+
+    assert metadata.get("landlock") is True
+    assert metadata.get("exit_code") != 0
+    assert "Permission denied" in output
+    assert not target.exists()
+
+
 def test_workspace_run_command_uses_noprofile_norc(tmp_path, monkeypatch):
     """bash must launch with --noprofile --norc so /etc/profile.d/* doesn't
     re-export keys we just stripped from the env.
