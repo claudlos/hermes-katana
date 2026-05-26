@@ -363,7 +363,7 @@ def test_env_scrub_drops_database_url_and_aws_profile(monkeypatch):
 
 
 def test_env_scrub_allows_known_prefixes():
-    """HERMES_*/KATANA_*/XDG_* etc. must pass through (allowlist intent)."""
+    """HERMES_*/KATANA_*/XDG_* etc. must pass through for CLI compatibility."""
     for key in (
         "HERMES_TEMPERATURE",
         "KATANA_PROXY_URL",
@@ -373,6 +373,45 @@ def test_env_scrub_allows_known_prefixes():
         "VIRTUAL_ENV",
     ):
         assert _env_key_allowed_for_subprocess(key), f"{key} should pass the allowlist"
+
+
+def test_env_scrub_allows_unknown_non_sensitive_names():
+    """Unknown env names pass unless they are explicitly denied or look sensitive."""
+    for key in ("CI", "TERM_PROGRAM", "CUSTOM_AGENT_FEATURE_FLAG"):
+        assert _env_key_allowed_for_subprocess(key), f"{key} should pass by default"
+
+
+def test_env_scrub_drops_sensitive_names_under_allowed_prefixes(monkeypatch):
+    """Broad config prefixes must not let ambient secret-looking env vars through."""
+    for key in (
+        "KATANA_API_KEY",
+        "HERMES_SECRET",
+        "OPENAI_SESSION_TOKEN",
+        "PYTHON_AUTH_TOKEN",
+        "XDG_CREDENTIAL_FILE",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    ):
+        assert not _env_key_allowed_for_subprocess(key), f"{key} should be dropped"
+        monkeypatch.setenv(key, "do-not-leak")
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.example.test/v1")
+    monkeypatch.setenv("HERMES_TEMPERATURE", "0")
+    monkeypatch.setenv("OPENAI_API_KEY", "provider-key-needed-by-harness")
+
+    env = _build_subprocess_env(AGENT_DRIVERS["hermes_minimax_m2_7"])
+
+    for key in (
+        "KATANA_API_KEY",
+        "HERMES_SECRET",
+        "OPENAI_SESSION_TOKEN",
+        "PYTHON_AUTH_TOKEN",
+        "XDG_CREDENTIAL_FILE",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    ):
+        assert env.get(key) is None, f"{key} leaked into subprocess env"
+    assert env.get("OPENAI_BASE_URL") == "https://api.example.test/v1"
+    assert env.get("HERMES_TEMPERATURE") == "0"
+    assert env.get("OPENAI_API_KEY") == "provider-key-needed-by-harness"
 
 
 def test_env_scrub_drops_aws_secret_and_github_token():
