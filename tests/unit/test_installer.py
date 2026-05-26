@@ -16,7 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from hermes_katana.installer.installer import KATANA_CONFIG_DIR, KATANA_CONFIG_FILE, KatanaInstaller
+from hermes_katana.installer.installer import (
+    KATANA_BACKUP_DIR,
+    KATANA_CONFIG_DIR,
+    KATANA_CONFIG_FILE,
+    KatanaInstaller,
+)
 from hermes_katana.installer.patches import (
     CURRENT_CORE_PATCHES,
     LEGACY_CORE_PATCHES,
@@ -237,6 +242,35 @@ class TestInstallerLifecycle:
             KatanaInstaller().install(checkout)
 
         assert outside_config.read_text(encoding="utf-8") == "outside: true\n"
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows symlink creation requires admin or Developer Mode.",
+    )
+    def test_install_backup_rejects_symlinked_katana_source(self, tmp_dir):
+        checkout = fixture_checkout_direct(HERMES_CURRENT_SNAPSHOT, tmp_dir)
+        outside = tmp_dir / "outside-katana"
+        outside.mkdir()
+        (outside / KATANA_CONFIG_FILE).write_text("outside: true\n", encoding="utf-8")
+        (checkout / KATANA_CONFIG_DIR).symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="Backup source path is a symlink"):
+            KatanaInstaller().install(checkout, backup=True)
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows symlink creation requires admin or Developer Mode.",
+    )
+    def test_install_backup_rejects_symlinked_backup_dir(self, tmp_dir):
+        checkout = fixture_checkout_direct(HERMES_CURRENT_SNAPSHOT, tmp_dir)
+        outside = tmp_dir / "outside-backups"
+        outside.mkdir()
+        (checkout / KATANA_BACKUP_DIR).symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="Backup directory path escapes checkout"):
+            KatanaInstaller().install(checkout, backup=True)
+
+        assert not any(outside.iterdir())
 
     def test_uninstall_backup_survives_removed_checkout_state(self, monkeypatch, tmp_dir):
         checkout = fixture_checkout(HERMES_V010_EXTENDED_SNAPSHOT, tmp_dir)
