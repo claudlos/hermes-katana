@@ -285,18 +285,25 @@ class KatanaInstaller:
 
     def _validate_checkout_local_path(self, target: Path, path: Path, label: str) -> None:
         """Reject symlink/traversal paths before writing checkout-local state."""
-        if path.is_symlink():
+        try:
+            is_symlink = path.is_symlink()
+        except OSError as exc:
+            raise ValueError(f"{label} path could not be validated: {path}") from exc
+        if is_symlink:
             raise ValueError(f"{label} path is a symlink: {path}")
         try:
             path.resolve(strict=False).relative_to(target.resolve())
-        except ValueError:
-            raise ValueError(f"{label} path escapes checkout: {path}")
+        except ValueError as exc:
+            raise ValueError(f"{label} path escapes checkout: {path}") from exc
+        except (OSError, RuntimeError) as exc:
+            raise ValueError(f"{label} path could not be validated: {path}") from exc
 
     def _ensure_checkout_local_dir(self, target: Path, relative: str | Path, label: str) -> Path:
         """Create a checkout-local directory after rejecting symlink escapes."""
         path = target / relative
         self._validate_checkout_local_path(target, path, label)
         path.mkdir(parents=True, exist_ok=True)
+        self._validate_checkout_local_path(target, path, label)
         return path
 
     def detect_hermes(self, path: str | Path) -> bool:
@@ -758,7 +765,11 @@ class KatanaInstaller:
         """Create a file snapshot and manifest for install or uninstall."""
         if backup_dir is None:
             timestamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-            root = target / KATANA_BACKUP_DIR / f"{operation}-{timestamp}"
+            root = self._ensure_checkout_local_dir(
+                target,
+                Path(KATANA_BACKUP_DIR) / f"{operation}-{timestamp}",
+                "Backup directory",
+            )
         else:
             root = Path(backup_dir).expanduser().resolve()
 
@@ -769,11 +780,16 @@ class KatanaInstaller:
         copied: list[str] = []
 
         for source in paths:
+            self._validate_checkout_local_path(target, source, "Backup source")
             relative = source.relative_to(target)
             destination = root / relative
+            if backup_dir is None:
+                self._validate_checkout_local_path(target, destination, "Backup destination")
 
             if source.is_dir():
-                shutil.copytree(source, destination, dirs_exist_ok=True)
+                for nested in source.rglob("*"):
+                    self._validate_checkout_local_path(target, nested, "Backup source")
+                shutil.copytree(source, destination, dirs_exist_ok=True, symlinks=True)
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
@@ -789,6 +805,8 @@ class KatanaInstaller:
             missing_paths=sorted(self._missing_paths_for_backup(target, operation)),
         )
         manifest_path = root / KATANA_BACKUP_MANIFEST
+        if backup_dir is None:
+            self._validate_checkout_local_path(target, manifest_path, "Backup manifest")
         manifest_path.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
         return manifest
 
