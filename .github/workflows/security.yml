@@ -75,7 +75,7 @@ jobs:
           sarif_file: security-reports/bandit.sarif
       - name: Upload Python SAST reports
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-sast-reports
           path: security-reports/
@@ -120,7 +120,7 @@ jobs:
             --output=security-reports/pip-audit.md
       - name: Upload dependency audit reports
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-dependency-audit
           path: security-reports/
@@ -175,7 +175,7 @@ jobs:
           sarif_file: security-reports/zizmor.sarif
       - name: Upload workflow hardening report
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: workflow-hardening-report
           path: security-reports/
@@ -230,7 +230,7 @@ jobs:
           sarif_file: security-reports/trivy-fs.sarif
       - name: Upload Docker hygiene reports
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: docker-hygiene-reports
           path: security-reports/
@@ -275,7 +275,7 @@ jobs:
           sarif_file: security-reports/trivy-image.sarif
       - name: Upload container image report
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: container-image-report
           path: security-reports/
@@ -303,7 +303,7 @@ jobs:
           publish_results: false
       - name: Upload Scorecard report
         if: ${{ always() && hashFiles('scorecard.json') != '' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: openssf-scorecard-report
           path: scorecard.json
@@ -384,7 +384,7 @@ jobs:
           skip-files: .gitleaks.toml
       - name: Upload deep security snapshot
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deep-security-snapshot
           path: security-reports/deep/
