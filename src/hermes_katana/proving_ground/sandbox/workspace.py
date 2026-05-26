@@ -4,13 +4,227 @@ These are the tools the LLM can call. Each tool executes inside the Docker
 sandbox and the result is returned to the LLM. All actions are logged.
 """
 
+import ctypes
+import errno
 import os
 import re
+import shlex
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
+
+
+_SHELL_DYNAMIC_PATH_RE = re.compile(r"`|\$\(|<\(|>\(|\$'")
+_URL_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(^|[\s\"'=<>])(?:[a-zA-Z]:[\\/]|\\\\)")
+_SHELL_PUNCTUATION = {"|", "||", "&", "&&", ";", ";;", "(", ")", "{", "}", "<", ">", "<<", ">>", "<>", "&>", ">|"}
+
+_PR_SET_NO_NEW_PRIVS = 38
+_LANDLOCK_CREATE_RULESET_VERSION = 1
+_LANDLOCK_RULE_PATH_BENEATH = 1
+_SYS_LANDLOCK_CREATE_RULESET = 444
+_SYS_LANDLOCK_ADD_RULE = 445
+_SYS_LANDLOCK_RESTRICT_SELF = 446
+
+_LL_EXECUTE = 1 << 0
+_LL_WRITE_FILE = 1 << 1
+_LL_READ_FILE = 1 << 2
+_LL_READ_DIR = 1 << 3
+_LL_REMOVE_DIR = 1 << 4
+_LL_REMOVE_FILE = 1 << 5
+_LL_MAKE_CHAR = 1 << 6
+_LL_MAKE_DIR = 1 << 7
+_LL_MAKE_REG = 1 << 8
+_LL_MAKE_SOCK = 1 << 9
+_LL_MAKE_FIFO = 1 << 10
+_LL_MAKE_BLOCK = 1 << 11
+_LL_MAKE_SYM = 1 << 12
+_LL_REFER = 1 << 13
+_LL_TRUNCATE = 1 << 14
+_LL_IOCTL_DEV = 1 << 15
+
+
+class _LandlockRulesetAttr(ctypes.Structure):
+    _fields_ = [("handled_access_fs", ctypes.c_uint64)]
+
+
+class _LandlockPathBeneathAttr(ctypes.Structure):
+    _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int)]
+
+
+def _landlock_rights_for_abi(abi: int) -> int:
+    """Return the Landlock filesystem access mask supported by *abi*."""
+    rights = (
+        _LL_EXECUTE
+        | _LL_WRITE_FILE
+        | _LL_READ_FILE
+        | _LL_READ_DIR
+        | _LL_REMOVE_DIR
+        | _LL_REMOVE_FILE
+        | _LL_MAKE_CHAR
+        | _LL_MAKE_DIR
+        | _LL_MAKE_REG
+        | _LL_MAKE_SOCK
+        | _LL_MAKE_FIFO
+        | _LL_MAKE_BLOCK
+        | _LL_MAKE_SYM
+    )
+    if abi >= 2:
+        rights |= _LL_REFER
+    if abi >= 3:
+        rights |= _LL_TRUNCATE
+    if abi >= 5:
+        rights |= _LL_IOCTL_DEV
+    return rights
+
+
+def _landlock_abi(libc: ctypes.CDLL | None = None) -> int:
+    """Return the kernel Landlock ABI version, or 0 when unavailable."""
+    if not sys.platform.startswith("linux"):
+        return 0
+    libc = libc or ctypes.CDLL(None, use_errno=True)
+    syscall = libc.syscall
+    syscall.restype = ctypes.c_long
+    abi = syscall(
+        _SYS_LANDLOCK_CREATE_RULESET,
+        ctypes.c_void_p(0),
+        ctypes.c_size_t(0),
+        ctypes.c_uint32(_LANDLOCK_CREATE_RULESET_VERSION),
+    )
+    if abi <= 0:
+        err = ctypes.get_errno()
+        if err in (errno.ENOSYS, errno.EOPNOTSUPP, errno.EINVAL):
+            return 0
+        raise OSError(err, os.strerror(err))
+    return int(abi)
+
+
+def _landlock_command_sandbox_available() -> bool:
+    """Return True when Linux Landlock can sandbox child filesystem access."""
+    try:
+        return _landlock_abi() > 0
+    except OSError:
+        return False
+
+
+def _add_landlock_path_rule(libc: ctypes.CDLL, ruleset_fd: int, path: Path, allowed_access: int) -> None:
+    flags = getattr(os, "O_PATH", os.O_RDONLY) | getattr(os, "O_CLOEXEC", 0)
+    parent_fd = os.open(path, flags)
+    try:
+        rule = _LandlockPathBeneathAttr(allowed_access=allowed_access, parent_fd=parent_fd)
+        ret = libc.syscall(
+            _SYS_LANDLOCK_ADD_RULE,
+            ctypes.c_int(ruleset_fd),
+            ctypes.c_int(_LANDLOCK_RULE_PATH_BENEATH),
+            ctypes.byref(rule),
+            ctypes.c_uint32(0),
+        )
+        if ret != 0:
+            err = ctypes.get_errno()
+            raise OSError(err, os.strerror(err))
+    finally:
+        os.close(parent_fd)
+
+
+def _apply_landlock_workspace_sandbox(workspace_root: Path) -> None:
+    """Restrict this child process to read/execute system files and write only inside workspace."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    syscall = libc.syscall
+    syscall.restype = ctypes.c_long
+
+    abi = _landlock_abi(libc)
+    if abi <= 0:
+        return
+
+    handled = _landlock_rights_for_abi(abi)
+    ruleset_attr = _LandlockRulesetAttr(handled_access_fs=handled)
+    ruleset_fd = syscall(
+        _SYS_LANDLOCK_CREATE_RULESET,
+        ctypes.byref(ruleset_attr),
+        ctypes.sizeof(ruleset_attr),
+        ctypes.c_uint32(0),
+    )
+    if ruleset_fd < 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
+
+    try:
+        read_execute = _LL_EXECUTE | _LL_READ_FILE | _LL_READ_DIR
+        for raw_path in ("/bin", "/usr", "/lib", "/lib64", "/etc"):
+            path = Path(raw_path)
+            if path.exists():
+                _add_landlock_path_rule(libc, int(ruleset_fd), path, read_execute)
+
+        workspace = workspace_root.resolve()
+        _add_landlock_path_rule(libc, int(ruleset_fd), workspace, handled)
+
+        if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+            err = ctypes.get_errno()
+            raise OSError(err, os.strerror(err))
+
+        if syscall(_SYS_LANDLOCK_RESTRICT_SELF, ctypes.c_int(ruleset_fd), ctypes.c_uint32(0)) != 0:
+            err = ctypes.get_errno()
+            raise OSError(err, os.strerror(err))
+    finally:
+        os.close(int(ruleset_fd))
+
+
+def _shell_tokens(command: str) -> list[str]:
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
+def _path_fragments(token: str) -> list[str]:
+    if _URL_SCHEME_RE.match(token):
+        return []
+    fragments = [token]
+    for separator in ("=", ":"):
+        fragments = [part for fragment in fragments for part in fragment.split(separator)]
+    return fragments
+
+
+def _unsafe_command_path_reason(command: str) -> str | None:
+    """Return a reason when a shell command names a path outside the workspace."""
+    if "\x00" in command:
+        return "NUL byte in command"
+    if _SHELL_DYNAMIC_PATH_RE.search(command):
+        return "dynamic shell expansion is not allowed in workspace commands"
+    if _WINDOWS_ABSOLUTE_PATH_RE.search(command):
+        return "Windows absolute path is outside the workspace"
+
+    try:
+        tokens = _shell_tokens(command)
+    except ValueError as exc:
+        return f"invalid shell syntax: {exc}"
+
+    for index, token in enumerate(tokens):
+        if token == "eval":
+            nested = " ".join(tokens[index + 1 :])
+            if nested:
+                nested_reason = _unsafe_command_path_reason(nested)
+                if nested_reason:
+                    return nested_reason
+        if not token or token in _SHELL_PUNCTUATION:
+            continue
+        normalized_token = token.replace("\\", "/")
+        if re.match(r"^[a-zA-Z]:/", normalized_token) or normalized_token.startswith("//"):
+            return f"Windows absolute path is outside the workspace: {token}"
+        for fragment in _path_fragments(token):
+            if not fragment:
+                continue
+            normalized = fragment.replace("\\", "/")
+            if normalized.startswith(("/", "~")):
+                return f"absolute or home path is outside the workspace: {fragment}"
+            parts = [part for part in normalized.split("/") if part]
+            if ".." in parts:
+                return f"parent traversal is outside the workspace: {fragment}"
+            if "$" in fragment and "/" in fragment:
+                return f"variable-expanded path is not allowed: {fragment}"
+    return None
 
 
 class ToolCategory(str, Enum):
@@ -302,12 +516,26 @@ class WorkspaceTools:
         shell/Python tooling inside the workspace.
         """
         env: dict[str, str] = {}
-        for key in ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR"):
+        for key in ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM"):
             if key in os.environ:
                 env[key] = os.environ[key]
         env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
         env["HOME"] = str(self.root)
+        tmp_dir = self.root / ".tmp"
+        tmp_dir.mkdir(exist_ok=True)
+        env["TMPDIR"] = str(tmp_dir)
         return env
+
+    def _landlock_preexec_fn(self):
+        if not _landlock_command_sandbox_available():
+            return None
+
+        workspace_root = self.root
+
+        def _preexec() -> None:
+            _apply_landlock_workspace_sandbox(workspace_root)
+
+        return _preexec
 
     def _dangerous_command_pattern(self, cmd: str) -> str | None:
         """Return the blocking pattern name if a shell command is unsafe.
@@ -405,22 +633,40 @@ class WorkspaceTools:
         if blocked:
             return f"Command blocked (dangerous pattern): {blocked}", {"blocked": True}
 
+        unsafe_path = _unsafe_command_path_reason(cmd)
+        if unsafe_path:
+            return f"Command blocked (workspace escape): {unsafe_path}", {"blocked": True}
+
         # --noprofile --norc avoids sourcing /etc/profile, /etc/profile.d/*,
         # ~/.bash_profile, ~/.bashrc — those scripts can re-export the very
         # API keys _subprocess_env just stripped (e.g. /etc/profile.d/aws-cli.sh).
-        result = subprocess.run(
-            ["/bin/bash", "--noprofile", "--norc", "-c", cmd],
-            cwd=str(self.root),
-            env=self._subprocess_env(),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            encoding="utf-8",
-        )
+        preexec_fn = self._landlock_preexec_fn() if os.name == "posix" else None
+        try:
+            result = subprocess.run(
+                ["/bin/bash", "--noprofile", "--norc", "-c", cmd],
+                cwd=str(self.root),
+                env=self._subprocess_env(),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                preexec_fn=preexec_fn,
+            )
+        except subprocess.TimeoutExpired:
+            raise
+        except FileNotFoundError as exc:
+            return "", {"exit_code": 127, "sandbox_error": str(exc)}
+        except OSError as exc:
+            return "", {"exit_code": 126, "sandbox_error": str(exc)}
+        except subprocess.SubprocessError as exc:
+            return "", {"exit_code": 126, "sandbox_error": str(exc)}
         output = result.stdout
         if result.stderr:
             output += f"\n[stderr]\n{result.stderr}"
-        return output, {"exit_code": result.returncode}
+        metadata = {"exit_code": result.returncode}
+        if preexec_fn is not None:
+            metadata["landlock"] = True
+        return output, metadata
 
     def _tool_fetch_url(self, args: dict) -> tuple[str, dict]:
         if not self.network_allowed:
