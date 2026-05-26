@@ -17,8 +17,9 @@ from enum import Enum
 from pathlib import Path
 
 
-_SHELL_DYNAMIC_PATH_RE = re.compile(r"`|\$\(|<\(|>\(")
+_SHELL_DYNAMIC_PATH_RE = re.compile(r"`|\$\(|<\(|>\(|\$'")
 _URL_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(^|[\s\"'=<>])(?:[a-zA-Z]:[\\/]|\\\\)")
 _SHELL_PUNCTUATION = {"|", "||", "&", "&&", ";", ";;", "(", ")", "{", "}", "<", ">", "<<", ">>", "<>", "&>", ">|"}
 
 _PR_SET_NO_NEW_PRIVS = 38
@@ -152,7 +153,7 @@ def _apply_landlock_workspace_sandbox(workspace_root: Path) -> None:
 
     try:
         read_execute = _LL_EXECUTE | _LL_READ_FILE | _LL_READ_DIR
-        for raw_path in ("/bin", "/usr", "/lib", "/lib64"):
+        for raw_path in ("/bin", "/usr", "/lib", "/lib64", "/etc"):
             path = Path(raw_path)
             if path.exists():
                 _add_landlock_path_rule(libc, int(ruleset_fd), path, read_execute)
@@ -192,15 +193,26 @@ def _unsafe_command_path_reason(command: str) -> str | None:
         return "NUL byte in command"
     if _SHELL_DYNAMIC_PATH_RE.search(command):
         return "dynamic shell expansion is not allowed in workspace commands"
+    if _WINDOWS_ABSOLUTE_PATH_RE.search(command):
+        return "Windows absolute path is outside the workspace"
 
     try:
         tokens = _shell_tokens(command)
     except ValueError as exc:
         return f"invalid shell syntax: {exc}"
 
-    for token in tokens:
+    for index, token in enumerate(tokens):
+        if token == "eval":
+            nested = " ".join(tokens[index + 1 :])
+            if nested:
+                nested_reason = _unsafe_command_path_reason(nested)
+                if nested_reason:
+                    return nested_reason
         if not token or token in _SHELL_PUNCTUATION:
             continue
+        normalized_token = token.replace("\\", "/")
+        if re.match(r"^[a-zA-Z]:/", normalized_token) or normalized_token.startswith("//"):
+            return f"Windows absolute path is outside the workspace: {token}"
         for fragment in _path_fragments(token):
             if not fragment:
                 continue
@@ -642,6 +654,10 @@ class WorkspaceTools:
             )
         except subprocess.TimeoutExpired:
             raise
+        except FileNotFoundError as exc:
+            return "", {"exit_code": 127, "sandbox_error": str(exc)}
+        except OSError as exc:
+            return "", {"exit_code": 126, "sandbox_error": str(exc)}
         except subprocess.SubprocessError as exc:
             return "", {"exit_code": 126, "sandbox_error": str(exc)}
         output = result.stdout
