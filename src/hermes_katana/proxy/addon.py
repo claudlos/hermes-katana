@@ -18,7 +18,6 @@ __all__ = [
 ]
 
 import hashlib
-import gzip
 import logging
 import threading
 import time
@@ -223,24 +222,60 @@ class KatanaAddon:
         return False
 
     @staticmethod
-    def _decode_content_encoding(data: bytes, content_encoding: str) -> bytes:
-        """Decode supported HTTP content encodings before scanning."""
+    def _decompress_with_limit(data: bytes, wbits: int, max_output_size: int) -> tuple[bytes, bool]:
+        """Decompress one stream without producing more than max_output_size bytes."""
+        decompressor = zlib.decompressobj(wbits)
+        if max_output_size <= 0:
+            return decompressor.decompress(data) + decompressor.flush(), False
+
+        decoded = decompressor.decompress(data, max_output_size + 1)
+        oversized = len(decoded) > max_output_size or bool(decompressor.unconsumed_tail)
+        if len(decoded) <= max_output_size:
+            remaining = max_output_size + 1 - len(decoded)
+            tail = decompressor.flush(remaining)
+            decoded += tail
+            oversized = oversized or len(decoded) > max_output_size
+        return decoded[:max_output_size], oversized
+
+    @classmethod
+    def _decode_content_encoding(
+        cls,
+        data: bytes,
+        content_encoding: str,
+        *,
+        max_output_size: int = 0,
+    ) -> tuple[bytes, bool]:
+        """Decode supported HTTP content encodings before scanning.
+
+        Returns the decoded bytes plus a flag indicating whether decoding was
+        truncated at max_output_size. This prevents gzip/deflate bodies from
+        expanding unboundedly before the proxy scan cap is applied.
+        """
         decoded = data
+        oversized = False
         encodings = [entry.strip().lower() for entry in content_encoding.split(",") if entry.strip()]
         for encoding in reversed(encodings):
             if encoding == "identity":
                 continue
             if encoding == "gzip":
-                decoded = gzip.decompress(decoded)
+                decoded, oversized = cls._decompress_with_limit(
+                    decoded,
+                    16 + zlib.MAX_WBITS,
+                    max_output_size,
+                )
+                if oversized:
+                    break
                 continue
             if encoding == "deflate":
                 try:
-                    decoded = zlib.decompress(decoded)
+                    decoded, oversized = cls._decompress_with_limit(decoded, zlib.MAX_WBITS, max_output_size)
                 except zlib.error:
-                    decoded = zlib.decompress(decoded, -zlib.MAX_WBITS)
+                    decoded, oversized = cls._decompress_with_limit(decoded, -zlib.MAX_WBITS, max_output_size)
+                if oversized:
+                    break
                 continue
             raise ValueError(f"Unsupported content encoding: {encoding}")
-        return decoded
+        return decoded, oversized
 
     def _collect_scan_vault_values(self, *, extra_values: Iterable[str] = ()) -> Optional[set[str]]:
         """Collect vault secrets for the current scan without keeping a long-lived plaintext cache."""
@@ -266,8 +301,11 @@ class KatanaAddon:
             content_type = ""
             content_encoding = ""
 
-        decoded_body = self._decode_content_encoding(body, content_encoding)
-        decoded_oversized = False
+        decoded_body, decoded_oversized = self._decode_content_encoding(
+            body,
+            content_encoding,
+            max_output_size=self.config.max_body_scan_size,
+        )
         if self.config.max_body_scan_size and len(decoded_body) > self.config.max_body_scan_size:
             decoded_body = decoded_body[: self.config.max_body_scan_size]
             decoded_oversized = True
