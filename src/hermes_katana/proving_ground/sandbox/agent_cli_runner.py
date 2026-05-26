@@ -1874,9 +1874,10 @@ _ALLOWED_PROVIDER_SECRET_ENV_KEYS = {
     "XIAOMI_API_KEY",
 }
 
-# Allowlist of env keys we know are safe to pass into CLI-agent subprocesses.
-# Anything matching this set or matching one of `_ALLOWED_PROVIDER_SECRET_ENV_KEYS`
-# is preserved. Everything else passes through the denylist regex below.
+# Common env keys and prefixes known to be useful for CLI-agent subprocesses.
+# These document the expected non-secret knobs; the scrubber below still allows
+# other non-sensitive names by default to avoid breaking vendor CLIs that probe
+# their environment.
 _CORE_SHELL_ENV_KEYS = {
     "PATH",
     "HOME",
@@ -1958,8 +1959,9 @@ def _env_key_allowed_for_subprocess(key: str) -> bool:
     Provider API keys are deliberately allowed for harness drivers that need
     them. All other variables are denied on sensitive names before broad
     prefixes are considered, so KATANA_API_KEY/HERMES_SECRET-style ambient
-    credentials cannot bypass the scrubber just because they use an allowed
-    configuration prefix.
+    credentials cannot bypass the scrubber just because they use a common
+    configuration prefix. Non-sensitive names are allowed by default for CLI
+    compatibility.
     """
     upper = key.upper()
     if upper in _ALLOWED_PROVIDER_SECRET_ENV_KEYS:
@@ -1968,10 +1970,6 @@ def _env_key_allowed_for_subprocess(key: str) -> bool:
         return False
     if _SENSITIVE_ENV_NAME_RE.search(upper):
         return False
-    if upper in _CORE_SHELL_ENV_KEYS:
-        return True
-    if any(upper.startswith(prefix) for prefix in _ALLOWED_ENV_PREFIXES):
-        return True
     return True
 
 
