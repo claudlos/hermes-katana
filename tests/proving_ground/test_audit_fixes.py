@@ -301,6 +301,39 @@ def test_env_scrub_allows_known_prefixes():
         assert _env_key_allowed_for_subprocess(key), f"{key} should pass the allowlist"
 
 
+def test_env_scrub_drops_sensitive_names_under_allowed_prefixes(monkeypatch):
+    """Broad config prefixes must not let ambient secret-looking env vars through."""
+    for key in (
+        "KATANA_API_KEY",
+        "HERMES_SECRET",
+        "OPENAI_SESSION_TOKEN",
+        "PYTHON_AUTH_TOKEN",
+        "XDG_CREDENTIAL_FILE",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    ):
+        assert not _env_key_allowed_for_subprocess(key), f"{key} should be dropped"
+        monkeypatch.setenv(key, "do-not-leak")
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.example.test/v1")
+    monkeypatch.setenv("HERMES_TEMPERATURE", "0")
+    monkeypatch.setenv("OPENAI_API_KEY", "provider-key-needed-by-harness")
+
+    env = _build_subprocess_env(AGENT_DRIVERS["hermes_minimax_m2_7"])
+
+    for key in (
+        "KATANA_API_KEY",
+        "HERMES_SECRET",
+        "OPENAI_SESSION_TOKEN",
+        "PYTHON_AUTH_TOKEN",
+        "XDG_CREDENTIAL_FILE",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    ):
+        assert env.get(key) is None, f"{key} leaked into subprocess env"
+    assert env.get("OPENAI_BASE_URL") == "https://api.example.test/v1"
+    assert env.get("HERMES_TEMPERATURE") == "0"
+    assert env.get("OPENAI_API_KEY") == "provider-key-needed-by-harness"
+
+
 def test_env_scrub_drops_aws_secret_and_github_token():
     """Sensitive-name pattern still catches the standard suspects."""
     for key in (
