@@ -363,7 +363,7 @@ def test_env_scrub_drops_database_url_and_aws_profile(monkeypatch):
 
 
 def test_env_scrub_allows_known_prefixes():
-    """HERMES_*/KATANA_*/XDG_* etc. must pass through (allowlist intent)."""
+    """HERMES_*/KATANA_*/XDG_* etc. must pass through for CLI compatibility."""
     for key in (
         "HERMES_TEMPERATURE",
         "KATANA_PROXY_URL",
@@ -373,6 +373,12 @@ def test_env_scrub_allows_known_prefixes():
         "VIRTUAL_ENV",
     ):
         assert _env_key_allowed_for_subprocess(key), f"{key} should pass the allowlist"
+
+
+def test_env_scrub_allows_unknown_non_sensitive_names():
+    """Unknown env names pass unless they are explicitly denied or look sensitive."""
+    for key in ("CI", "TERM_PROGRAM", "CUSTOM_AGENT_FEATURE_FLAG"):
+        assert _env_key_allowed_for_subprocess(key), f"{key} should pass by default"
 
 
 def test_env_scrub_drops_sensitive_names_under_allowed_prefixes(monkeypatch):
