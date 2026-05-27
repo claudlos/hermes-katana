@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 from hermes_katana.installer.compat_snapshots import (
@@ -20,10 +21,30 @@ def runtime_artifact_manifest_path() -> Path:
     return _DEFAULT_MANIFEST
 
 
+def _safe_manifest_path(rel_path: str) -> bool:
+    if not rel_path or rel_path.startswith("/") or "\\" in rel_path or "\x00" in rel_path:
+        return False
+    if len(rel_path) >= 2 and rel_path[1] == ":":
+        return False
+    return ".." not in PurePosixPath(rel_path).parts
+
+
+def _resolve_manifest_artifact_path(repo_root: Path, rel_path: str) -> Path | None:
+    if not _safe_manifest_path(rel_path):
+        return None
+    try:
+        target = (repo_root / rel_path).resolve()
+        target.relative_to(repo_root)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return target
+
+
 def verify_runtime_artifact_manifest(
     manifest_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Verify the runtime artifact manifest against the local checkout."""
+    repo_root = _REPO_ROOT.resolve()
     manifest_file = Path(manifest_path or _DEFAULT_MANIFEST).expanduser().resolve()
     if not manifest_file.exists():
         return {
@@ -83,7 +104,11 @@ def verify_runtime_artifact_manifest(
             errors.append(f"{name}: manifest entry is missing path/kind/sha256")
             continue
 
-        target = (_REPO_ROOT / rel_path).resolve()
+        target = _resolve_manifest_artifact_path(repo_root, rel_path)
+        if target is None:
+            errors.append(f"{name}: unsafe artifact path {rel_path!r}")
+            continue
+
         if not target.exists():
             missing.append(f"{name}: missing {rel_path}")
             continue
