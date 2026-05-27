@@ -1874,9 +1874,10 @@ _ALLOWED_PROVIDER_SECRET_ENV_KEYS = {
     "XIAOMI_API_KEY",
 }
 
-# Allowlist of env keys we know are safe to pass into CLI-agent subprocesses.
-# Anything matching this set or matching one of `_ALLOWED_PROVIDER_SECRET_ENV_KEYS`
-# is preserved. Everything else passes through the denylist regex below.
+# Common env keys and prefixes known to be useful for CLI-agent subprocesses.
+# These document the expected non-secret knobs; the scrubber below still allows
+# other non-sensitive names by default to avoid breaking vendor CLIs that probe
+# their environment.
 _CORE_SHELL_ENV_KEYS = {
     "PATH",
     "HOME",
@@ -1944,10 +1945,10 @@ _EXPLICIT_DENY_ENV_KEYS = {
 
 _SENSITIVE_ENV_NAME_RE = re.compile(
     # Catches API_KEY, ACCESS_KEY, KEY, TOKEN, SECRET, PASSWORD, PASSWD,
-    # CREDENTIAL, PRIVATE, AUTH — both as standalone words and as components
+    # CREDENTIAL(S), PRIVATE, AUTH — both as standalone words and as components
     # of compound env names. Terminator covers _, /, -, end-of-string.
     r"(?:^|[_/-])(?:API_KEY|ACCESS_KEY|KEY|TOKEN|SECRET|PASSW(?:OR)?D"
-    r"|CREDENTIAL|PRIVATE|AUTH)(?:[_/-]|$)",
+    r"|CREDENTIALS?|PRIVATE|AUTH)(?:[_/-]|$)",
     re.IGNORECASE,
 )
 
@@ -1955,23 +1956,21 @@ _SENSITIVE_ENV_NAME_RE = re.compile(
 def _env_key_allowed_for_subprocess(key: str) -> bool:
     """Decide whether to pass ``key`` into a CLI-agent subprocess env.
 
-    Allowlist-first: provider keys, core shell vars, and known-safe prefixes
-    pass without further checks. Anything else is dropped if it appears in
-    the explicit deny list or matches the sensitive-name regex. This is
-    *defensive* — the goal is to avoid leaking unrelated ambient credentials
-    (AWS_*, GITHUB_TOKEN, DATABASE_URL, etc.) into a subprocess that doesn't
-    need them. New CLI knobs should be added to ``_ALLOWED_ENV_PREFIXES``.
+    Provider API keys are deliberately allowed for harness drivers that need
+    them. All other variables are denied on sensitive names before broad
+    prefixes are considered, so KATANA_API_KEY/HERMES_SECRET-style ambient
+    credentials cannot bypass the scrubber just because they use a common
+    configuration prefix. Non-sensitive names are allowed by default for CLI
+    compatibility.
     """
     upper = key.upper()
     if upper in _ALLOWED_PROVIDER_SECRET_ENV_KEYS:
         return True
-    if upper in _CORE_SHELL_ENV_KEYS:
-        return True
-    if any(upper.startswith(prefix) for prefix in _ALLOWED_ENV_PREFIXES):
-        return True
     if upper in _EXPLICIT_DENY_ENV_KEYS:
         return False
-    return _SENSITIVE_ENV_NAME_RE.search(upper) is None
+    if _SENSITIVE_ENV_NAME_RE.search(upper):
+        return False
+    return True
 
 
 def _warn_if_broken_claude_run(
