@@ -9,6 +9,8 @@ when the body was oversized but allowed through in permissive mode.
 
 from __future__ import annotations
 
+import gzip
+import zlib
 
 from hermes_katana.proxy.addon import KatanaAddon
 from hermes_katana.proxy.config import ProxyConfig
@@ -136,3 +138,47 @@ def test_content_length_helper_parses_string_and_int():
     assert KatanaAddon._content_length(_Headers({})) is None
     assert KatanaAddon._content_length(_Headers({"Content-Length": "garbage"})) is None
     assert KatanaAddon._content_length(None) is None
+
+
+def test_gzip_decode_is_bounded_by_scan_cap():
+    addon = _addon(max_body_scan_size=128)
+    payload = b"A" * (2 * 1024 * 1024)
+    compressed = gzip.compress(payload, compresslevel=9)
+
+    decoded, _content_type, oversized = addon._decode_body_for_scan(
+        compressed,
+        _Headers({"content-type": "text/plain", "content-encoding": "gzip"}),
+    )
+
+    assert len(compressed) < len(payload)
+    assert decoded == payload[:128]
+    assert oversized is True
+
+
+def test_gzip_decode_scans_concatenated_members():
+    addon = _addon(max_body_scan_size=1024)
+    payload = b"first member\nsecond member"
+    compressed = gzip.compress(b"first member\n") + gzip.compress(b"second member")
+
+    decoded, _content_type, oversized = addon._decode_body_for_scan(
+        compressed,
+        _Headers({"content-type": "text/plain", "content-encoding": "gzip"}),
+    )
+
+    assert decoded == payload
+    assert oversized is False
+
+
+def test_deflate_decode_is_bounded_by_scan_cap():
+    addon = _addon(max_body_scan_size=128)
+    payload = b"A" * (2 * 1024 * 1024)
+    compressed = zlib.compress(payload, level=9)
+
+    decoded, _content_type, oversized = addon._decode_body_for_scan(
+        compressed,
+        _Headers({"content-type": "text/plain", "content-encoding": "deflate"}),
+    )
+
+    assert len(compressed) < len(payload)
+    assert decoded == payload[:128]
+    assert oversized is True
