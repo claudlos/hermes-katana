@@ -16,7 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from hermes_katana.installer.installer import KatanaInstaller
+from hermes_katana.installer.installer import (
+    KATANA_BACKUP_DIR,
+    KATANA_CONFIG_DIR,
+    KATANA_CONFIG_FILE,
+    KatanaInstaller,
+)
 from hermes_katana.installer.patches import (
     CURRENT_CORE_PATCHES,
     LEGACY_CORE_PATCHES,
@@ -205,6 +210,67 @@ class TestInstallerLifecycle:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert manifest["operation"] == "install"
         assert "hermes/tools/dispatch.py" in manifest["files"]
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows symlink creation requires admin or Developer Mode.",
+    )
+    def test_install_rejects_symlinked_katana_dir(self, tmp_dir):
+        checkout = fixture_checkout_direct(HERMES_CURRENT_SNAPSHOT, tmp_dir)
+        outside = tmp_dir / "outside-katana"
+        outside.mkdir()
+        (checkout / KATANA_CONFIG_DIR).symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="Config directory path is a symlink"):
+            KatanaInstaller().install(checkout)
+
+        assert not (outside / KATANA_CONFIG_FILE).exists()
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows symlink creation requires admin or Developer Mode.",
+    )
+    def test_install_rejects_symlinked_katana_config_file(self, tmp_dir):
+        checkout = fixture_checkout_direct(HERMES_CURRENT_SNAPSHOT, tmp_dir)
+        config_dir = checkout / KATANA_CONFIG_DIR
+        config_dir.mkdir()
+        outside_config = tmp_dir / "outside.yaml"
+        outside_config.write_text("outside: true\n", encoding="utf-8")
+        (config_dir / KATANA_CONFIG_FILE).symlink_to(outside_config)
+
+        with pytest.raises(ValueError, match="Config file path is a symlink"):
+            KatanaInstaller().install(checkout)
+
+        assert outside_config.read_text(encoding="utf-8") == "outside: true\n"
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows symlink creation requires admin or Developer Mode.",
+    )
+    def test_install_backup_rejects_symlinked_katana_source(self, tmp_dir):
+        checkout = fixture_checkout_direct(HERMES_CURRENT_SNAPSHOT, tmp_dir)
+        outside = tmp_dir / "outside-katana"
+        outside.mkdir()
+        (outside / KATANA_CONFIG_FILE).write_text("outside: true\n", encoding="utf-8")
+        (checkout / KATANA_CONFIG_DIR).symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="Backup source path is a symlink"):
+            KatanaInstaller().install(checkout, backup=True)
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows symlink creation requires admin or Developer Mode.",
+    )
+    def test_install_backup_rejects_symlinked_backup_dir(self, tmp_dir):
+        checkout = fixture_checkout_direct(HERMES_CURRENT_SNAPSHOT, tmp_dir)
+        outside = tmp_dir / "outside-backups"
+        outside.mkdir()
+        (checkout / KATANA_BACKUP_DIR).symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="Backup directory path escapes checkout"):
+            KatanaInstaller().install(checkout, backup=True)
+
+        assert not any(outside.iterdir())
 
     def test_uninstall_backup_survives_removed_checkout_state(self, monkeypatch, tmp_dir):
         checkout = fixture_checkout(HERMES_V010_EXTENDED_SNAPSHOT, tmp_dir)
