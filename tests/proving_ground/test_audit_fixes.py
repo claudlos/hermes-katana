@@ -226,6 +226,80 @@ def test_workspace_run_command_blocks_find_delete(tmp_path):
     assert metadata.get("blocked") is True
 
 
+def test_workspace_run_command_blocks_absolute_redirection_escape(tmp_path):
+    """A model-controlled shell redirection must not write outside the workspace."""
+    root = tmp_path / "ws"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    target = outside / "escaped.txt"
+    tools = WorkspaceTools(str(root))
+
+    output, metadata = tools._tool_run_command({"command": f"printf escaped > {target}", "timeout": 10})
+
+    assert metadata.get("blocked") is True
+    assert "workspace escape" in output
+    assert not target.exists()
+
+
+def test_workspace_command_path_checker_blocks_eval_nested_absolute_path():
+    reason = workspace_module._unsafe_command_path_reason("eval 'printf escaped > /tmp/outside'")
+
+    assert reason is not None
+    assert "outside the workspace" in reason
+
+
+def test_workspace_command_path_checker_blocks_ansi_c_quoted_path():
+    reason = workspace_module._unsafe_command_path_reason(r"printf escaped > $'\057tmp\057outside'")
+
+    assert reason == "dynamic shell expansion is not allowed in workspace commands"
+
+
+def test_workspace_command_path_checker_blocks_windows_absolute_path():
+    reason = workspace_module._unsafe_command_path_reason(r"printf escaped > C:\Users\runner\outside.txt")
+
+    assert reason is not None
+    assert "Windows absolute path" in reason
+
+
+def test_workspace_run_command_returns_structured_error_when_shell_is_missing(tmp_path, monkeypatch):
+    tools = WorkspaceTools(str(tmp_path))
+
+    def missing_shell(*args, **kwargs):
+        raise FileNotFoundError("missing shell")
+
+    monkeypatch.setattr(workspace_module.subprocess, "run", missing_shell)
+
+    output, metadata = tools._tool_run_command({"command": "printf safe", "timeout": 10})
+
+    assert output == ""
+    assert metadata["exit_code"] == 127
+    assert metadata["sandbox_error"] == "missing shell"
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or not workspace_module._landlock_command_sandbox_available(),
+    reason="Linux Landlock is required to verify script-level filesystem containment.",
+)
+def test_workspace_run_command_landlock_blocks_script_escape(tmp_path):
+    """A script launched from the workspace must not write to host paths."""
+    root = tmp_path / "ws"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    target = outside / "escaped.txt"
+    script = root / "escape.sh"
+    script.write_text(f"printf escaped > {target}\n", encoding="utf-8")
+
+    tools = WorkspaceTools(str(root))
+    output, metadata = tools._tool_run_command({"command": "sh escape.sh", "timeout": 10})
+
+    assert metadata.get("landlock") is True
+    assert metadata.get("exit_code") != 0
+    assert any(phrase in output for phrase in ("Permission denied", "Operation not permitted"))
+    assert not target.exists()
+
+
 def test_workspace_run_command_uses_noprofile_norc(tmp_path, monkeypatch):
     """bash must launch with --noprofile --norc so /etc/profile.d/* doesn't
     re-export keys we just stripped from the env.
@@ -289,7 +363,7 @@ def test_env_scrub_drops_database_url_and_aws_profile(monkeypatch):
 
 
 def test_env_scrub_allows_known_prefixes():
-    """HERMES_*/KATANA_*/XDG_* etc. must pass through (allowlist intent)."""
+    """HERMES_*/KATANA_*/XDG_* etc. must pass through for CLI compatibility."""
     for key in (
         "HERMES_TEMPERATURE",
         "KATANA_PROXY_URL",
@@ -299,6 +373,45 @@ def test_env_scrub_allows_known_prefixes():
         "VIRTUAL_ENV",
     ):
         assert _env_key_allowed_for_subprocess(key), f"{key} should pass the allowlist"
+
+
+def test_env_scrub_allows_unknown_non_sensitive_names():
+    """Unknown env names pass unless they are explicitly denied or look sensitive."""
+    for key in ("CI", "TERM_PROGRAM", "CUSTOM_AGENT_FEATURE_FLAG"):
+        assert _env_key_allowed_for_subprocess(key), f"{key} should pass by default"
+
+
+def test_env_scrub_drops_sensitive_names_under_allowed_prefixes(monkeypatch):
+    """Broad config prefixes must not let ambient secret-looking env vars through."""
+    for key in (
+        "KATANA_API_KEY",
+        "HERMES_SECRET",
+        "OPENAI_SESSION_TOKEN",
+        "PYTHON_AUTH_TOKEN",
+        "XDG_CREDENTIAL_FILE",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    ):
+        assert not _env_key_allowed_for_subprocess(key), f"{key} should be dropped"
+        monkeypatch.setenv(key, "do-not-leak")
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.example.test/v1")
+    monkeypatch.setenv("HERMES_TEMPERATURE", "0")
+    monkeypatch.setenv("OPENAI_API_KEY", "provider-key-needed-by-harness")
+
+    env = _build_subprocess_env(AGENT_DRIVERS["hermes_minimax_m2_7"])
+
+    for key in (
+        "KATANA_API_KEY",
+        "HERMES_SECRET",
+        "OPENAI_SESSION_TOKEN",
+        "PYTHON_AUTH_TOKEN",
+        "XDG_CREDENTIAL_FILE",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    ):
+        assert env.get(key) is None, f"{key} leaked into subprocess env"
+    assert env.get("OPENAI_BASE_URL") == "https://api.example.test/v1"
+    assert env.get("HERMES_TEMPERATURE") == "0"
+    assert env.get("OPENAI_API_KEY") == "provider-key-needed-by-harness"
 
 
 def test_env_scrub_drops_aws_secret_and_github_token():

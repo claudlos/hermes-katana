@@ -283,6 +283,29 @@ class KatanaInstaller:
             layout = "current"
         return LEGACY_CORE_PATCHES if layout == "legacy-v0.1.0" else CURRENT_CORE_PATCHES
 
+    def _validate_checkout_local_path(self, target: Path, path: Path, label: str) -> None:
+        """Reject symlink/traversal paths before writing checkout-local state."""
+        try:
+            is_symlink = path.is_symlink()
+        except OSError as exc:
+            raise ValueError(f"{label} path could not be validated: {path}") from exc
+        if is_symlink:
+            raise ValueError(f"{label} path is a symlink: {path}")
+        try:
+            path.resolve(strict=False).relative_to(target.resolve())
+        except ValueError as exc:
+            raise ValueError(f"{label} path escapes checkout: {path}") from exc
+        except (OSError, RuntimeError) as exc:
+            raise ValueError(f"{label} path could not be validated: {path}") from exc
+
+    def _ensure_checkout_local_dir(self, target: Path, relative: str | Path, label: str) -> Path:
+        """Create a checkout-local directory after rejecting symlink escapes."""
+        path = target / relative
+        self._validate_checkout_local_path(target, path, label)
+        path.mkdir(parents=True, exist_ok=True)
+        self._validate_checkout_local_path(target, path, label)
+        return path
+
     def detect_hermes(self, path: str | Path) -> bool:
         """Check if the given path is a Hermes checkout.
 
@@ -404,8 +427,7 @@ class KatanaInstaller:
             logger.info("Created install backup at %s", manifest.backup_root)
 
         # 1. Create .katana directory
-        katana_dir = target / KATANA_CONFIG_DIR
-        katana_dir.mkdir(exist_ok=True)
+        katana_dir = self._ensure_checkout_local_dir(target, KATANA_CONFIG_DIR, "Config directory")
         logger.debug("Created config dir: %s", katana_dir)
 
         # 2. Generate configuration
@@ -743,7 +765,11 @@ class KatanaInstaller:
         """Create a file snapshot and manifest for install or uninstall."""
         if backup_dir is None:
             timestamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-            root = target / KATANA_BACKUP_DIR / f"{operation}-{timestamp}"
+            root = self._ensure_checkout_local_dir(
+                target,
+                Path(KATANA_BACKUP_DIR) / f"{operation}-{timestamp}",
+                "Backup directory",
+            )
         else:
             root = Path(backup_dir).expanduser().resolve()
 
@@ -754,11 +780,16 @@ class KatanaInstaller:
         copied: list[str] = []
 
         for source in paths:
+            self._validate_checkout_local_path(target, source, "Backup source")
             relative = source.relative_to(target)
             destination = root / relative
+            if backup_dir is None:
+                self._validate_checkout_local_path(target, destination, "Backup destination")
 
             if source.is_dir():
-                shutil.copytree(source, destination, dirs_exist_ok=True)
+                for nested in source.rglob("*"):
+                    self._validate_checkout_local_path(target, nested, "Backup source")
+                shutil.copytree(source, destination, dirs_exist_ok=True, symlinks=True)
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
@@ -774,6 +805,8 @@ class KatanaInstaller:
             missing_paths=sorted(self._missing_paths_for_backup(target, operation)),
         )
         manifest_path = root / KATANA_BACKUP_MANIFEST
+        if backup_dir is None:
+            self._validate_checkout_local_path(target, manifest_path, "Backup manifest")
         manifest_path.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
         return manifest
 
@@ -794,8 +827,9 @@ class KatanaInstaller:
         Does not overwrite an existing config file — preserves user
         customizations.
         """
-        config_dir = target / KATANA_CONFIG_DIR
+        config_dir = self._ensure_checkout_local_dir(target, KATANA_CONFIG_DIR, "Config directory")
         config_file = config_dir / KATANA_CONFIG_FILE
+        self._validate_checkout_local_path(target, config_file, "Config file")
 
         if config_file.exists():
             logger.debug("Config file already exists, skipping: %s", config_file)
@@ -813,7 +847,7 @@ class KatanaInstaller:
         logger.info("Generated config: %s", config_file)
 
         # Create audit directory
-        (config_dir / "audit").mkdir(exist_ok=True)
+        self._ensure_checkout_local_dir(target, Path(KATANA_CONFIG_DIR) / "audit", "Audit directory")
 
     def _generate_ca_cert(self, target: Path) -> None:
         """Generate a CA certificate for the MITM proxy.
@@ -821,11 +855,18 @@ class KatanaInstaller:
         Uses the ``cryptography`` library to create a self-signed CA
         certificate and private key.  Skips if the cert already exists.
         """
-        cert_dir = target / KATANA_CONFIG_DIR / KATANA_CA_DIR
-        cert_dir.mkdir(parents=True, exist_ok=True)
+        cert_dir = self._ensure_checkout_local_dir(
+            target,
+            Path(KATANA_CONFIG_DIR) / KATANA_CA_DIR,
+            "CA certificate directory",
+        )
 
         cert_path = cert_dir / KATANA_CA_CERT
         key_path = cert_dir / KATANA_CA_KEY
+        salt_path = cert_dir / "ca_salt.txt"
+        self._validate_checkout_local_path(target, cert_path, "CA certificate")
+        self._validate_checkout_local_path(target, key_path, "CA private key")
+        self._validate_checkout_local_path(target, salt_path, "CA salt")
 
         if cert_path.exists() and key_path.exists():
             logger.debug("CA cert already exists, skipping: %s", cert_path)
@@ -889,7 +930,6 @@ class KatanaInstaller:
             import secrets as _secrets
 
             ca_salt = _secrets.token_hex(16)
-            salt_path = cert_dir / "ca_salt.txt"
             salt_path.write_text(ca_salt, encoding="utf-8")
             passphrase = hashlib.sha256(f"katana-{target}-{ca_salt}".encode()).hexdigest()[:32].encode()
 
@@ -919,6 +959,7 @@ class KatanaInstaller:
     def _write_marker(self, target: Path, results: list[PatchResult]) -> None:
         """Write the install marker file with metadata."""
         marker = target / KATANA_INSTALL_MARKER
+        self._validate_checkout_local_path(target, marker, "Install marker")
         data = {
             "installed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "installer_version": __version__,
