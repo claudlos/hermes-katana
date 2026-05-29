@@ -138,7 +138,7 @@ Additional live-path smoke after the report fixes:
 - A patched Hermes temp checkout allowed `read_file` on a benign file.
 - The same checkout blocked `terminal` with `Katana blocked tool 'terminal': Scanner blocked...`.
 - An isolated Hermes config with `plugins.enabled: ["katana"]` loaded the entry-point plugin and returned a native hook block message for the same dangerous terminal command.
-- The live installed Hermes checkout at `/home/carlos/.hermes/hermes-agent` was patched, verified, and its venv now imports the editable `/home/carlos/hermes-katana` package.
+- The live installed Hermes checkout at `$HOME/.hermes/hermes-agent` was patched, verified, and its venv now imports the editable `$HOME/hermes-katana` package.
 - The live installed Hermes native plugin check now reports `katana_enabled: True` and blocks the dangerous terminal command.
 - The live installed Hermes direct `model_tools.handle_function_call()` path allows `echo KATANA_INSTALLED_OK` and blocks the dangerous terminal command.
 - An isolated source-patched Hermes checkout with `cwd=/tmp`, no `KATANA_CHECKOUT_ROOT`, and an empty `HERMES_HOME` still allowed `echo KATANA_CWD_OK` and blocked the dangerous terminal command.

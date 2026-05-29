@@ -130,6 +130,12 @@ class TestCurrentCorePatches:
         assert "resolve_escalation(" in hook.replace_text
         assert "escalate_action" in hook.replace_text
 
+    def test_tool_dispatch_hook_fails_closed_on_missing_checkout(self):
+        """This hook only runs inside a patched checkout, so a missing checkout
+        root must fail closed (block) rather than dispatch unprotected."""
+        hook = next(p for p in CURRENT_CORE_PATCHES if p.name == "tool_dispatch_hook")
+        assert "_katana_checkout_root is None or _katana_runtime is None" in hook.replace_text
+
 
 class TestAmbiguousAnchorGuard:
     """A search anchor that matches more than one location must fail loudly,

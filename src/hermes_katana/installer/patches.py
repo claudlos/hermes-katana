@@ -162,11 +162,11 @@ CURRENT_CORE_PATCHES: list[Patch] = [
             from hermes_katana.bootstrap import discover_checkout_root, get_runtime_bundle
             from hermes_katana.middleware import CallContext, DispatchDecision
             _katana_checkout_root = discover_checkout_root(__file__)
-            _katana_checkout_discovered = _katana_checkout_root is not None
-            _katana_bootstrap_failed = False
             _katana_runtime = get_runtime_bundle(_katana_checkout_root) if _katana_checkout_root is not None else None
-            if _katana_checkout_discovered and _katana_runtime is None:
-                _katana_bootstrap_failed = True
+            # This hook only runs from inside a patched checkout, so a missing
+            # checkout root (or runtime) means Katana is broken, not absent --
+            # fail closed rather than dispatching the tool unprotected.
+            if _katana_checkout_root is None or _katana_runtime is None:
                 return json.dumps({{
                     "error": f"Katana security bootstrap failed; refusing to dispatch tool '{{function_name}}': runtime unavailable"
                 }}, ensure_ascii=False)
