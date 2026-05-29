@@ -2,18 +2,20 @@
 
 Registers with the Hermes plugin system via pip entry point
 (``hermes_agent.plugins``) and hooks into the tool dispatch pipeline
-using ``pre_tool_call`` and ``post_tool_call`` hooks.
+using ``pre_tool_call``, ``post_tool_call``, and ``transform_tool_result``
+hooks.
 
-This replaces the source-patching approach with a zero-modification
-integration: install hermes-katana, and the plugin activates automatically.
+Modern Hermes loads entry-point plugins only when they are listed in
+``plugins.enabled``. When enabled, this plugin provides a zero-modification
+integration path; the source patch installer remains available for checkout
+level enforcement.
 
 Plugin hooks
 ------------
-- ``pre_tool_call``:  Run the full middleware chain (taint, scan, policy).
-  Raises :class:`KatanaSecurityError` on DENY,
-  :class:`EscalationRequired` on ESCALATE.
-- ``post_tool_call``: Scan tool results, register taint on outputs,
-  and log the completed call to the audit trail.
+- ``pre_tool_call``: Run the full middleware chain (taint, scan, policy)
+  and return a Hermes block directive on DENY/ESCALATE.
+- ``post_tool_call``: Observe completed calls and prepare transformed output.
+- ``transform_tool_result``: Return the final scanned/redacted tool output.
 - ``on_session_start``: Initialize audit session entry and taint scope.
 - ``on_session_end``: Close audit session and flush state.
 
@@ -39,8 +41,10 @@ Plugin config lives under ``katana:`` in Hermes ``config.yaml``::
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import os
 import threading
 import time
 from typing import Any, Optional
@@ -75,13 +79,16 @@ _vault: Any = None
 _config: dict[str, Any] = {}
 _initialized: bool = False
 _initialization_error: str | None = None
+_result_transform_stash: dict[tuple[str, str, str, str, str], str] = {}
+_result_transform_stash_lock = threading.RLock()
 
 
 def register(context: Any) -> None:
     """Initialize the Katana plugin.
 
     Called by the Hermes plugin manager with a PluginContext that provides
-    ``register_hook``, ``register_tool``, and ``config``.
+    ``register_hook`` and ``register_tool``. Older Hermes versions may also
+    provide ``config``.
 
     The function is named ``register`` to match the Hermes plugin contract.
     A ``setup`` alias is provided for backward compatibility with tests.
@@ -91,9 +98,7 @@ def register(context: Any) -> None:
     """
     global _chain, _audit_trail, _tracker, _vault, _config, _initialized, _initialization_error
 
-    _config = getattr(context, "config", {}) or {}
-    if not isinstance(_config, dict):
-        _config = {}
+    _config = _load_context_config(context)
 
     _chain = None
     _audit_trail = None
@@ -122,6 +127,7 @@ def register(context: Any) -> None:
     # Register hooks
     context.register_hook("pre_tool_call", _on_pre_tool_call)
     context.register_hook("post_tool_call", _on_post_tool_call)
+    context.register_hook("transform_tool_result", _on_transform_tool_result)
     context.register_hook("on_session_start", _on_session_start)
     context.register_hook("on_session_end", _on_session_end)
 
@@ -169,6 +175,58 @@ def register(context: Any) -> None:
         taint_enabled=_config.get("taint_enabled", True),
         audit_enabled=_config.get("audit_enabled", True),
     )
+
+
+def _load_context_config(context: Any) -> dict[str, Any]:
+    """Load plugin config from old and current Hermes plugin contracts."""
+    direct = getattr(context, "config", None)
+    if isinstance(direct, dict) and direct:
+        return dict(direct)
+
+    config: dict[str, Any] = {}
+    try:
+        from hermes_cli.config import load_config
+
+        raw = load_config() or {}
+    except Exception:
+        raw = {}
+
+    if isinstance(raw, dict):
+        plugins = raw.get("plugins")
+        if isinstance(plugins, dict):
+            direct_plugin = plugins.get("katana")
+            if isinstance(direct_plugin, dict):
+                config.update(direct_plugin)
+
+            entries = plugins.get("entries")
+            if isinstance(entries, dict):
+                for plugin_id in _context_plugin_ids(context):
+                    entry = entries.get(plugin_id)
+                    if isinstance(entry, dict):
+                        config.update(_normalize_plugin_entry_config(entry))
+
+    if isinstance(direct, dict):
+        config.update(direct)
+    return config
+
+
+def _context_plugin_ids(context: Any) -> tuple[str, ...]:
+    """Return plausible Hermes config keys for this plugin."""
+    ids = ["katana", plugin_name]
+    manifest = getattr(context, "manifest", None)
+    for attr in ("key", "name"):
+        value = getattr(manifest, attr, None)
+        if isinstance(value, str) and value:
+            ids.append(value)
+    return tuple(dict.fromkeys(ids))
+
+
+def _normalize_plugin_entry_config(entry: dict[str, Any]) -> dict[str, Any]:
+    """Extract Katana settings from ``plugins.entries.<id>`` config."""
+    nested = entry.get("config")
+    if isinstance(nested, dict):
+        return dict(nested)
+    return {key: value for key, value in entry.items() if key != "llm"}
 
 
 # ---------------------------------------------------------------------------
@@ -314,20 +372,23 @@ def _on_pre_tool_call(
     args: Optional[dict[str, Any]] = None,
     task_id: str = "",
     **kwargs: Any,
-) -> None:
+) -> dict[str, str] | None:
     """Middleware chain evaluation before tool execution.
 
-    Runs taint check, scanning, and policy evaluation. Raises on DENY
-    or ESCALATE so Hermes can handle the decision.
+    Runs taint check, scanning, and policy evaluation. Modern Hermes
+    blocks tools when a pre hook returns ``{"action": "block", ...}``;
+    raising from hooks is treated as observational failure and is swallowed.
 
     Args:
         tool_name: Name of the tool being called.
         args: Tool arguments dict.
         task_id: Current task/session identifier.
     """
+    if _source_patch_active():
+        # The source-patch dispatch hook already enforces in model_tools.py;
+        # running the native hook too would scan/deny twice. Defer to it.
+        return None
     if _initialization_error is not None:
-        from hermes_katana.exceptions import KatanaSecurityError
-
         log_security_event(
             logger,
             logging.WARNING,
@@ -336,16 +397,13 @@ def _on_pre_tool_call(
             fail_closed=True,
             **summarize_tool_call(tool_name, args or {}, task_id=task_id),
         )
-        raise KatanaSecurityError(
-            f"HermesKatana initialization failed; blocking tool call '{tool_name}' until the runtime is fixed",
-            tool_name=tool_name,
-            reasons=[_initialization_error],
+        return _block_directive(
+            f"HermesKatana initialization failed; blocking tool call '{tool_name}' until the runtime is fixed"
         )
 
     if not _initialized or _chain is None:
-        return
+        return None
 
-    from hermes_katana.exceptions import EscalationRequired, KatanaSecurityError
     from hermes_katana.middleware.chain import CallContext, DispatchDecision
 
     ctx = CallContext(
@@ -365,13 +423,7 @@ def _on_pre_tool_call(
             scan_score=ctx.extras.get("scan_risk_score", 0.0),
             **summarize_tool_call(tool_name, args or {}, task_id=task_id, call_id=ctx.call_id),
         )
-        raise KatanaSecurityError(
-            f"Tool call '{tool_name}' denied because HermesKatana pre-dispatch failed",
-            tool_name=tool_name,
-            reasons=[str(exc) or exc.__class__.__name__],
-            call_id=ctx.call_id,
-            scan_score=ctx.extras.get("scan_risk_score", 0.0),
-        ) from exc
+        return _block_directive(f"Tool call '{tool_name}' denied because HermesKatana pre-dispatch failed")
 
     if decision == DispatchDecision.DENY:
         reasons = ctx.deny_reasons or ["Blocked by HermesKatana security policy"]
@@ -384,13 +436,7 @@ def _on_pre_tool_call(
             taint_context=ctx.taint_context,
             **summarize_tool_call(tool_name, args or {}, task_id=task_id, call_id=ctx.call_id),
         )
-        raise KatanaSecurityError(
-            f"Tool call '{tool_name}' denied: {'; '.join(reasons)}",
-            tool_name=tool_name,
-            reasons=reasons,
-            call_id=ctx.call_id,
-            scan_score=ctx.extras.get("scan_risk_score", 0.0),
-        )
+        return _block_directive(f"Tool call '{tool_name}' denied: {'; '.join(reasons)}")
 
     if decision == DispatchDecision.ESCALATE:
         reasons = ctx.escalate_reasons or ["Requires human approval"]
@@ -403,22 +449,40 @@ def _on_pre_tool_call(
             taint_context=ctx.taint_context,
             **summarize_tool_call(tool_name, args or {}, task_id=task_id, call_id=ctx.call_id),
         )
-        raise EscalationRequired(
-            f"Tool call '{tool_name}' requires approval: {'; '.join(reasons)}",
+        from hermes_katana.escalation import resolve_escalation
+
+        approved = resolve_escalation(
+            _config.get("escalate_action", "block"),
             tool_name=tool_name,
             reasons=reasons,
+            args=args,
+            task_id=task_id,
             call_id=ctx.call_id,
-            scan_score=ctx.extras.get("scan_risk_score", 0.0),
-            escalation_context={
-                "tool_name": tool_name,
-                "args_keys": list((args or {}).keys()),
-                "reasons": reasons,
-                "taint_context": ctx.taint_context,
-            },
         )
+        if not approved:
+            return _block_directive(f"Tool call '{tool_name}' requires approval: {'; '.join(reasons)}")
+        # Human approved (or auto_approve): fall through to ALLOW.
 
     # Stash context for post_tool_call to pick up
     _stash_context(ctx.call_id, ctx)
+    return None
+
+
+def _block_directive(message: str) -> dict[str, str]:
+    """Return the Hermes pre-tool-call blocking contract."""
+    return {"action": "block", "message": message}
+
+
+def _source_patch_active() -> bool:
+    """True when Katana source patches are enforcing in this process.
+
+    The source-patch dispatch hook sets ``KATANA_SOURCE_PATCHED=1`` when it
+    bootstraps. When that path is active, the native plugin must not also
+    enforce, or every tool call would be scanned/denied twice (and outputs
+    redacted twice). Checked at hook time so it is robust to load ordering
+    between plugin discovery and dispatcher bootstrap.
+    """
+    return os.environ.get("KATANA_SOURCE_PATCHED", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _on_post_tool_call(
@@ -427,7 +491,7 @@ def _on_post_tool_call(
     result: str = "",
     task_id: str = "",
     **kwargs: Any,
-) -> None:
+) -> str | None:
     """Post-execution scanning, taint registration, and audit logging.
 
     Args:
@@ -436,9 +500,68 @@ def _on_post_tool_call(
         result: The tool's return value (string).
         task_id: Current task/session identifier.
     """
-    if not _initialized or _chain is None:
-        return
+    if _source_patch_active() or not _initialized or _chain is None:
+        return None
 
+    transformed = _process_tool_result(
+        tool_name=tool_name,
+        args=args,
+        result=result,
+        task_id=task_id,
+        **kwargs,
+    )
+    if isinstance(transformed, str):
+        _stash_transformed_result(
+            tool_name=tool_name,
+            task_id=task_id,
+            session_id=str(kwargs.get("session_id", "")),
+            tool_call_id=str(kwargs.get("tool_call_id", "")),
+            original=result,
+            transformed=transformed,
+        )
+        return transformed
+    return None
+
+
+def _on_transform_tool_result(
+    tool_name: str = "",
+    args: Optional[dict[str, Any]] = None,
+    result: str = "",
+    task_id: str = "",
+    **kwargs: Any,
+) -> str | None:
+    """Return a scanned/redacted tool result for modern Hermes."""
+    if _source_patch_active() or not _initialized or _chain is None:
+        return None
+
+    cached = _pop_transformed_result(
+        tool_name=tool_name,
+        task_id=task_id,
+        session_id=str(kwargs.get("session_id", "")),
+        tool_call_id=str(kwargs.get("tool_call_id", "")),
+        original=result,
+    )
+    if cached is not None:
+        return cached
+
+    return _process_tool_result(
+        tool_name=tool_name,
+        args=args,
+        result=result,
+        task_id=task_id,
+        **kwargs,
+    )
+
+
+def _process_tool_result(
+    *,
+    tool_name: str,
+    args: Optional[dict[str, Any]],
+    result: str,
+    task_id: str,
+    **kwargs: Any,
+) -> str:
+    """Run Katana post-dispatch middleware and return the final result."""
     from hermes_katana.middleware.chain import CallContext
 
     # Recover pre-dispatch context or create a fresh one
@@ -456,22 +579,33 @@ def _on_post_tool_call(
     try:
         _chain.execute_post(ctx)
     except Exception as exc:
+        error_name = str(exc) or exc.__class__.__name__
         log_security_event(
             logger,
             logging.ERROR,
             "tool_call_post_dispatch_failed",
-            error=str(exc) or exc.__class__.__name__,
+            error=error_name,
             **summarize_tool_call(tool_name, args or {}, task_id=task_id, call_id=ctx.call_id),
         )
+        return json.dumps(
+            {
+                "error": f"Tool call '{tool_name}' result blocked because HermesKatana post-dispatch failed: {error_name}"
+            },
+            ensure_ascii=False,
+        )
+
+    final_result = ctx.tool_output if isinstance(ctx.tool_output, str) else result
 
     # Register taint on tool output
-    if _tracker is not None and isinstance(result, str) and result:
+    if _tracker is not None and isinstance(final_result, str) and final_result:
         try:
             from hermes_katana.taint.registrar import taint_tool_output
 
-            taint_tool_output(result, tool_name)
+            taint_tool_output(final_result, tool_name)
         except Exception:
             logger.debug("Taint registration failed for %s output", tool_name, exc_info=True)
+
+    return final_result
 
 
 # ---------------------------------------------------------------------------
@@ -739,6 +873,70 @@ def _clear_stash() -> None:
     """Clear all stashed contexts (on session end)."""
     with _context_stash_lock:
         _context_stash.clear()
+    with _result_transform_stash_lock:
+        _result_transform_stash.clear()
+
+
+def _result_stash_key(
+    *,
+    tool_name: str,
+    task_id: str,
+    session_id: str,
+    tool_call_id: str,
+    original: Any,
+) -> tuple[str, str, str, str, str]:
+    """Build a stable key linking post and transform hooks for one call."""
+    if isinstance(original, str):
+        raw = original.encode("utf-8", errors="surrogatepass")
+    else:
+        raw = repr(original).encode("utf-8", errors="surrogatepass")
+    digest = hashlib.sha256(raw).hexdigest()
+    return tool_call_id or "", session_id or "", task_id or "", tool_name or "", digest
+
+
+def _stash_transformed_result(
+    *,
+    tool_name: str,
+    task_id: str,
+    session_id: str,
+    tool_call_id: str,
+    original: Any,
+    transformed: str,
+) -> None:
+    """Store a post-hook result so transform_tool_result can return it."""
+    key = _result_stash_key(
+        tool_name=tool_name,
+        task_id=task_id,
+        session_id=session_id,
+        tool_call_id=tool_call_id,
+        original=original,
+    )
+    with _result_transform_stash_lock:
+        _result_transform_stash[key] = transformed
+        if len(_result_transform_stash) > 100:
+            oldest = list(_result_transform_stash.keys())[: len(_result_transform_stash) - 50]
+            for stale_key in oldest:
+                _result_transform_stash.pop(stale_key, None)
+
+
+def _pop_transformed_result(
+    *,
+    tool_name: str,
+    task_id: str,
+    session_id: str,
+    tool_call_id: str,
+    original: Any,
+) -> str | None:
+    """Return and clear the transformed result for this hook pair."""
+    key = _result_stash_key(
+        tool_name=tool_name,
+        task_id=task_id,
+        session_id=session_id,
+        tool_call_id=tool_call_id,
+        original=original,
+    )
+    with _result_transform_stash_lock:
+        return _result_transform_stash.pop(key, None)
 
 
 # Backward-compatibility alias used by tests and alternative plugin loaders.

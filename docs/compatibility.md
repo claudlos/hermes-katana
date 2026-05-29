@@ -11,6 +11,8 @@ contract tests pass against it.
 |-------------|----------------|---------|---------------|-------------------------|--------|
 | `hermes-v0.1.0-core-snapshot` | `0.1.0` | Core | `tests/fixtures/hermes_compat/hermes-v0.1.0-core-snapshot` | Required dispatcher patches apply; optional UI, Docker, and gateway patches skip cleanly | Supported |
 | `hermes-v0.1.0-extended-snapshot` | `0.1.0` | Extended | `tests/fixtures/hermes_compat/hermes-v0.1.0-extended-snapshot` | All current patches apply | Supported |
+| `hermes-v0.15.2-core-snapshot` | `0.15.2` | Core | `tests/fixtures/hermes_compat/hermes-v0.15.2-core-snapshot` | Required `model_tools.py`, registry, and terminal patches apply | Supported |
+| `hermes-v0.15.2-extended-snapshot` | `0.15.2` | Extended | `tests/fixtures/hermes_compat/hermes-v0.15.2-extended-snapshot` | All current patches apply, including banner, Docker, and gateway integration | Supported |
 
 ## Support contract
 

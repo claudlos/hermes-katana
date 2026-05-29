@@ -121,6 +121,8 @@ def snapshot_paths_for_profile(profile: str, layout: str = "current") -> tuple[s
         raise ValueError(f"Unsupported snapshot layout: {layout!r}. Expected 'current' or 'legacy-v0.1.0'.")
 
     selected = {"pyproject.toml"}
+    if layout == "current":
+        selected.add("hermes_cli/__init__.py")
     include_optional = profile == "extended"
     for patch in patches:
         if patch.critical or include_optional:

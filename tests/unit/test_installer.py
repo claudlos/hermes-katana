@@ -170,6 +170,16 @@ class TestInstallerLayoutAwareness:
 
         assert verify.is_valid is True
 
+    def test_install_fails_closed_when_critical_patch_errors(self, monkeypatch, tmp_dir):
+        checkout = fixture_checkout_direct(HERMES_CURRENT_SNAPSHOT, tmp_dir)
+        monkeypatch.setattr(KatanaInstaller, "_generate_ca_cert", _stub_ca_cert)
+        (checkout / "model_tools.py").write_text("# incompatible dispatch boundary\n", encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match="Critical Katana patches failed"):
+            KatanaInstaller().install(checkout)
+
+        assert not (checkout / ".katana-installed").exists()
+
     def test_current_layout_uninstall_reverts_patches(self, monkeypatch, tmp_dir):
         checkout = fixture_checkout_direct(HERMES_CURRENT_SNAPSHOT, tmp_dir)
         monkeypatch.setattr(KatanaInstaller, "_generate_ca_cert", _stub_ca_cert)

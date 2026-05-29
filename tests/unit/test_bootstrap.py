@@ -62,6 +62,32 @@ class TestRuntimeBootstrap:
         assert env["KATANA_PROXY_URL"] == "http://127.0.0.1:8080"
         assert proxy_state["started"] is True
 
+    def test_load_checkout_state_reads_escalate_action(self, monkeypatch, tmp_dir):
+        checkout = fixture_checkout(HERMES_V010_CORE_SNAPSHOT, tmp_dir)
+        monkeypatch.setattr(KatanaInstaller, "_generate_ca_cert", _stub_ca_cert)
+        KatanaInstaller().install(checkout)
+        cfg = checkout / ".katana" / "katana.yaml"
+
+        # Default install is fail-closed.
+        bootstrap_mod.reset_runtime_cache()
+        assert bootstrap_mod.load_checkout_state(checkout).escalate_action == "block"
+
+        # Opt into interactive approval.
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8").replace("escalate_action: block", "escalate_action: acp_prompt"),
+            encoding="utf-8",
+        )
+        bootstrap_mod.reset_runtime_cache()
+        assert bootstrap_mod.load_checkout_state(checkout).escalate_action == "acp_prompt"
+
+        # Unknown values normalize back to block (fail-closed).
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8").replace("escalate_action: acp_prompt", "escalate_action: nonsense"),
+            encoding="utf-8",
+        )
+        bootstrap_mod.reset_runtime_cache()
+        assert bootstrap_mod.load_checkout_state(checkout).escalate_action == "block"
+
     def test_ensure_dispatcher_bootstrap_attaches_chain_and_escalator(self, monkeypatch, tmp_dir):
         checkout = fixture_checkout(HERMES_V010_CORE_SNAPSHOT, tmp_dir)
         monkeypatch.setattr(KatanaInstaller, "_generate_ca_cert", _stub_ca_cert)
