@@ -885,13 +885,24 @@ def _result_stash_key(
     tool_call_id: str,
     original: Any,
 ) -> tuple[str, str, str, str, str]:
-    """Build a stable key linking post and transform hooks for one call."""
+    """Build a stable key linking post and transform hooks for one call.
+
+    When Hermes supplies a ``tool_call_id`` it already uniquely identifies the
+    call, so the ``(id, session, task, tool)`` tuple is a stable link between the
+    post and transform hooks and we skip hashing the (potentially large) output.
+    Only when there is no id do we fall back to a content digest, which avoids
+    mismatching concurrent results for the same tool. The two key spaces are kept
+    disjoint (id present -> first element set, digest empty; id absent -> first
+    element empty, digest set) so they can never collide.
+    """
+    if tool_call_id:
+        return tool_call_id, session_id or "", task_id or "", tool_name or "", ""
     if isinstance(original, str):
         raw = original.encode("utf-8", errors="surrogatepass")
     else:
         raw = repr(original).encode("utf-8", errors="surrogatepass")
     digest = hashlib.sha256(raw).hexdigest()
-    return tool_call_id or "", session_id or "", task_id or "", tool_name or "", digest
+    return "", session_id or "", task_id or "", tool_name or "", digest
 
 
 def _stash_transformed_result(

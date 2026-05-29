@@ -149,7 +149,10 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         description="Inject Katana middleware chain before tool execution",
         target_file="model_tools.py",
         search_text="""\
-        # ACP/Zed edit approval runs before any file mutation.  The requester""",
+        # ACP/Zed edit approval runs before any file mutation.  The requester
+        # is bound via ContextVar only for ACP sessions, so CLI/gateway paths
+        # are unaffected when it is unset.
+        try:""",
         replace_text="""\
         {sentinel}
         # --- Katana middleware interception ---
@@ -201,9 +204,10 @@ CURRENT_CORE_PATCHES: list[Patch] = [
                 "error": f"Katana security bootstrap failed; blocking tool '{{function_name}}': {{type(_katana_exc).__name__}}: {{_katana_exc}}"
             }}, ensure_ascii=False)
         # --- End Katana middleware ---
-        # ACP/Zed edit approval runs before any file mutation.  The requester""".format(
-            sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook"
-        ),
+        # ACP/Zed edit approval runs before any file mutation.  The requester
+        # is bound via ContextVar only for ACP sessions, so CLI/gateway paths
+        # are unaffected when it is unset.
+        try:""".format(sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook"),
         sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook",
         critical=True,
     ),
@@ -900,6 +904,19 @@ def apply_patches(
             )
             continue
 
+        # Reject ambiguous anchors. ``replace(..., 1)`` would silently patch the
+        # first of several matches, which for a security-enforcement hook could
+        # inject in the wrong place while still leaving a sentinel that looks
+        # applied. Fail loudly instead so the anchor can be made more specific.
+        if content.count(patch.search_text) > 1:
+            msg = (
+                f"Anchor text matches {content.count(patch.search_text)} locations in "
+                f"{patch.target_file}; refusing to patch an ambiguous anchor"
+            )
+            results.append(PatchResult(name=patch.name, status=PatchStatus.ERROR, message=msg))
+            logger.error("Patch %s: %s", patch.name, msg)
+            continue
+
         # Apply the patch
         try:
             new_content = content.replace(patch.search_text, patch.replace_text, 1)
@@ -982,6 +999,15 @@ def preview_apply_patches(
                     message=msg,
                 )
             )
+            virtual_contents[target_file] = content
+            continue
+
+        if content.count(patch.search_text) > 1:
+            msg = (
+                f"Anchor text matches {content.count(patch.search_text)} locations in "
+                f"{patch.target_file}; refusing to patch an ambiguous anchor"
+            )
+            results.append(PatchResult(name=patch.name, status=PatchStatus.ERROR, message=msg))
             virtual_contents[target_file] = content
             continue
 

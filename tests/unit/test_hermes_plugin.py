@@ -661,3 +661,55 @@ class TestContextStash:
         hermes_plugin._stash_context("call-1", MagicMock())
         hermes_plugin._clear_stash()
         assert len(hermes_plugin._context_stash) == 0
+
+
+class TestResultStashKey:
+    """The post/transform link key should use tool_call_id when present and only
+    hash the (potentially large) output as a fallback when there is no id."""
+
+    def test_keys_on_tool_call_id_without_hashing(self):
+        big = "A" * 100_000
+        k1 = hermes_plugin._result_stash_key(
+            tool_name="read_file", task_id="t", session_id="s", tool_call_id="c1", original=big
+        )
+        k2 = hermes_plugin._result_stash_key(
+            tool_name="read_file", task_id="t", session_id="s", tool_call_id="c1", original="different content"
+        )
+        # Same id -> same key regardless of output; digest slot stays empty (no hashing).
+        assert k1 == k2
+        assert k1[0] == "c1"
+        assert k1[4] == ""
+
+    def test_falls_back_to_content_hash_without_id(self):
+        k1 = hermes_plugin._result_stash_key(tool_name="t", task_id="", session_id="", tool_call_id="", original="A")
+        k2 = hermes_plugin._result_stash_key(tool_name="t", task_id="", session_id="", tool_call_id="", original="B")
+        assert k1 != k2  # different content -> different key
+        assert k1[0] == ""  # id slot empty
+        assert k1[4]  # digest slot populated
+
+    def test_id_and_hash_keyspaces_are_disjoint(self):
+        with_id = hermes_plugin._result_stash_key(
+            tool_name="t", task_id="", session_id="", tool_call_id="x", original="A"
+        )
+        no_id = hermes_plugin._result_stash_key(tool_name="t", task_id="", session_id="", tool_call_id="", original="A")
+        assert with_id != no_id
+
+    def test_post_transform_roundtrip_links_by_id(self):
+        """End-to-end: post stashes by id, transform pops the same key even if it
+        receives a different `result` value (id is the source of truth)."""
+        hermes_plugin._stash_transformed_result(
+            tool_name="read_file",
+            task_id="t",
+            session_id="s",
+            tool_call_id="call-9",
+            original="ORIGINAL",
+            transformed="[redacted]",
+        )
+        popped = hermes_plugin._pop_transformed_result(
+            tool_name="read_file",
+            task_id="t",
+            session_id="s",
+            tool_call_id="call-9",
+            original="ORIGINAL",
+        )
+        assert popped == "[redacted]"
