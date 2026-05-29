@@ -592,7 +592,7 @@ class DockerEnvironment(BaseEnvironment):
     @staticmethod
     def _storage_opt_supported() -> bool:
         """Check if Docker's storage driver supports --storage-opt size=.
-
+        
         Only overlay2 on XFS with pquota supports per-container disk quotas.
         Ubuntu (and most distros) default to ext4, where this flag errors out.
         """

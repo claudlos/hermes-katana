@@ -799,23 +799,28 @@ from hermes_katana.exceptions import (
 
 ## hermes_katana.hermes_plugin
 
-Native Hermes agent plugin. Zero-modification integration -- install the
-package and the plugin activates automatically via entry point.
+Native Hermes agent plugin. Modern Hermes discovers the entry point but loads
+it only when `katana` is listed in `plugins.enabled`.
 
 ### Plugin Hooks
 
 ```python
-# Registered automatically via hermes_agent.plugins entry point
+# Discovered via hermes_agent.plugins entry point.
+# Activate in Hermes config with: plugins.enabled: ["katana"]
 
 def register(context):
     """Initialize plugin. Called by Hermes plugin manager."""
 
 def pre_tool_call(tool_name, args, context):
     """Run middleware chain before tool execution.
-    Raises KatanaSecurityError on DENY, EscalationRequired on ESCALATE."""
+    Returns {"action": "block", "message": "..."} on DENY, and on ESCALATE
+    unless escalate_action resolves the call to ALLOW (see escalate_action)."""
 
 def post_tool_call(tool_name, args, result, context):
-    """Scan outputs, register taint, log to audit trail."""
+    """Observe outputs, register taint, and prepare transformed output."""
+
+def transform_tool_result(tool_name, args, result, context):
+    """Return scanned/redacted tool output."""
 
 def on_session_start(session_id):
     """Initialize audit session and taint scope."""
@@ -834,7 +839,31 @@ plugins:
     taint_enabled: true
     audit_enabled: true
     audit_log_allow: true
+    escalate_action: block   # block | acp_prompt | auto_approve
 ```
+
+#### `escalate_action` — how human-approval (ESCALATE) decisions resolve
+
+A middleware returns `ESCALATE` when a call should pause for human approval
+rather than be auto-allowed or hard-denied. `escalate_action` decides what
+happens next:
+
+| Value | Behavior | Use when |
+|-------|----------|----------|
+| `block` (default) | Deny the call. Fail-closed. | Non-interactive runs — CLI batch, gateway, proving ground — where no human is present to answer. |
+| `acp_prompt` | Ask the human through Hermes' interactive approval card (the generic `request_permission` bridge that Zed/ACP binds). Falls back to **block** when no approver is bound. | Interactive editor (Zed/ACP) sessions where a human can respond. |
+| `auto_approve` | Allow without prompting; logs a loud, production-unsafe warning. | Trusted automation only. |
+
+Notes:
+
+- The legacy `KATANA_AUTO_APPROVE_ESCALATIONS=1` environment variable still
+  works and forces `auto_approve` regardless of the configured value.
+- `acp_prompt` requires an interactive approver to be bound in-process. That
+  binding exists during Zed/ACP sessions; headless contexts have none, so
+  `acp_prompt` degrades to `block` there (never silently allows).
+- For the **source-patch** integration the same setting lives in the checkout's
+  `.katana/katana.yaml` under `policy.escalate_action`. Both integration paths
+  share one resolver, so behavior is identical.
 
 ---
 

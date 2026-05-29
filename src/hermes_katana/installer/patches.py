@@ -20,11 +20,20 @@ The core patches
 ---------------------
 1. **tool_dispatch_hook** — injects Katana middleware before tool execution.
 2. **dispatcher_bootstrap** — attaches checkout-driven runtime state to Hermes dispatchers.
-3. **dispatcher_escalation_audit** — records denied escalation outcomes.
+3. **dispatcher_escalation_audit** — scans and audits tool results after dispatch.
 4. **proxy_env_vars** — injects HTTP_PROXY / HTTPS_PROXY into subprocess envs.
 5. **banner_integration** — shows Katana status in the Hermes startup banner.
 6. **docker_proxy_forwarding** — translates proxy address for containers.
 7. **gateway_command_scanning** — scans commands in non-interactive (gateway) mode.
+
+Note on (1) vs (2): the dispatch hook self-discovers its runtime via
+``discover_checkout_root(__file__)`` and no longer depends on the chain that
+``dispatcher_bootstrap`` attaches, so enforcement does not require (2). We keep
+(2) because it still owns process-level startup that enforcement does not do:
+recording fail-closed bootstrap state, priming the runtime/proxy environment,
+and setting the ``KATANA_SOURCE_PATCHED`` marker the native plugin uses to defer
+(see ``hermes_katana.bootstrap.bootstrap_dispatcher_failsafe``). The two patches
+have distinct responsibilities; (2) is not dead code.
 """
 
 from __future__ import annotations
@@ -133,103 +142,72 @@ _SENTINEL_PREFIX = "# [KATANA-PATCH]"
 
 CURRENT_CORE_PATCHES: list[Patch] = [
     # -----------------------------------------------------------------------
-    # 1. Tool dispatch hook  (tools/registry.py — sync dispatch)
+    # 1. Tool dispatch hook  (model_tools.py — sync dispatch boundary)
     # -----------------------------------------------------------------------
     Patch(
         name="tool_dispatch_hook",
         description="Inject Katana middleware chain before tool execution",
-        target_file="tools/registry.py",
+        target_file="model_tools.py",
         search_text="""\
-    def dispatch(self, name: str, args: dict, **kwargs) -> str:
-        \"\"\"Execute a tool handler by name.
-
-        * Async handlers are bridged automatically via ``_run_async()``.
-        * All exceptions are caught and returned as ``{"error": "..."}``
-          for consistent error format.
-        \"\"\"
-        entry = self._tools.get(name)
-        if not entry:
-            return json.dumps({"error": f"Unknown tool: {name}"})
-        try:
-            if entry.is_async:
-                from model_tools import _run_async
-                return _run_async(entry.handler(args, **kwargs))
-            return entry.handler(args, **kwargs)
-        except Exception as e:
-            logger.exception("Tool %s dispatch error: %s", name, e)
-            return json.dumps({"error": f"Tool execution failed: {type(e).__name__}: {e}"})""",
+        # ACP/Zed edit approval runs before any file mutation.  The requester
+        # is bound via ContextVar only for ACP sessions, so CLI/gateway paths
+        # are unaffected when it is unset.
+        try:""",
         replace_text="""\
-    def dispatch(self, name: str, args: dict, **kwargs) -> str:
-        \"\"\"Execute a tool handler by name.
-
-        * Async handlers are bridged automatically via ``_run_async()``.
-        * All exceptions are caught and returned as ``{{"error": "..."}}``
-          for consistent error format.
-        \"\"\"
         {sentinel}
         # --- Katana middleware interception ---
         _katana_chain = None
+        _katana_ctx = None
         try:
-            from hermes_katana.middleware import MiddlewareChain, CallContext, DispatchDecision
-            _katana_chain = getattr(self, '_katana_chain', None)
-            _katana_failed = getattr(self, '_katana_bootstrap_failed', False)
-            _katana_discovered = getattr(self, '_katana_checkout_discovered', False)
-            _katana_failed_err = getattr(self, '_katana_bootstrap_error', None) or 'unknown error'
-            if _katana_failed or (_katana_discovered and _katana_chain is None):
+            from hermes_katana.bootstrap import discover_checkout_root, get_runtime_bundle
+            from hermes_katana.middleware import CallContext, DispatchDecision
+            _katana_checkout_root = discover_checkout_root(__file__)
+            _katana_runtime = get_runtime_bundle(_katana_checkout_root) if _katana_checkout_root is not None else None
+            # This hook only runs from inside a patched checkout, so a missing
+            # checkout root (or runtime) means Katana is broken, not absent --
+            # fail closed rather than dispatching the tool unprotected.
+            if _katana_checkout_root is None or _katana_runtime is None:
                 return json.dumps({{
-                    "error": f"Katana security bootstrap failed; refusing to dispatch tool '{{name}}': {{_katana_failed_err}}"
-                }})
-            if _katana_chain is not None:
-                _katana_ctx = CallContext(tool_name=name, args=args)
+                    "error": f"Katana security bootstrap failed; refusing to dispatch tool '{{function_name}}': runtime unavailable"
+                }}, ensure_ascii=False)
+            if _katana_runtime is not None:
+                _katana_chain = _katana_runtime.chain
+                _katana_ctx = CallContext(
+                    tool_name=function_name,
+                    args=function_args,
+                    extras={{"task_id": task_id or ""}},
+                )
                 _katana_decision = _katana_chain.execute_pre(_katana_ctx)
                 if _katana_decision == DispatchDecision.DENY:
-                    try:
-                        self._katana_record_denial(name, _katana_ctx)
-                    except Exception:
-                        pass
                     return json.dumps({{
-                        "error": f"Katana blocked tool '{{name}}': "
+                        "error": f"Katana blocked tool '{{function_name}}': "
                         + "; ".join(_katana_ctx.deny_reasons)
-                    }})
+                    }}, ensure_ascii=False)
                 if _katana_decision == DispatchDecision.ESCALATE:
-                    from model_tools import _run_async as _katana_run_async
-                    if not _katana_run_async(self._katana_escalate(_katana_ctx)):
-                        try:
-                            self._katana_record_denial(name, _katana_ctx)
-                        except Exception:
-                            pass
+                    from hermes_katana.escalation import resolve_escalation
+                    _katana_reasons = _katana_ctx.escalate_reasons or ["Requires human approval"]
+                    _katana_action = getattr(_katana_runtime.state, "escalate_action", "block")
+                    if not resolve_escalation(
+                        _katana_action,
+                        tool_name=function_name,
+                        reasons=_katana_reasons,
+                        args=function_args,
+                        task_id=task_id or "",
+                        call_id=getattr(_katana_ctx, "call_id", "") or "",
+                    ):
                         return json.dumps({{
-                            "error": f"Katana escalation denied for '{{name}}'"
-                        }})
+                            "error": f"Katana blocked tool '{{function_name}}' pending approval: "
+                            + "; ".join(_katana_reasons)
+                        }}, ensure_ascii=False)
         except Exception as _katana_exc:
             return json.dumps({{
-                "error": f"Katana security bootstrap failed; blocking tool '{{name}}': {{type(_katana_exc).__name__}}: {{_katana_exc}}"
-            }})
+                "error": f"Katana security bootstrap failed; blocking tool '{{function_name}}': {{type(_katana_exc).__name__}}: {{_katana_exc}}"
+            }}, ensure_ascii=False)
         # --- End Katana middleware ---
-        entry = self._tools.get(name)
-        if not entry:
-            return json.dumps({{"error": f"Unknown tool: {{name}}"}})
-        try:
-            if entry.is_async:
-                from model_tools import _run_async
-                result = _run_async(entry.handler(args, **kwargs))
-            else:
-                result = entry.handler(args, **kwargs)
-            # --- Katana post-dispatch ---
-            try:
-                if _katana_chain is not None:
-                    _katana_ctx.tool_output = result
-                    _katana_chain.execute_post(_katana_ctx)
-                    result = _katana_ctx.tool_output
-            except (NameError, Exception):
-                pass
-            # --- End Katana post-dispatch ---
-            return result
-        except Exception as e:
-            logger.exception("Tool %s dispatch error: %s", name, e)
-            return json.dumps({{"error": f"Tool execution failed: {{type(e).__name__}}: {{e}}"}})""".format(
-            sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook"
-        ),
+        # ACP/Zed edit approval runs before any file mutation.  The requester
+        # is bound via ContextVar only for ACP sessions, so CLI/gateway paths
+        # are unaffected when it is unset.
+        try:""".format(sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook"),
         sentinel=f"{_SENTINEL_PREFIX} tool_dispatch_hook",
         critical=True,
     ),
@@ -252,7 +230,7 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         # --- Katana bootstrap ---
         try:
             from hermes_katana.bootstrap import bootstrap_dispatcher_failsafe
-            bootstrap_dispatcher_failsafe(self)
+            bootstrap_dispatcher_failsafe(self, checkout_root=__file__)
         except Exception as _katana_bootstrap_exc:
             self._katana_bootstrap_failed = True
             self._katana_bootstrap_error = f"{{type(_katana_bootstrap_exc).__name__}}: {{_katana_bootstrap_exc}}"
@@ -262,29 +240,37 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         critical=True,
     ),
     # -----------------------------------------------------------------------
-    # 3. Escalation denial audit  (adds audit helper to ToolRegistry)
+    # 3. Post-dispatch scanning/audit  (model_tools.py)
     # -----------------------------------------------------------------------
     Patch(
         name="dispatcher_escalation_audit",
-        description="Add _katana_record_denial audit helper to ToolRegistry",
-        target_file="tools/registry.py",
+        description="Run Katana post-dispatch scanning before Hermes records the result",
+        target_file="model_tools.py",
         search_text="""\
-    def get_all_tool_names(self) -> List[str]:
-        \"\"\"Return sorted list of all registered tool names.\"\"\"
-        return sorted(self._tools.keys())""",
+        duration_ms = int((time.monotonic() - _dispatch_start) * 1000)""",
         replace_text="""\
-    {sentinel}
-    def _katana_record_denial(self, name: str, ctx) -> None:
-        \"\"\"Record a Katana-denied tool call for audit purposes.\"\"\"
+        duration_ms = int((time.monotonic() - _dispatch_start) * 1000)
+        {sentinel}
+        # --- Katana post-dispatch scan/audit ---
         try:
-            from hermes_katana.audit import record_denial
-            record_denial(tool_name=name, context=ctx)
-        except Exception:
-            pass
-
-    def get_all_tool_names(self) -> List[str]:
-        \"\"\"Return sorted list of all registered tool names.\"\"\"
-        return sorted(self._tools.keys())""".format(sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit"),
+            if (
+                "_katana_chain" in locals()
+                and "_katana_ctx" in locals()
+                and _katana_chain is not None
+                and _katana_ctx is not None
+            ):
+                _katana_ctx.tool_output = result
+                _katana_ctx.tool_error = None
+                _katana_chain.execute_post(_katana_ctx)
+                if isinstance(_katana_ctx.tool_output, str):
+                    result = _katana_ctx.tool_output
+        except Exception as _katana_post_exc:
+            return json.dumps({{
+                "error": f"Katana post-dispatch scan failed; blocking tool '{{function_name}}': {{type(_katana_post_exc).__name__}}: {{_katana_post_exc}}"
+            }}, ensure_ascii=False)
+        # --- End Katana post-dispatch scan/audit ---""".format(
+            sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit"
+        ),
         sentinel=f"{_SENTINEL_PREFIX} dispatcher_escalation_audit",
         critical=True,
     ),
@@ -297,12 +283,9 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         target_file="tools/terminal_tool.py",
         search_text="""\
     if env_type == "local":
-        lc = local_config or {}
-        return _LocalEnvironment(cwd=cwd, timeout=timeout,
-                                 persistent=lc.get("persistent", False))""",
+        return _LocalEnvironment(cwd=cwd, timeout=timeout)""",
         replace_text="""\
     if env_type == "local":
-        lc = local_config or {{}}
         {sentinel}
         # --- Katana proxy injection ---
         _katana_proxy_env = {{}}
@@ -320,9 +303,9 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         except Exception:
             pass
         # --- End Katana proxy injection ---
-        return _LocalEnvironment(cwd=cwd, timeout=timeout,
-                                 persistent=lc.get("persistent", False),
-                                 env=_katana_proxy_env)""".format(sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars"),
+        return _LocalEnvironment(cwd=cwd, timeout=timeout, env=_katana_proxy_env)""".format(
+            sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars"
+        ),
         sentinel=f"{_SENTINEL_PREFIX} proxy_env_vars",
         critical=True,
     ),
@@ -370,14 +353,8 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         description="Translate proxy address for Docker containers",
         target_file="tools/environments/docker.py",
         search_text="""\
-        # Build the per-exec environment: start with explicit docker_env values
-        # (static config), then overlay docker_forward_env / skill env_passthrough
-        # (dynamic from host process).  Forward values take precedence.
         exec_env: dict[str, str] = dict(self._env)""",
         replace_text="""\
-        # Build the per-exec environment: start with explicit docker_env values
-        # (static config), then overlay docker_forward_env / skill env_passthrough
-        # (dynamic from host process).  Forward values take precedence.
         exec_env: dict[str, str] = dict(self._env)
         {sentinel}
         # --- Katana Docker proxy forwarding ---
@@ -413,14 +390,12 @@ CURRENT_CORE_PATCHES: list[Patch] = [
         description="Scan incoming gateway messages before agent execution",
         target_file="gateway/run.py",
         search_text="""\
-    async def _handle_message_with_agent(self, event, source, _quick_key: str):
+    async def _handle_message_with_agent(self, event, source, _quick_key: str, run_generation: int):
         \"\"\"Inner handler that runs under the _running_agents sentinel guard.\"\"\"
-
-        # Get or create session
-        session_entry = self.session_store.get_or_create_session(source)
-        session_key = session_entry.session_key""",
+        _msg_start_time = time.time()
+        _platform_name = source.platform.value if hasattr(source.platform, "value") else str(source.platform)""",
         replace_text="""\
-    async def _handle_message_with_agent(self, event, source, _quick_key: str):
+    async def _handle_message_with_agent(self, event, source, _quick_key: str, run_generation: int):
         \"\"\"Inner handler that runs under the _running_agents sentinel guard.\"\"\"
         {sentinel}
         # --- Katana gateway scanning ---
@@ -430,16 +405,16 @@ CURRENT_CORE_PATCHES: list[Patch] = [
             _scan_result = scan_command(_msg_text) if _msg_text.startswith("!") else scan_input(_msg_text)
             if _scan_result.verdict == ScanVerdict.BLOCK:
                 return (
-                    "\\u26a0\\ufe0f Katana security scan blocked this message: "
+                    "Katana security scan blocked this message: "
                     + _scan_result.summary
                 )
         except ImportError:
             pass
         # --- End Katana gateway scanning ---
-
-        # Get or create session
-        session_entry = self.session_store.get_or_create_session(source)
-        session_key = session_entry.session_key""".format(sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning"),
+        _msg_start_time = time.time()
+        _platform_name = source.platform.value if hasattr(source.platform, "value") else str(source.platform)""".format(
+            sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning"
+        ),
         sentinel=f"{_SENTINEL_PREFIX} gateway_command_scanning",
         critical=False,
     ),
@@ -929,6 +904,19 @@ def apply_patches(
             )
             continue
 
+        # Reject ambiguous anchors. ``replace(..., 1)`` would silently patch the
+        # first of several matches, which for a security-enforcement hook could
+        # inject in the wrong place while still leaving a sentinel that looks
+        # applied. Fail loudly instead so the anchor can be made more specific.
+        if content.count(patch.search_text) > 1:
+            msg = (
+                f"Anchor text matches {content.count(patch.search_text)} locations in "
+                f"{patch.target_file}; refusing to patch an ambiguous anchor"
+            )
+            results.append(PatchResult(name=patch.name, status=PatchStatus.ERROR, message=msg))
+            logger.error("Patch %s: %s", patch.name, msg)
+            continue
+
         # Apply the patch
         try:
             new_content = content.replace(patch.search_text, patch.replace_text, 1)
@@ -1011,6 +999,15 @@ def preview_apply_patches(
                     message=msg,
                 )
             )
+            virtual_contents[target_file] = content
+            continue
+
+        if content.count(patch.search_text) > 1:
+            msg = (
+                f"Anchor text matches {content.count(patch.search_text)} locations in "
+                f"{patch.target_file}; refusing to patch an ambiguous anchor"
+            )
+            results.append(PatchResult(name=patch.name, status=PatchStatus.ERROR, message=msg))
             virtual_contents[target_file] = content
             continue
 

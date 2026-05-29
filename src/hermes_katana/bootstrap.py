@@ -19,6 +19,7 @@ from typing import Any, Optional, TypedDict
 import yaml  # type: ignore[import-untyped]
 
 from hermes_katana.config import load_config
+from hermes_katana.escalation import normalize_escalate_action
 from hermes_katana.installer.installer import (
     KATANA_CONFIG_DIR,
     KATANA_CONFIG_FILE,
@@ -73,6 +74,7 @@ class CheckoutRuntimeState:
     proxy_enabled: bool
     proxy_config: Optional[ProxyConfig]
     ca_cert_path: Optional[Path]
+    escalate_action: str = "block"
 
 
 @dataclass
@@ -150,6 +152,11 @@ def load_checkout_state(checkout_root: str | Path | None = None) -> Optional[Che
     audit_cfg = raw.get("audit", {}) if isinstance(raw.get("audit"), dict) else {}
 
     policy_preset = str(policy_cfg.get("preset", global_config.policy_preset)).strip() or "balanced"
+    # How ESCALATE decisions resolve for this checkout: block (default) |
+    # acp_prompt | auto_approve. Accept either policy.escalate_action or a
+    # dedicated escalation.action section; unknown values fail closed to block.
+    escalation_cfg = raw.get("escalation", {}) if isinstance(raw.get("escalation"), dict) else {}
+    escalate_action = normalize_escalate_action(policy_cfg.get("escalate_action", escalation_cfg.get("action")))
     policy_dir = _resolve_checkout_path(root, policy_cfg.get("custom_dir"))
     if policy_dir is not None and policy_dir.exists():
         policy_source = f"custom dir {policy_dir}"
@@ -201,6 +208,7 @@ def load_checkout_state(checkout_root: str | Path | None = None) -> Optional[Che
         proxy_enabled=proxy_enabled,
         proxy_config=proxy_config,
         ca_cert_path=ca_cert_path,
+        escalate_action=escalate_action,
     )
 
 
@@ -291,7 +299,15 @@ def bootstrap_dispatcher_failsafe(
 
     The dispatch hook reads these to decide whether to refuse a tool call when
     Katana looks broken (vs. simply not configured).
+
+    Also sets ``KATANA_SOURCE_PATCHED=1`` in the environment. This function is
+    only ever called from the injected ``dispatcher_bootstrap`` source patch, so
+    its execution means source-patch enforcement is live in this process. The
+    native entry-point plugin reads that marker and defers, so a checkout that is
+    both pip-installed and source-patched does not scan/deny every tool twice.
     """
+    os.environ["KATANA_SOURCE_PATCHED"] = "1"
+
     discovered: Optional[Path] = None
     try:
         discovered = discover_checkout_root(checkout_root if isinstance(checkout_root, (str, Path)) else None)

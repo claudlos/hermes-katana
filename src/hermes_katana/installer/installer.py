@@ -100,6 +100,13 @@ version: "1.0"
 policy:
   preset: balanced
   custom_dir: null  # Path to custom policy YAML directory
+  # How tool calls that ESCALATE (require human approval) are resolved:
+  #   block        - deny the call (fail-closed; safe default for headless runs)
+  #   acp_prompt   - ask the human via Hermes' interactive approval card
+  #                  (Zed/ACP sessions); falls back to block when no approver
+  #                  is bound (e.g. CLI batch, gateway, proving ground)
+  #   auto_approve - allow without prompting (trusted automation only)
+  escalate_action: block
 
 # Scanner settings
 scanner:
@@ -283,6 +290,11 @@ class KatanaInstaller:
             layout = "current"
         return LEGACY_CORE_PATCHES if layout == "legacy-v0.1.0" else CURRENT_CORE_PATCHES
 
+    def _critical_patch_failures(self, patches: list, results: list[PatchResult]) -> list[PatchResult]:
+        """Return failed results for patches that are required for protection."""
+        critical_names = {patch.name for patch in patches if patch.critical}
+        return [result for result in results if result.name in critical_names and result.status == PatchStatus.ERROR]
+
     def _validate_checkout_local_path(self, target: Path, path: Path, label: str) -> None:
         """Reject symlink/traversal paths before writing checkout-local state."""
         try:
@@ -438,6 +450,11 @@ class KatanaInstaller:
 
         # 4. Apply patches
         results = apply_patches(target, patches=patches)
+        critical_failures = self._critical_patch_failures(patches, results)
+        if critical_failures:
+            details = "; ".join(f"{result.name}: {result.message}" for result in critical_failures)
+            logger.error("Installation failed because critical patches did not apply: %s", details)
+            raise RuntimeError(f"Critical Katana patches failed; install marker not written: {details}")
 
         # 5. Write install marker
         self._write_marker(target, results)

@@ -37,6 +37,9 @@ def _write_source_checkout(root: Path, version: str = "1.2.3") -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f"# {patch.name}\n{patch.search_text}\n", encoding="utf-8")
 
+    (source / "hermes_cli").mkdir(exist_ok=True)
+    (source / "hermes_cli" / "__init__.py").write_text("", encoding="utf-8")
+
     return source
 
 
@@ -73,6 +76,7 @@ class TestCompatSnapshots:
             "hermes-v1.2.3-extended-snapshot",
         ]
         assert (fixtures_root / "hermes-v1.2.3-core-snapshot" / "tools" / "registry.py").exists()
+        assert (fixtures_root / "hermes-v1.2.3-core-snapshot" / "hermes_cli" / "__init__.py").exists()
         assert not (fixtures_root / "hermes-v1.2.3-core-snapshot" / "hermes_cli" / "banner.py").exists()
         assert (fixtures_root / "hermes-v1.2.3-extended-snapshot" / "hermes_cli" / "banner.py").exists()
 
@@ -204,14 +208,22 @@ class TestCompatSnapshots:
         assert records
         for record in records:
             assert record.provenance["verification_mode"] == "tree_sha256"
-            assert record.provenance["source_tree_sha256"] == compute_tree_sha256(repo_fixtures_root / record.directory)
+            if record.provenance.get("source_tree_origin") == "pinned_snapshot_directory":
+                assert record.provenance["source_tree_sha256"] == compute_tree_sha256(
+                    repo_fixtures_root / record.directory
+                )
+            else:
+                assert len(record.provenance["source_tree_sha256"]) == 64
+                assert record.source_ref
 
 
 _CURRENT_SNAPSHOT_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "hermes_compat" / "hermes-current-snapshot"
-_EXPECTED_HERMES_COMMIT = "d932980c1a7d9b83b7dac7552824192d73fdd635"
+_EXPECTED_HERMES_COMMIT = "77a1650c78a4cb1813d8a81fa1da40a15b6a3ec5"
 _EXPECTED_FILES = [
+    "model_tools.py",
     "tools/registry.py",
     "tools/terminal_tool.py",
+    "hermes_cli/__init__.py",
     "hermes_cli/banner.py",
     "tools/environments/docker.py",
     "gateway/platforms/base.py",
@@ -268,3 +280,40 @@ class TestCurrentHermesSnapshot:
             if actual_size != meta["size"]:
                 mismatches.append(f"{rel}: expected size {meta['size']}, got {actual_size}")
         assert not mismatches, "Size mismatches in current snapshot:\n" + "\n".join(mismatches)
+
+
+class TestHermesResultHookContract:
+    """Guard the Hermes contract the native plugin depends on.
+
+    The native plugin redacts tool output through ``transform_tool_result``
+    because modern Hermes treats ``post_tool_call`` as observational (its return
+    value is ignored). If a future Hermes refresh stops invoking
+    ``transform_tool_result`` after ``post_tool_call``, output redaction would
+    silently fail open. These assertions turn that regression into a loud test
+    failure at snapshot-refresh time instead of a runtime security gap.
+    """
+
+    def _model_tools_source(self) -> str:
+        return (_CURRENT_SNAPSHOT_DIR / "model_tools.py").read_text(encoding="utf-8")
+
+    def test_dispatcher_invokes_post_tool_call_hook(self):
+        assert '"post_tool_call"' in self._model_tools_source(), (
+            "Hermes model_tools.py no longer invokes the post_tool_call hook; "
+            "the native plugin's post-dispatch path needs review."
+        )
+
+    def test_dispatcher_invokes_transform_tool_result_hook(self):
+        assert '"transform_tool_result"' in self._model_tools_source(), (
+            "Hermes model_tools.py no longer invokes transform_tool_result; the "
+            "native plugin's output redaction would fail open. Re-anchor the "
+            "plugin's result-transform path before shipping this snapshot."
+        )
+
+    def test_transform_runs_after_post_tool_call(self):
+        src = self._model_tools_source()
+        post_idx = src.index('"post_tool_call"')
+        transform_idx = src.index('"transform_tool_result"')
+        assert transform_idx > post_idx, (
+            "transform_tool_result must be invoked after post_tool_call so the "
+            "plugin can replace output the observational post hook prepared."
+        )
