@@ -51,6 +51,11 @@ def main() -> int:
         critical = critical_by_name.get(result.name, False)
         marker = "CRITICAL" if critical else "optional"
         print(f"  {result.name:30} {status:10} [{marker}] {result.message or ''}".rstrip())
+        # Intentionally conservative: for a drift canary, anything other than a
+        # clean APPLIED on a critical patch is worth failing on. In practice
+        # apply_patches only ever returns APPLIED or ERROR for a critical patch
+        # (search-not-found and ambiguous-anchor both map to ERROR; SKIPPED is
+        # non-critical only), so this does not produce false positives.
         if result.status != PatchStatus.APPLIED and critical:
             failures.append(f"patch '{result.name}' did not apply ({status})")
 

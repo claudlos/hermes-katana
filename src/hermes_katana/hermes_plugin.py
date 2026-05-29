@@ -894,6 +894,13 @@ def _result_stash_key(
     mismatching concurrent results for the same tool. The two key spaces are kept
     disjoint (id present -> first element set, digest empty; id absent -> first
     element empty, digest set) so they can never collide.
+
+    The id-less fallback is best-effort: two id-less calls with identical
+    ``(task, tool, session, content)`` map to the same key. That is benign in
+    practice -- identical content through the (deterministic) post-dispatch chain
+    yields an identical transformed result, so an overwrite replaces a value with
+    the same value. Modern Hermes always supplies ``tool_call_id``, so the keyed
+    path is the norm and this fallback is rarely exercised.
     """
     if tool_call_id:
         return tool_call_id, session_id or "", task_id or "", tool_name or "", ""
