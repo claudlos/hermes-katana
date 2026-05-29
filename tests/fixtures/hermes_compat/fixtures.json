@@ -35,6 +35,41 @@
         "source_tree_sha256": "4ccfb4eae5b3f609229383b0e2424b46f1bd6a54f30327eacfb7f69f5bbcf111",
         "source_tree_origin": "pinned_snapshot_directory"
       }
+    },
+    {
+      "id": "hermes-v0.15.2-core-snapshot",
+      "directory": "hermes-v0.15.2-core-snapshot",
+      "hermes_version": "0.15.2",
+      "profile": "core",
+      "support_tier": "supported",
+      "source": "generated_release_snapshot",
+      "description": "Pinned Hermes 0.15.2 core checkout layout with only required patch targets.",
+      "expected": {
+        "critical_patches": "applied",
+        "optional_patches": "skipped_cleanly"
+      },
+      "source_ref": "v2026.5.29.2",
+      "provenance": {
+        "verification_mode": "tree_sha256",
+        "source_tree_sha256": "b5f13b8aad2fa1270e2f1aa0257a1b64eaf900cf7e06b61338382312800bca03"
+      }
+    },
+    {
+      "id": "hermes-v0.15.2-extended-snapshot",
+      "directory": "hermes-v0.15.2-extended-snapshot",
+      "hermes_version": "0.15.2",
+      "profile": "extended",
+      "support_tier": "supported",
+      "source": "generated_release_snapshot",
+      "description": "Pinned Hermes 0.15.2 extended checkout layout with optional UI, Docker, and gateway patch targets.",
+      "expected": {
+        "all_patches": "applied"
+      },
+      "source_ref": "v2026.5.29.2",
+      "provenance": {
+        "verification_mode": "tree_sha256",
+        "source_tree_sha256": "b5f13b8aad2fa1270e2f1aa0257a1b64eaf900cf7e06b61338382312800bca03"
+      }
     }
   ]
 }

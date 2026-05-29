@@ -1,0 +1,44 @@
+name: Hermes Drift Check
+
+# Source patches use exact-anchor matching against Hermes internals. This job
+# applies them to the *latest* Hermes Agent on a schedule so upstream refactors
+# that break our anchors surface as a red build with actionable output — well
+# before they reach a user's install. It is intentionally separate from the
+# required CI workflow so upstream churn never blocks our own PRs.
+
+on:
+  schedule:
+    - cron: "0 12 * * 1" # Mondays 12:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: hermes-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  drift:
+    name: Patches apply to latest Hermes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Install hermes-katana
+        run: |
+          python -m pip install --no-cache-dir --upgrade pip
+          python -m pip install --no-cache-dir -e .
+      - name: Clone latest Hermes Agent
+        run: git clone --depth 1 https://github.com/NousResearch/hermes-agent.git "${RUNNER_TEMP}/hermes-agent"
+      - name: Apply Katana patches to latest Hermes
+        run: python scripts/check_hermes_drift.py "${RUNNER_TEMP}/hermes-agent"
