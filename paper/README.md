@@ -6,7 +6,7 @@ arXiv-ready paper (NeurIPS format).
 Files
 -----
   main.tex           - Paper source
-  bibliography.bib   - References (13 verified citations)
+  bibliography.bib   - References (BibTeX)
   neurips.sty        - NeurIPS 2025 style file
   extra_pkgs.tex     - Package imports
   Makefile           - Build system
@@ -22,7 +22,7 @@ Compile via Overleaf
 --------------------
 1. Go to https://overleaf.com
 2. New Project → Upload Project
-3. Upload adversarial-llm-paper-arxiv.zip (or the entire directory)
+3. Upload a zip of this `paper/` directory (or the directory itself)
 4. Set main.tex as the main document
 5. Click Recompile
 
