@@ -434,7 +434,7 @@ class KatanaProxy:
         if not _mitmproxy_runtime_available():
             raise RuntimeError(
                 "mitmproxy is not importable in the active Python environment. "
-                "Install the proxy extra with: pip install 'hermes-katana\\[proxy]'"
+                "Install the proxy extra with: pip install 'hermes-katana[proxy]'"
             )
 
         # Build the mitmdump command

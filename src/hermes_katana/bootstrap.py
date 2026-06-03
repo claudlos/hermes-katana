@@ -235,13 +235,17 @@ def _runtime_cache_signature(state: CheckoutRuntimeState) -> tuple[object, ...]:
     """Return a filesystem signature for config inputs that shape the runtime."""
     parts: list[object] = [_path_signature(state.config_path)]
     if state.policy_dir is not None:
-        policy_files = sorted(
-            path
-            for path in state.policy_dir.rglob("*")
-            if path.is_file() and path.suffix.lower() in {".yaml", ".yml"}
-        )
-        parts.append(tuple((str(path.relative_to(state.policy_dir)), _path_signature(path)) for path in policy_files))
+        parts.append(_policy_dir_signature(state.policy_dir))
     return tuple(parts)
+
+
+def _policy_dir_signature(policy_dir: Path) -> tuple[object, ...]:
+    """Return a signature for policy files loaded from one directory."""
+    try:
+        policy_files = sorted(set(policy_dir.glob("*.yaml")) | set(policy_dir.glob("*.yml")))
+    except OSError:
+        return (str(policy_dir), None)
+    return tuple((path.name, _path_signature(path)) for path in policy_files if path.is_file())
 
 
 def _path_signature(path: Path) -> tuple[object, ...]:

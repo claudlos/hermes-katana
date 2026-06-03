@@ -38,6 +38,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markup import escape as _rich_escape
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
@@ -1308,7 +1309,7 @@ def run(ctx: click.Context, target: str | None, start_proxy: bool) -> None:
     except SystemExit:
         raise
     except Exception as exc:
-        err_console.print(f"[red]Runtime bootstrap failed:[/red] {exc}")
+        err_console.print(f"[red]Runtime bootstrap failed:[/red] {_rich_escape(str(exc))}")
         raise SystemExit(EXIT_ERROR)
 
     # Check if proxy should be started
@@ -1770,7 +1771,7 @@ def proxy_start(host: str, port: int) -> None:
     except ImportError:
         console.print("\n   [yellow]Proxy module not available.[/yellow]\n")
     except Exception as exc:
-        err_console.print(f"\n   [red]Failed to start proxy:[/red] {exc}\n")
+        err_console.print(f"\n   [red]Failed to start proxy:[/red] {_rich_escape(str(exc))}\n")
         raise SystemExit(EXIT_ERROR)
 
 
