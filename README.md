@@ -253,7 +253,8 @@ Run it with `katana proving-ground run|batch|synthesize`; see
 ### Trained classifiers
 
 The scanner cascade can route content to purpose-trained models instead of
-relying on patterns alone. The v3.1 origin-aware classifiers are published on
+relying on patterns alone. The v3.1 origin-aware classifiers (the internal "v17"
+label is the training-data iteration behind this release) are published on
 Hugging Face under MIT:
 
 | Model | Role | Headline metric | Hugging Face |
