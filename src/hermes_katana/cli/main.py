@@ -346,7 +346,7 @@ def _run_artifacts_setup(
     selected = []
 
     if all_models:
-        selected = list(specs)
+        selected = [spec for spec in specs if spec.managed_setup]
     elif small or small_torch or large:
         if small:
             selected.append(by_alias["minilm"])
@@ -366,6 +366,8 @@ def _run_artifacts_setup(
     else:
         console.print("[bold]Katana artifact setup[/bold]\n")
         for spec in specs:
+            if not spec.managed_setup:
+                continue
             if no_large and spec.requires_confirmation:
                 continue
             status = artifact_status(spec)
@@ -415,7 +417,7 @@ def _verify_full_setup(*, target_dir: str | None) -> None:
     importlib.invalidate_caches()
     failures: list[str] = []
 
-    specs = artifact_specs()
+    specs = [spec for spec in artifact_specs() if spec.managed_setup]
     target_root = Path(target_dir).expanduser().resolve() if target_dir else None
     multiple = len(specs) > 1
     for spec in specs:

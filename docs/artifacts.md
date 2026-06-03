@@ -23,6 +23,10 @@ for local high-accuracy experiments and is never selected by default.
 | `minilm`, `small` | `katana_v15_distill_minilm_onnx` | `Carlosian/hermes-katana-v15-distill-minilm-onnx` | yes |
 | `minilm_torch`, `small_torch` | `katana_v15_distill_minilm_torch` | `Carlosian/hermes-katana-v15-distill-minilm` | no |
 | `large`, `v15_large` | `katana_v15_large` | `Carlosian/hermes-katana-v15-large` | no |
+| `v17_large`, `deberta_v17` | `katana_v17_large` | `Carlosian/hermes-katana-17` | no (research) |
+| `v17_minilm`, `small_v17` | `katana_v17_minilm` | `Carlosian/hermes-katana-90` | no (research) |
+
+The `v17_*` rows are the v3.1 paper's origin-aware classifiers (`Carlosian/hermes-katana-17` and `-90`). They are pinned by commit revision, carry an `artifact_manifest.json`, and are treated as research models: downloadable explicitly (e.g. `katana artifacts download v17_minilm`) but excluded from managed `setup --all` / `full`.
 
 Each Hugging Face repo must include an `artifact_manifest.json`. Katana treats the manifest as part of the artifact and
 refuses to mark the artifact ready when required files are missing, hashes do not match, sizes do not match, or the

@@ -65,6 +65,39 @@ V15_LARGE_REQUIRED_FILES = (
 
 V15_LARGE_ALLOW_PATTERNS = (*V15_LARGE_REQUIRED_FILES, "README.md")
 
+# v3.1 origin-aware research models (paper artifacts). Pinned to the commit that
+# carries the integrity manifest so downloads are reproducible.
+DEFAULT_V17_LARGE_REPO = "Carlosian/hermes-katana-17"
+DEFAULT_V17_MINILM_REPO = "Carlosian/hermes-katana-90"
+V17_LARGE_REVISION = "a08883466abd2924587ac0646fa693c0a27b50af"
+V17_MINILM_REVISION = "fc52b343e206d190bcb773a32a909a3885fdf480"
+
+V17_LARGE_REQUIRED_FILES = (
+    "model.safetensors",
+    "config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "added_tokens.json",
+    "spm.model",
+    ARTIFACT_MANIFEST,
+)
+
+V17_LARGE_ALLOW_PATTERNS = (*V17_LARGE_REQUIRED_FILES, "README.md", "results_comparison.png")
+
+V17_MINILM_REQUIRED_FILES = (
+    "model.safetensors",
+    "config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "added_tokens.json",
+    "vocab.txt",
+    ARTIFACT_MANIFEST,
+)
+
+V17_MINILM_ALLOW_PATTERNS = (*V17_MINILM_REQUIRED_FILES, "README.md", "results_comparison.png")
+
 
 class ArtifactError(RuntimeError):
     """Base artifact error."""
@@ -100,6 +133,7 @@ class ArtifactSpec:
     revision_env_var: str | None = None
     interactive_default: bool = False
     requires_confirmation: bool = False
+    managed_setup: bool = True
 
 
 @dataclass(frozen=True)
@@ -178,6 +212,44 @@ _BASE_ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
         interactive_default=False,
         requires_confirmation=True,
     ),
+    ArtifactSpec(
+        name="katana_v17_large",
+        aliases=("v17_large", "large_v17", "deberta_v17", "katana_v17", "katana_v17_large"),
+        display_name="Katana v17 DeBERTa-v3-large (origin-aware)",
+        repo_id=DEFAULT_V17_LARGE_REPO,
+        repo_type="model",
+        revision=V17_LARGE_REVISION,
+        required_files=V17_LARGE_REQUIRED_FILES,
+        allow_patterns=V17_LARGE_ALLOW_PATTERNS,
+        size_label="~1.7 GB",
+        role="v3.1 origin-aware 9-class classifier (high accuracy)",
+        profile="max_local",
+        path_env_var="KATANA_V17_LARGE_DIR",
+        repo_env_var="KATANA_V17_LARGE_HF_REPO_ID",
+        revision_env_var="KATANA_V17_LARGE_HF_REVISION",
+        interactive_default=False,
+        requires_confirmation=True,
+        managed_setup=False,
+    ),
+    ArtifactSpec(
+        name="katana_v17_minilm",
+        aliases=("v17_minilm", "minilm_v17", "small_v17", "katana_v17_minilm", "katana_v17_distill_minilm"),
+        display_name="Katana v17 MiniLM-L6 (origin-aware, distilled)",
+        repo_id=DEFAULT_V17_MINILM_REPO,
+        repo_type="model",
+        revision=V17_MINILM_REVISION,
+        required_files=V17_MINILM_REQUIRED_FILES,
+        allow_patterns=V17_MINILM_ALLOW_PATTERNS,
+        size_label="~90 MB",
+        role="v3.1 origin-aware distilled CPU classifier (PyTorch)",
+        profile="torch_cpu",
+        path_env_var="KATANA_V17_MINILM_DIR",
+        repo_env_var="KATANA_V17_MINILM_HF_REPO_ID",
+        revision_env_var="KATANA_V17_MINILM_HF_REVISION",
+        interactive_default=False,
+        requires_confirmation=False,
+        managed_setup=False,
+    ),
 )
 
 
@@ -238,6 +310,16 @@ def minilm_torch_spec(repo_id: str | None = None, revision: str | None = None) -
 def v15_large_spec(repo_id: str | None = None, revision: str | None = None) -> ArtifactSpec:
     """Build the optional large v15 artifact spec with env overrides."""
     return artifact_spec("large", repo_id=repo_id, revision=revision)
+
+
+def v17_large_spec(repo_id: str | None = None, revision: str | None = None) -> ArtifactSpec:
+    """Build the v3.1 origin-aware DeBERTa-v3-large artifact spec with env overrides."""
+    return artifact_spec("v17_large", repo_id=repo_id, revision=revision)
+
+
+def v17_minilm_spec(repo_id: str | None = None, revision: str | None = None) -> ArtifactSpec:
+    """Build the v3.1 origin-aware distilled MiniLM artifact spec with env overrides."""
+    return artifact_spec("v17_minilm", repo_id=repo_id, revision=revision)
 
 
 def artifact_path(spec: ArtifactSpec, target_dir: str | Path | None = None) -> Path:
