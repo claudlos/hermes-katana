@@ -2,7 +2,7 @@
 
 Why this exists: the existing `run_shard.py` and `run_agent_shard.py` workers do
 live HTTPS calls per attack. At 20-60s/attack they can't practically clear the
-215K-row multilingual corpus or the 18-model × 11-language scale. Batch APIs
+215K-row multilingual corpus or the 16 model/harness × 11-language scale. Batch APIs
 cut cost ~50% and lift throughput by ~10x by letting the provider queue our
 requests and fulfil them within 24h.
 
