@@ -64,7 +64,9 @@ def _exclusion_keys() -> set[tuple]:
 def _stream(apply_exclusion: bool):
     excl = _exclusion_keys() if apply_exclusion else set()
     for p in sorted(SHARD_RUNS.glob("shard_*.jsonl")):
-        if "_broken" in str(p):
+        # ``shard_*.jsonl`` also matches ``shard_*.fp.jsonl`` false-positive
+        # sidecar files; skip them so rows are not double-counted.
+        if "_broken" in str(p) or p.name.endswith(".fp.jsonl"):
             continue
         with p.open(encoding="utf-8") as f:
             for line in f:
