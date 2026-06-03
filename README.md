@@ -272,9 +272,10 @@ reading content at all.
 For production scanning the toolkit installs a distilled MiniLM **ONNX** artifact
 by default (CPU, no PyTorch) via `katana artifacts download minilm`; see
 [`docs/artifacts.md`](docs/artifacts.md) for the runtime artifact registry and
-its `minilm` / `minilm_torch` / `large` selectors. (The v17 research models above
-are published on Hugging Face for reproduction and are not yet wired into that
-registry.)
+its `minilm` / `minilm_torch` / `large` selectors. The v17 research models above
+are also registered for explicit download (`katana artifacts download v17_minilm`
+/ `v17_large`) — pinned by commit and integrity-verified — but kept out of the
+default `setup --all`.
 
 ### Datasets
 
