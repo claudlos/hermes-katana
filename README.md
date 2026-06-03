@@ -425,7 +425,7 @@ open-source project, cite the project and the research it builds on:
   title   = {Hermes Katana: Defense-in-Depth Security for AI Agents},
   author  = {{Hermes Katana contributors}},
   year    = {2026},
-  version = {3.0.0},
+  version = {3.1.0},
   url     = {https://github.com/claudlos/hermes-katana},
   note    = {Open-source agent security middleware, scanner suite, policy engine, vault, audit trail, and proving-ground harness}
 }

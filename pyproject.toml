@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hermes-katana"
-version = "3.0.0"
+version = "3.1.0"
 description = "Defense-in-depth security toolkit for LLM agents — taint tracking, proxy secret guard, policy engine, and red-team benchmarking"
 authors = [{name = "Hermes Katana contributors"}]
 requires-python = ">=3.10"
