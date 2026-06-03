@@ -6,7 +6,7 @@ arXiv-ready paper (NeurIPS format).
 Files
 -----
   main.tex           - Paper source
-  bibliography.bib   - References (7 verified citations)
+  bibliography.bib   - References (13 verified citations)
   neurips.sty        - NeurIPS 2025 style file
   extra_pkgs.tex     - Package imports
   Makefile           - Build system
@@ -30,13 +30,13 @@ Submit to arXiv
 ---------------
 1. Compile to produce main.pdf
 2. Go to https://arxiv.org/submit
-3. Upload: main.tex, bibliography.bib, neurips.sty, extra_pkgs.tex
+3. Upload: main.tex, bibliography.bib, neurips.sty, extra_pkgs.tex, fig_confusion.tex, fig_roc.tex
 4. Select subject: cs.CR (Cryptography and Security) or cs.AI (Artificial Intelligence)
 5. arXiv will recompile automatically
 
 Empirical basis
 ---------------
-  2,919 adversarial sessions
-  18 model/harness combinations
+  2,363 adversarial sessions
+  16 model/harness combinations
   5 platforms (local, OpenRouter, Nous, Anthropic, Google)
   17,643 attack corpus (100 stratified shards)

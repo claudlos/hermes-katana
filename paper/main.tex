@@ -35,9 +35,9 @@ Universal Vulnerabilities and an Origin-Aware Defense}
 \begin{abstract}
 Prompt injection has remained a largely unsolved threat to LLM agents. Most studies examine a single model, and most defensive classifiers are evaluated without guarding against train/test leakage. We close both gaps with one empirical pipeline: an adversarial harness that measures which attacks transfer across models and harnesses, and an origin-aware classifier trained and evaluated on the attacks the harness confirms. We organize the attack surface into a six-category taxonomy---behavioral control, jailbreak, persona hijack, cognitive-state manipulation, encoding evasion, and semantic manipulation.
 
-Across 2{,}269 sessions spanning 17 model/harness combinations on 5 platforms, vulnerability falls with scale but never to zero: small (4B) models are 48--95\% exploitable, frontier models 8--10\%. A preregistered comparison overturns a common assumption: holding the model fixed, the permission-gated Claude~Code~CLI was 30 points \emph{more} vulnerable than a flat agent harness (40.8\% vs.\ 10.2\%, $p<10^{-6}$). Harness design thus shapes attack outcomes but does not substitute for model alignment. Attacks also leave model-agnostic behavioral signatures detectable from runtime telemetry alone (AUC~0.847), and robustness is not language-invariant: across 11 languages mean effectiveness ranges from 12\% to 39\% depending on the model, and which language is most exploitable does not transfer across model families (rank Spearman $\rho\approx0$).
+Across 2{,}363 sessions spanning 16 model/harness combinations on 5 platforms, vulnerability falls with scale but never to zero: small (4B) models are 48--95\% exploitable, frontier models 8--10\%. A preregistered comparison overturns a common assumption: holding the model fixed, the permission-gated Claude~Code~CLI was 30 points \emph{more} vulnerable than a flat agent harness (40.8\% vs.\ 10.2\%, $p<10^{-6}$). Harness design thus shapes attack outcomes but does not substitute for model alignment. Attacks also leave model-agnostic behavioral signatures detectable from runtime telemetry alone (AUC~0.847), and robustness is not language-invariant: across 11 languages mean effectiveness ranges from 12\% to 39\% depending on the model, and which language is most exploitable does not transfer across model families (rank Spearman $\rho\approx0$).
 
-Our defense---a DeBERTa-v3-large classifier trained on a diverse, leakage-audited corpus---reaches 9-class macro $F_1 = 0.94$ on a held-out benchmark verified disjoint from its training families, at a 0.5\% false-positive rate, well ahead of public detectors. It is \emph{origin-robust}: it passes benign content at a flat $\sim$1.6\% rate whether that content is declared user input or arrives from any of five untrusted tiers (tool output, retrieved web, memory, tool descriptions, sub-agent output). It can therefore scan untrusted streams without over-blocking---a property a benchmark of user-origin clean rows alone cannot measure. Deployed as live scanning middleware, it drives effective attacks to zero: $12.4\%\to0\%$ across 10{,}774 paired trials, and $16.3\%\to0\%$ against a live agent on a frontier model. It blocks 94--98\% of attacks before they reach the model. We conclude that effective defense against prompt injection is external to the model, channel-aware, and empirically validated rather than assumed.
+Our defense---a DeBERTa-v3-large classifier trained on a diverse, leakage-audited corpus---reaches 9-class macro $F_1 = 0.94$ on a held-out benchmark verified disjoint from its training families, at a 0.5\% false-positive rate, well ahead of public detectors. It is \emph{origin-robust}: it passes benign content at a flat $\sim$1.6\% rate whether that content is declared user input or arrives from any of five untrusted tiers (tool output, retrieved web, memory, tool descriptions, sub-agent output). It can therefore scan untrusted streams without over-blocking---a property a benchmark of user-origin clean rows alone cannot measure. Deployed as live scanning middleware with correct origin tagging, it drives effective attacks to zero on the confirmed-attack benchmark: $12.4\%\to0\%$ across 10{,}774 paired trials, and $16.3\%\to0\%$ against a live agent on a frontier model. It blocks 94--98\% of attacks before they reach the model. We conclude that effective defense against prompt injection is external to the model, channel-aware, and empirically validated rather than assumed.
 \end{abstract}
 
 %% ============================================================
@@ -82,10 +82,10 @@ L6 & Semantic framing & Recontextualizing harmful as benign \\
 \end{table}
 
 \paragraph{Alignment techniques and limitations.}
-Current alignment approaches share a fundamental limitation: they operate on \emph{surface-level statistical patterns} of training data rather than on a grounded model of intent or safety. RLHF optimizes for human preference ratings, which correlate with but do not guarantee safety. Constitutional AI provides explicit rules but cannot anticipate novel framing techniques. System prompts provide contextual constraints but are consumed as ordinary text by the model, offering no cryptographic or structural enforcement. The instruction-hierarchy proposal~\citep{wallace2024instruction} trains models to prioritize privileged instructions, a model-level analogue of the structural defenses we measure at the harness level. This shared limitation is precisely what enables cross-model transferability: an attack that exploits the gap between statistical pattern matching and genuine safety reasoning will transfer across any model that relies on the same gap.
+Current alignment approaches share a fundamental limitation: they operate on \emph{surface-level statistical patterns} of training data rather than on a grounded model of intent or safety. RLHF optimizes for human preference ratings, which correlate with but do not guarantee safety. Constitutional AI provides explicit rules but cannot anticipate novel framing techniques. System prompts provide contextual constraints but are consumed as ordinary text by the model, offering no cryptographic or structural enforcement. The instruction-hierarchy proposal~\citep{wallace2024instruction} trains models to prioritize privileged instructions, a model-level analogue of the structural defenses we measure at the harness level. Complementary defenses operate at the prompt and training level: StruQ~\citep{chen2024struq} separates trusted instructions from untrusted data into distinct channels backed by a model fine-tuned on structured queries; SecAlign~\citep{chen2024secalign} casts injection robustness as a preference-optimization objective that trains the model to prefer secure over injected responses; and spotlighting~\citep{hines2024spotlighting} marks untrusted input with a continuous provenance signal (delimiting, datamarking, or encoding) so the model can separate instructions from data---a prompt-level analogue of the origin tokens our classifier consumes. This shared limitation is precisely what enables cross-model transferability: an attack that exploits the gap between statistical pattern matching and genuine safety reasoning will transfer across any model that relies on the same gap.
 
 \paragraph{Evaluation harnesses and classifiers.}
-AgentDojo~\citep{debenedetti2024agentdojo} provides a dynamic environment for evaluating injection attacks and defenses on LLM agents; our \dataset{} differs in emphasizing \emph{cross-model confirmation} (an attack is retained only if it transfers to $\geq3$ families) and per-turn telemetry capture. On the classifier side, public detectors such as \texttt{deepset} and \texttt{protectai} prompt-injection models provide binary baselines; we benchmark against both. Our hard-negative tier is drawn from the HackAPrompt competition corpus~\citep{schulhoff2023hackaprompt}. Our classifier backbone is DeBERTa-v3~\citep{he2021deberta}.
+AgentDojo~\citep{debenedetti2024agentdojo} provides a dynamic environment for evaluating injection attacks and defenses on LLM agents; our \dataset{} differs in emphasizing \emph{cross-model confirmation} (an attack is retained only if it transfers to $\geq3$ families) and per-turn telemetry capture. InjecAgent~\citep{zhan2024injecagent} similarly benchmarks indirect prompt injection in tool-integrated agents, and the Tensor~Trust dataset~\citep{toyer2023tensortrust} contributes crowd-sourced injection and extraction attacks from an online game; we complement these with a cross-model-confirmed corpus and a leakage-audited held-out benchmark. On the classifier side, public detectors such as \texttt{deepset} and \texttt{protectai} prompt-injection models provide binary baselines; we benchmark against both. Our hard-negative tier is drawn from the HackAPrompt competition corpus~\citep{schulhoff2023hackaprompt}. Our classifier backbone is DeBERTa-v3~\citep{he2021deberta}.
 
 %% ============================================================
 \section{Methodology}
@@ -99,24 +99,24 @@ We developed the \dataset{} testing infrastructure---a sharded, resumable advers
 The transferability battery drew from a stratified pool of 17{,}643 attacks organized into 100 shards for parallel execution, delivered via four injection channels: file content, code comments, data rows, and tool output. Continued confirmation runs have since grown the empirically-confirmed corpus to roughly 1{,}268 unique attack families, with automated confirmation depth up to seven model families per attack. This is a substantial deepening of the original hand-curated set of ten high-transferability prompts (Table~\ref{tab:atkmatrix}), which were verified by hand against a broader panel of up to eleven model families.
 
 \paragraph{Model and harness coverage.}
-Testing spanned 17 distinct model/harness combinations across 5 platforms (Table~\ref{tab:models}).
+Testing spanned 16 distinct model/harness combinations across 5 platforms (Table~\ref{tab:models}).
 
 \begin{table}[t]
 \centering
 \small
-\caption{Model and harness coverage for the transferability battery. $N$ = sessions per configuration. The seven API rows sum to 1{,}732; the reported API total of 1{,}738 includes six further sessions from incidental models (2$\times$MiniMax, 1$\times$Claude~Haiku, 2$\times$Gemma) not listed.}
+\caption{Model and harness coverage for the transferability battery. $N$ = sessions per configuration. The seven API rows sum to 1{,}826; the reported API total of 1{,}832 includes six further sessions from incidental models (3$\times$MiniMax, 2$\times$Gemma, 1$\times$Claude~Haiku) not listed.}
 \label{tab:models}
 \begin{tabular}{lrr}
 \toprule
 \textbf{Configuration} & \textbf{N} & \textbf{Platform} \\
 \midrule
 \multicolumn{3}{l}{\textit{API backends (OpenAI-compat chat completions)}} \\
-\quad qwen3.5-4b-abliterated & 50 & Local (llama.cpp) \\
-\quad qwen3.5-4b & 100 & Local (llama.cpp) \\
+\quad qwen3.5-4b-abliterated & 95 & Local (llama.cpp) \\
+\quad qwen3.5-4b & 151 & Local (llama.cpp) \\
 \quad tinyllama-1b & 100 & Local (llama.cpp) \\
-\quad qwen3-4b & 68 & Local (llama.cpp) \\
+\quad qwen3-4b & 67 & Local (llama.cpp) \\
 \quad nemotron-4b & 102 & Local (llama.cpp) \\
-\quad arcee/trinity-large & 662 & OpenRouter free \\
+\quad arcee/trinity-large & 661 & OpenRouter free \\
 \quad nemotron-3-super-120b & 650 & OpenRouter free \\
 \midrule
 \multicolumn{3}{l}{\textit{Agent-CLI harnesses}} \\
@@ -162,7 +162,7 @@ Independently of the text classifier, we train a logistic-regression classifier 
 \label{sec:attack-surface}
 %% ============================================================
 
-The transferability battery comprises 2{,}269 sessions---1{,}738 in API mode (OpenAI-compatible chat completions) and 531 in agent-CLI mode. Because the two modes expose different attack surfaces, we report them separately rather than pooling them into a single effectiveness figure: API mode registers only behavioral drift and session collapse, whereas agent-CLI mode also executes tools and therefore exposes canary exfiltration and file-system effects (the canary surface, present only in agent-CLI mode, recorded 102 exfiltration events across 531 sessions). The following subsections give model-level vulnerability in API mode, then the harness and channel effects measured in agent-CLI mode.
+The transferability battery comprises 2{,}363 sessions---1{,}832 in API mode (OpenAI-compatible chat completions) and 531 in agent-CLI mode. Because the two modes expose different attack surfaces, we report them separately rather than pooling them into a single effectiveness figure: API mode registers only behavioral drift and session collapse, whereas agent-CLI mode also executes tools and therefore exposes canary exfiltration and file-system effects (the canary surface, present only in agent-CLI mode, recorded 102 exfiltration events across 531 sessions). The following subsections give model-level vulnerability in API mode, then the harness and channel effects measured in agent-CLI mode.
 
 \subsection{Model-Level Vulnerability (API Mode)}
 
@@ -191,7 +191,7 @@ nemotron-3-super-120b (OR free) & 650 & 8 & 0 \\
 \subsection{The Harness-Versus-Model Finding}
 \label{sec:harness}
 
-It is natural to expect that a permission-gated, instruction-hierarchy harness (e.g., Claude~Code~CLI) would be \emph{less} vulnerable than a flat-trust agent harness (\hermes{}) running the same model. We preregistered exactly this hypothesis (\texttt{H-harness-dominates-model}) and a controlled comparison on the identical model \textbf{rejected it} (Table~\ref{tab:harness}).
+It is natural to expect that a permission-gated, instruction-hierarchy harness (e.g., Claude~Code~CLI) would be \emph{less} vulnerable than a flat-trust agent harness (\hermes{}) running the same model. We preregistered exactly this hypothesis (\texttt{H-harness-dominates-model})\footnote{Preregistered as \texttt{research/hypotheses/H-20260422-harness-dominates-model.yaml}, registered 2026-04-22, before the \texttt{ablation-H-harness-dominates} run that resolved it on 2026-04-23.} and a controlled comparison on the identical model \textbf{rejected it} (Table~\ref{tab:harness}).
 
 \begin{table}[t]
 \centering
@@ -255,10 +255,10 @@ Across the agent-CLI observations, the injection channel spans roughly two order
   title={attack effectiveness vs.\ model scale (API)},
   width=0.50\linewidth, xbar, bar width=6pt,
   xmin=0, xmax=118, xlabel={effective \%},
-  symbolic y coords={nemotron-120B, arcee-frontier, nemotron-4B, qwen3-4B, tinyllama-1B, qwen3.5-4B},
+  symbolic y coords={nemotron-120B, arcee-frontier, nemotron-4B, qwen3-4B, tinyllama-1B, qwen3.5-4B-abl, qwen3.5-4B},
   ytick=data, nodes near coords, every node near coord/.append style={font=\tiny},
 ]
-\addplot[fill=blue!30, draw=blue!60] coordinates {(66,qwen3.5-4B) (95,tinyllama-1B) (90,qwen3-4B) (48,nemotron-4B)};
+\addplot[fill=blue!30, draw=blue!60] coordinates {(66,qwen3.5-4B) (58,qwen3.5-4B-abl) (95,tinyllama-1B) (90,qwen3-4B) (48,nemotron-4B)};
 \addplot[fill=red!35, draw=red!65] coordinates {(10,arcee-frontier) (8,nemotron-120B)};
 \nextgroupplot[
   title={injection-channel odds ratio},
@@ -297,7 +297,6 @@ Recall & 0.74 & \textbf{0.80} & +0.06 \\
 \end{table}
 
 \subsection{Multilingual Robustness}
-\label{sec:multilingual}
 
 To test whether alignment defenses transfer across languages, we translated a stratified attack corpus into 11 languages (built from a 400-per-language seed, evenly across categories) and evaluated it on three models---Claude~Haiku~4.5, Claude~Sonnet~4.6, and MiMo\footnote{Xiaomi \texttt{mimo-v2-pro}, accessed through the Hermes agent.}---accumulating 1{,}600--2{,}741 trials per language on each Claude model (Table~\ref{tab:multilingual}). Two findings hold. First, the \emph{level} of vulnerability is strongly model-specific: mean effectiveness is 11.7\% on Sonnet, 23.2\% on Haiku, and 39.3\% on MiMo---a $\sim$3$\times$ spread---while within a single model the per-language variation is comparatively modest on the aligned Claude models (20--24\% on Haiku, 11--12\% on Sonnet) and wider on MiMo (29--51\%). Second, and more consequential for evaluation design, the \emph{rank-ordering} of which languages are hardest does not transfer across model families (below).
 
@@ -460,7 +459,7 @@ This is the property a benchmark composed only of user-origin clean rows cannot 
 
 \subsection{Live Middleware Evaluation}
 
-Deployed inline as scanning middleware (refuse on attack-score~$>0.5$), the classifier is evaluated in a paired design (scanner enabled vs.\ disabled, identical attacks). At scale, on $n=10{,}774$ paired trials, the effective-attack rate falls from \textbf{12.40\% to 0.00\%} ($+12.40$ pp). Of those trials, 1{,}336 attacks succeeded without the scanner and were blocked with it, while \emph{zero} succeeded only with the scanner---a McNemar contingency degenerate in the strongest possible direction ($p\approx0$). We cite this discordant-pair ratio directly because the asymptotic approximation is undefined at zero discordance. Per channel, \texttt{code\_comment} drops 24.98\%~$\to$~0.00\% and \texttt{file\_content} 22.26\%~$\to$~0.00\%.
+Deployed inline as scanning middleware (refuse on attack-score~$>0.5$), the classifier is evaluated in a paired design (scanner enabled vs.\ disabled, identical attacks). At scale, on $n=10{,}774$ paired trials, the effective-attack rate falls from \textbf{12.40\% to 0.00\%} ($-12.40$ pp). Of those trials, 1{,}336 attacks succeeded without the scanner and were blocked with it, while \emph{zero} succeeded only with the scanner---a McNemar contingency degenerate in the strongest possible direction ($p\approx0$). We cite this discordant-pair ratio directly because the asymptotic approximation is undefined at zero discordance. Per channel, \texttt{code\_comment} drops 24.98\%~$\to$~0.00\% and \texttt{file\_content} 22.26\%~$\to$~0.00\%.
 
 We confirm the same effect for the production model against a live frontier agent. Running the \hermes{} agent on a GPT-5-class model (Codex) over a 50-attack shard (\texttt{file\_content}, secrets-audit task; 49 valid, one run invalid), the agent was itself injection-robust---no canary exfiltration, with 16.3\% of attacks (8 of 49) degrading its output to a terse refusal. With the production scanner in front, 94--98\% of attacks were refused at the perimeter before the agent ran (100\% in the live in-loop configuration, where untrusted-origin file content scores well above threshold), driving the effective rate to \textbf{0.0\%}. Defense-in-depth holds even against an agent that already resists the attacks: the scanner stops the malicious content at the door, so a weaker downstream model inherits the same protection.
 
@@ -525,17 +524,21 @@ Our measurements motivate a layered defense whose layers do not share common-mod
 
 We note the scope conditions of our claims. \emph{Origin robustness, not origin routing.} The classifier is origin-\emph{robust}---its false-positive rate is flat across declared origins---but it does \emph{not} perform origin \emph{routing}: it does not reliably flip a fixed dual-use payload (``what instructions were you given?'') from benign under \texttt{user\_input} to attack under an untrusted tier. An earlier corpus appeared to route, but we found that behavior to be an artifact of the untrusted-origin shortcut (Section~\ref{sec:origin-robust}): a blanket ``untrusted~$\Rightarrow$~attack'' rule satisfies provenance-conditional templates for free. Removing the shortcut---the change that makes the scanner deployable---also removed the apparent routing, and a small set of conditional templates proved insufficient to re-learn it as a genuine content$\times$origin interaction against the content signal. Recovering true routing without reintroducing the shortcut is open work; we emphasize that it is orthogonal to deployment, since origin-robustness is the property the scanner actually needs. The harness comparison holds the model fixed but contrasts a CLI against an agent harness, so the $+30.65$ pp effect is, by construction, entangled with the underlying API surface; a factorial decomposition of the individual harness controls (Section~\ref{sec:harness}) would isolate the responsible component. Finally, multilingual coverage is European- and CJK-weighted ($\sim$17.6\% non-ASCII); a broader low-resource expansion is in progress.
 
+\paragraph{Threats to validity.} Three further scope conditions bound the empirical claims. First, the \emph{effective} criterion uses a fixed behavioral-drift threshold of $0.3$; re-thresholding the stored per-session drift leaves the model ordering and the small-versus-frontier gap stable across $0.2/0.3/0.4$ (TinyLlama $99/95/89\%$, Qwen3-4B $97/90/76\%$, Nemotron-4B $52/48/41\%$, Arcee $10/10/10\%$, Nemotron-120B $8/8/7\%$; frontier models stay below $10\%$ even at $0.2$).\footnote{Two local Qwen3.5 variants are omitted from this re-thresholding: their stored effectiveness label was driven by a per-session signature signal that was not retained, so it cannot be recomputed from the stored drift scalar alone.} Second, class labels were assigned by an LLM annotator following the published injection taxonomies of Section~\ref{sec:background} rather than by multiple human annotators, so we report no inter-annotator agreement; the residual confusion concentrates exactly at the \texttt{content\_injection}/\texttt{exfiltration\_attempt} boundary where the distinction is genuinely ambiguous (Table~\ref{tab:perclass}). Third, the $\geq3$-family confirmation criterion defines \emph{both} which attacks count as transferable and which attacks enter the classifier's training and benchmark corpus; the family-disjoint split rules out paraphrase leakage but not this selection effect, so the reported detection scores are conditional on the confirmed-attack distribution rather than on arbitrary injection text.
+
 %% ============================================================
 \section{Ethics and Responsible Release}
 %% ============================================================
 
 The corpus was produced under authorized red-team research. We do not publicly release the attack corpus or the synthetic-attack generator: publishing either would lower the bar for producing new variants, and the PII-shaped strings that some attacks \emph{request} (SSNs, card numbers, system prompts) are synthetic rather than real data but are best kept out of circulation regardless. Attack analysis throughout the paper is presented at the level of mechanisms, not deployable payloads. The evaluation controls we rely on---a confirmed-only test set and an explicit family-level leakage audit (Section~\ref{sec:hygiene})---are specified in enough detail to reproduce, and we offer them as a protocol that any injection-classifier benchmark can apply to its own data to keep comparisons honest.
 
+\paragraph{Availability.} The two trained classifiers are released for research use under the MIT license: the production DeBERTa-v3-large model at \url{https://huggingface.co/Carlosian/hermes-katana-17} and the distilled MiniLM-L6 CPU model at \url{https://huggingface.co/Carlosian/hermes-katana-90}; the integration toolkit is at \url{https://github.com/claudlos/hermes-katana}. The deterministic family-hash split rule and the leakage-audit procedure are fully specified in the appendices for reproduction. As noted above, the attack corpus and the synthetic-attack generator are withheld.
+
 %% ============================================================
 \section{Conclusion}
 %% ============================================================
 
-A small number of carefully constructed adversarial prompts transfer broadly across diverse LLMs and platforms because the reasons attacks transfer are the same reasons models are useful: persona flexibility, domain expertise, helpfulness, and encoding understanding are valued capabilities that also constitute attack surfaces. Our measurements refine three beliefs about defense. First, vulnerability is scale-dependent---but not scale-determined: among 4B models it ranges from 48\% to 95\%, so alignment and training move it substantially even at fixed size, and it is never eliminated. Second, harness design shapes attack outcomes but does \emph{not} dominate model alignment---a permission-gated CLI was measurably \emph{more} exposed on a key channel, rejecting the intuitive hypothesis under preregistration. Third, attacks are detectable from outside the model: a classifier trained on a diverse, leakage-audited corpus reaches macro $F_1=0.9382$ on a leakage-free benchmark, is origin-robust (a flat false-positive rate across declared origins, so it can scan untrusted streams without over-blocking), and drives live effective attacks to zero, while a telemetry-only scanner reaches AUC 0.847 with no semantics at all. Effective defense is external, plural, channel-aware, and empirically validated---not assumed. The harness, the classifier, the telemetry monitor, and an independent verifier each fail on different inputs---and because they fail independently, an attack that defeats one meets another it does not. That redundancy, not the robustness of any single component, is what drives effective attacks to zero.
+A small number of carefully constructed adversarial prompts transfer broadly across diverse LLMs and platforms because the reasons attacks transfer are the same reasons models are useful: persona flexibility, domain expertise, helpfulness, and encoding understanding are valued capabilities that also constitute attack surfaces. Our measurements refine three beliefs about defense. First, vulnerability is scale-dependent---but not scale-determined: among 4B models it ranges from 48\% to 95\%, so alignment and training move it substantially even at fixed size, and it is never eliminated. Second, harness design shapes attack outcomes but does \emph{not} dominate model alignment---a permission-gated CLI was measurably \emph{more} exposed on a key channel, rejecting the intuitive hypothesis under preregistration. Third, attacks are detectable from outside the model: a classifier trained on a diverse, leakage-audited corpus reaches macro $F_1=0.9382$ on a leakage-free benchmark, is origin-robust (a flat false-positive rate across declared origins), and drives live effective attacks to zero, while a telemetry-only scanner reaches AUC 0.847 with no semantics at all. Effective defense is external, plural, channel-aware, and empirically validated---not assumed. The harness, the classifier, the telemetry monitor, and an independent verifier each fail on different inputs---and because they fail independently, an attack that defeats one meets another it does not. That redundancy, not the robustness of any single component, is what drives effective attacks to zero.
 
 %% ============================================================
 %% BIBLIOGRAPHY
@@ -567,7 +570,7 @@ A small number of carefully constructed adversarial prompts transfer broadly acr
 \atk{101347f9} & Cog.\ state & L4 & Tutorial req.\ & Helpfulness & 10 \\
 \atk{629e23a4} & Encoding & L5 & Obfuscation & Filter bypass & 10 \\
 \atk{a6b4aba7} & Semantic & L6 & Authority & Training-data & 10 \\
-\atk{293063204} & Behavioral & L3/L4 & Emotional & Empathy & 10 \\
+\atk{29306320} & Behavioral & L3/L4 & Emotional & Empathy & 10 \\
 \atk{a58ee2c1} & Cog.\ state & L4 & Educational & Knowledge & 10 \\
 \atk{de946c00} & Content & L2/L6 & Domain roleplay & Constrained & 9 \\
 \bottomrule
@@ -579,13 +582,13 @@ A small number of carefully constructed adversarial prompts transfer broadly acr
 %% ============================================================
 
 \paragraph{Transferability battery.}
-Total sessions: 2{,}269 (1{,}738 API + 531 agent-CLI). Models/harnesses: 17. Platforms: 5 (local NVIDIA, OpenRouter, Nous Portal, Anthropic, Google). Attack pool: 17{,}643 in 100 stratified shards; confirmed corpus subsequently grown to $\sim$1{,}268 unique attack families (confirmation depth up to 7 families).
+Total sessions: 2{,}363 (1{,}832 API + 531 agent-CLI). Models/harnesses: 16. Platforms: 5 (local NVIDIA, OpenRouter, Nous Portal, Anthropic, Google). Attack pool: 17{,}643 in 100 stratified shards; confirmed corpus subsequently grown to $\sim$1{,}268 unique attack families (confirmation depth up to 7 families). All hosted-model API and agent-CLI runs were conducted between April and May 2026.
 
 \paragraph{Defense evaluation.}
 Production classifier: DeBERTa-v3-large, 9-class, six origin tokens. Held-out (leakage-free) macro $F_1=0.9382$ [0.9155, 0.9582], binary $F_1=0.9917$, FPR 0.48\% on \texttt{confirmed\_only\_v2} ($n=629$, 0.0\% family leakage; CPU inference, label mapping verified by clean-index check); MiniLM-L6 distilled student macro $F_1=0.9311$, 0.00\% benchmark FPR. Origin-robust: block rate flat across all six declared origin tiers (1.6\% large; 2.4\% untrusted MiniLM). Live middleware: $12.40\%\to0.00\%$ on $n=10{,}774$ paired trials; $16.3\%\to0.0\%$ against a live \hermes{}/Codex agent with 94--98\% of attacks refused at the perimeter.
 
 \paragraph{Statistical notes.}
-Primary outcome (macro $F_1$) reported with 1{,}000-resample bootstrap 95\% CIs; per-class precision/recall with Wilson CIs; harness comparison with Cohen's $h$ and an exact $p$-value surviving family-wise correction across the pre-specified tests. The hard-negative false-fire rate (0.40\%) is reported separately from the balanced test-split FPR, as they measure different operational quantities.
+Primary outcome (macro $F_1$) reported with 1{,}000-resample bootstrap 95\% CIs; per-class precision/recall with Wilson CIs; harness comparison with Cohen's $h$ and an exact, uncorrected McNemar $p$-value (we report uncorrected $p$-values; with five preregistered hypotheses a Bonferroni-corrected threshold would be $\alpha = 0.01$, which the reported $p$-values clear by many orders of magnitude). The hard-negative false-fire rate (0.40\%) is reported separately from the balanced test-split FPR, as they measure different operational quantities.
 
 %% ============================================================
 \section{Per-Class Detection Performance}
@@ -609,7 +612,7 @@ Table~\ref{tab:perclass} breaks the headline macro $F_1$ (Section~\ref{sec:defen
 \texttt{semantic\_manipulation} & 1.000 & 0.937 & 0.967 & 63 & 0.952 \\
 \texttt{behavioral\_control} & 0.936 & 0.917 & 0.926 & 48 & 0.903 \\
 \texttt{exfiltration\_attempt} & 0.942 & 0.845 & 0.891 & 58 & 0.903 \\
-\texttt{jailbreak} & 0.951 & 0.936 & 0.943 & 62 & 0.951 \\
+\texttt{jailbreak} & 0.951 & 0.935 & 0.943 & 62 & 0.951 \\
 \texttt{cognitive\_state\_attack} & 1.000 & 0.972 & 0.986 & 71 & 0.993 \\
 \texttt{encoding\_evasion} & 0.944 & 0.971 & 0.958 & 35 & 0.930 \\
 \texttt{persona\_jailbreak} & 0.895 & 1.000 & 0.944 & 17 & 0.919 \\
@@ -671,5 +674,58 @@ The classifier consumes a provenance tag by prepending one of six origin markers
 with temperature $T=2.0$ and $\alpha=0.5$---equal weight on matching the teacher's soft distribution and on the hard label. The student trains for 10 epochs (batch 16, learning rate $5\times10^{-5}$, warmup 0.10); the teacher trains for 5 epochs (batch 4, gradient accumulation 4, learning rate $3\times10^{-5}$). The training corpus is 11{,}614 train / 1{,}110 validation / 1{,}071 test rows, including 2{,}112 benign-from-untrusted rows ($\sim$17.5\% multilingual) added to close the origin false-positive gap (Section~\ref{sec:benign-coverage}). Both models were trained on a single A100; end to end the pipeline runs in roughly 1--1.5\,h (teacher $\sim$30--60\,min, logit caching $\sim$5\,min, distillation $\sim$15\,min; wall-clock approximate).
 
 \paragraph{Deployment footprint.} On an 8-thread CPU, the MiniLM student completes the full middleware evaluation in $93$\,s against $2{,}586$\,s for the large model---a $\approx$$28\times$ throughput advantage---while giving up only $0.007$ macro $F_1$ ($0.931$ vs.\ $0.938$). That trade is what makes the student the default inline scanner: near-parity detection at a small fraction of the latency, with the large model held in reserve as a higher-assurance second opinion. Because the scanner runs entirely on CPU, defense adds no GPU dependency to the protected agent.
+
+%% ============================================================
+\section{Training Corpus Statistics}
+%% ============================================================
+
+Tables~\ref{tab:corpusclass} and~\ref{tab:corpusorigin} give the composition of the v17 training corpus from which the production classifier and its distilled student are trained, computed directly from the split files \texttt{v17\_retrain/data/\{train,val,test\}.jsonl}. Membership is fixed by the deterministic family-hash rule of the Leakage-Audit Procedure above. The in-corpus \texttt{test} split (1{,}071 rows) is \emph{distinct} from the held-out \texttt{confirmed\_only\_v2} benchmark ($n=629$, Table~\ref{tab:perclass}) on which all detection scores are reported; the corpus table is provided for reproducibility, not as the evaluation set.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Training-corpus composition by class and split (v17 corpus, $n=13{,}795$). The in-corpus \texttt{test} split (1{,}071) is not the \texttt{confirmed\_only\_v2} benchmark ($n=629$, Table~\ref{tab:perclass}).}
+\label{tab:corpusclass}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Class} & \textbf{train} & \textbf{val} & \textbf{test} & \textbf{total} \\
+\midrule
+\texttt{clean} & 3{,}666 & 352 & 207 & 4{,}225 \\
+\texttt{content\_injection} & 848 & 93 & 97 & 1{,}038 \\
+\texttt{semantic\_manipulation} & 1{,}011 & 94 & 135 & 1{,}240 \\
+\texttt{behavioral\_control} & 1{,}335 & 94 & 82 & 1{,}511 \\
+\texttt{exfiltration\_attempt} & 1{,}625 & 78 & 96 & 1{,}799 \\
+\texttt{jailbreak} & 691 & 87 & 101 & 879 \\
+\texttt{cognitive\_state\_attack} & 698 & 78 & 107 & 883 \\
+\texttt{encoding\_evasion} & 876 & 123 & 147 & 1{,}146 \\
+\texttt{persona\_jailbreak} & 864 & 111 & 99 & 1{,}074 \\
+\midrule
+\textbf{Total} & \textbf{11{,}614} & \textbf{1{,}110} & \textbf{1{,}071} & \textbf{13{,}795} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Training-corpus composition by declared origin tier (benign vs.\ attack, all splits, $n=13{,}795$). Benign rows appear under every tier, including 1{,}642 on the five untrusted tiers---the change that makes the classifier origin-robust rather than origin-gated (Section~\ref{sec:origin-robust}).}
+\label{tab:corpusorigin}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Declared origin} & \textbf{benign} & \textbf{attack} & \textbf{total} \\
+\midrule
+\texttt{user\_input} & 2{,}583 & 6{,}846 & 9{,}429 \\
+\texttt{retrieved\_web} & 494 & 836 & 1{,}330 \\
+\texttt{mcp\_tool\_description} & 114 & 319 & 433 \\
+\texttt{mcp\_tool\_result} & 578 & 945 & 1{,}523 \\
+\texttt{prior\_session\_memory} & 188 & 305 & 493 \\
+\texttt{delegated\_agent\_output} & 268 & 319 & 587 \\
+\midrule
+\textbf{Total} & \textbf{4{,}225} & \textbf{9{,}570} & \textbf{13{,}795} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Benign material is represented under \emph{every} origin tier (Table~\ref{tab:corpusorigin}): of the 4{,}225 \texttt{clean} rows, 1{,}642 carry one of the five untrusted tiers rather than \texttt{user\_input}. This is the corpus-level change that removes the untrusted-origin shortcut and yields the flat per-tier false-positive rate of Section~\ref{sec:origin-robust}; counting the held-out benign probes and the \texttt{user\_input} mirrors added in the same rebuild, $2{,}112$ benign-from-untrusted rows ($\sim$17.5\% multilingual) were introduced in total (Section~\ref{sec:benign-coverage}).
 
 \end{document}
