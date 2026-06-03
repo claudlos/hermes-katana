@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - v3.1 preprint under `paper/` (*Cross-Platform Transferability of Prompt Injection Attacks: Universal Attack Surfaces and an Origin-Aware Defense*), self-contained (LaTeX source, figures, and bibliography), buildable with `pdflatex`/`bibtex` via the included Makefile.
 - Released the v17 origin-aware prompt-injection classifiers on Hugging Face under MIT: `Carlosian/hermes-katana-17` (DeBERTa-v3-large teacher) and `Carlosian/hermes-katana-90` (distilled MiniLM-L6 CPU scanner).
+- Registered those models in the artifact CLI: `katana artifacts download v17_large` / `v17_minilm` (commit-pinned, integrity-verified via `artifact_manifest.json`; kept out of the managed `setup --all` as research models).
 - GitHub Pages static manual at `docs/index.html`.
 - Generated policy documentation check via `scripts/generate_policy_assets.py`.
 

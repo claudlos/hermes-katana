@@ -77,6 +77,22 @@ def test_registry_lists_small_and_large_models():
     assert artifact_spec("large").name == "katana_v15_large"
 
 
+def test_registry_includes_v17_research_models():
+    specs = {spec.name: spec for spec in artifact_specs()}
+    assert "katana_v17_large" in specs
+    assert "katana_v17_minilm" in specs
+    assert artifact_spec("v17_large").repo_id == "Carlosian/hermes-katana-17"
+    assert artifact_spec("v17_minilm").repo_id == "Carlosian/hermes-katana-90"
+    # research models are explicit-download-only (excluded from managed setup --all/full)
+    assert specs["katana_v17_large"].managed_setup is False
+    assert specs["katana_v17_minilm"].managed_setup is False
+    # pinned to a commit revision and integrity-verified via the manifest
+    assert specs["katana_v17_minilm"].revision
+    assert ARTIFACT_MANIFEST in specs["katana_v17_minilm"].required_files
+    # v15 aliases are unchanged
+    assert artifact_spec("minilm").name == "katana_v15_distill_minilm_onnx"
+
+
 def test_unknown_registry_model_fails_closed():
     with pytest.raises(UnknownArtifactError):
         artifact_spec("mystery-model")
