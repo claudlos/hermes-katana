@@ -658,17 +658,17 @@ class AuditTrail:
             Dict with entry counts by event type, total count,
             file size, chain status, etc.
         """
+        files = self._chain_files()
         result: dict[str, Any] = {
             "total_entries": 0,
             "last_hash": self._last_hash[:16] + "...",
-            "file_exists": self._path.exists(),
+            "file_exists": bool(files),
             "file_size": 0,
             "active_file_size": 0,
             "by_event_type": {},
             "by_decision": {},
         }
 
-        files = self._chain_files()
         if files:
             result["file_size"] = sum(self._safe_file_size(path) for path in files)
             result["active_file_size"] = self._safe_file_size(self._path)
