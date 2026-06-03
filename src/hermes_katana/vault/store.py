@@ -764,9 +764,7 @@ class Vault:
                     "new_key_enc": _encrypt_value(base64.b64encode(new_key).decode("ascii"), old_key),
                     "timestamp": _time.time(),
                 }
-                journal_path.write_text(json.dumps(journal_data), encoding="utf-8")
-                # Restrict permissions
-                journal_path.chmod(0o600)
+                atomic_write_text(journal_path, json.dumps(journal_data), mode=0o600)
             except Exception as exc:
                 raise VaultError(f"Failed to write rotation journal: {exc}")
 

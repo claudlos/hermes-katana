@@ -385,6 +385,31 @@ class AuditTrail:
             files.append(self._path)
         return files
 
+    def _iter_entries_from_chain(self):
+        """Yield valid audit entries from rotated logs followed by the active log."""
+        for audit_file in self._chain_files():
+            try:
+                with open(audit_file, "r", encoding="utf-8") as fp:
+                    for line in fp:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            yield AuditEntry(**data), audit_file
+                        except (json.JSONDecodeError, Exception):
+                            continue
+            except OSError as exc:
+                logger.debug("Could not read audit log %s: %s", audit_file, exc)
+
+    def _safe_file_size(self, path: Path) -> int:
+        """Return a file size, treating concurrent rotation/removal as zero."""
+        try:
+            return path.stat().st_size
+        except OSError as exc:
+            logger.debug("Could not stat audit log %s: %s", path, exc)
+            return 0
+
     def _maybe_rotate(self) -> None:
         """Check if the log file needs rotation and rotate if so."""
         try:
@@ -595,37 +620,28 @@ class AuditTrail:
         Returns:
             List of matching AuditEntry objects (most recent first).
         """
-        if not self._path.exists():
+        files = self._chain_files()
+        if not files:
             return []
 
         results: list[AuditEntry] = []
         try:
-            with open(self._path, "r", encoding="utf-8") as fp:
-                for line in fp:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                        entry = AuditEntry(**data)
-                    except (json.JSONDecodeError, Exception):
-                        continue
+            for entry, _audit_file in self._iter_entries_from_chain():
+                # Apply filters
+                if event_type and entry.event_type != event_type:
+                    continue
+                if tool_name and tool_name not in entry.tool_name:
+                    continue
+                if decision and entry.decision != decision:
+                    continue
+                if since and entry.timestamp < since:
+                    continue
+                if until and entry.timestamp > until:
+                    continue
+                if predicate and not predicate(entry):
+                    continue
 
-                    # Apply filters
-                    if event_type and entry.event_type != event_type:
-                        continue
-                    if tool_name and tool_name not in entry.tool_name:
-                        continue
-                    if decision and entry.decision != decision:
-                        continue
-                    if since and entry.timestamp < since:
-                        continue
-                    if until and entry.timestamp > until:
-                        continue
-                    if predicate and not predicate(entry):
-                        continue
-
-                    results.append(entry)
+                results.append(entry)
 
             # Return most recent first, limited
             results.reverse()
@@ -642,48 +658,50 @@ class AuditTrail:
             Dict with entry counts by event type, total count,
             file size, chain status, etc.
         """
+        files = self._chain_files()
         result: dict[str, Any] = {
-            "total_entries": self._entry_count,
+            "total_entries": 0,
             "last_hash": self._last_hash[:16] + "...",
-            "file_exists": self._path.exists(),
+            "file_exists": bool(files),
             "file_size": 0,
+            "active_file_size": 0,
             "by_event_type": {},
             "by_decision": {},
         }
 
-        if self._path.exists():
-            result["file_size"] = self._path.stat().st_size
+        if files:
+            result["file_size"] = sum(self._safe_file_size(path) for path in files)
+            result["active_file_size"] = self._safe_file_size(self._path)
             result["file_path"] = str(self._path)
+            result["history_files"] = [str(path) for path in files]
 
             # Count by type
             by_type: dict[str, int] = {}
             by_decision: dict[str, int] = {}
+            total_entries = 0
 
             try:
-                with open(self._path, "r", encoding="utf-8") as fp:
-                    for line in fp:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            data = json.loads(line)
-                            et = data.get("event_type", "unknown")
-                            dec = data.get("decision", "none")
-                            by_type[et] = by_type.get(et, 0) + 1
-                            by_decision[dec] = by_decision.get(dec, 0) + 1
-                        except json.JSONDecodeError:
-                            continue
+                for entry, _audit_file in self._iter_entries_from_chain():
+                    total_entries += 1
+                    et = str(entry.event_type.value)
+                    dec = entry.decision or "none"
+                    by_type[et] = by_type.get(et, 0) + 1
+                    by_decision[dec] = by_decision.get(dec, 0) + 1
 
+                result["total_entries"] = total_entries
                 result["by_event_type"] = by_type
                 result["by_decision"] = by_decision
             except Exception as exc:
                 logger.debug("Stats computation error: %s", exc)
 
         # Count rotated files
-        if self._path.parent.exists():
-            pattern = f"{self._path.stem}_*{self._path.suffix}"
-            rotated = list(self._path.parent.glob(pattern))
-            result["rotated_files"] = len(rotated)
+        try:
+            if self._path.parent.exists():
+                pattern = f"{self._path.stem}_*{self._path.suffix}"
+                rotated = list(self._path.parent.glob(pattern))
+                result["rotated_files"] = len(rotated)
+        except OSError as exc:
+            logger.debug("Could not count rotated audit logs: %s", exc)
 
         return result
 

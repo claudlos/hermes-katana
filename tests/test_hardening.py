@@ -351,6 +351,18 @@ class TestConfigValidation:
         assert config.policy_preset == "balanced"
         assert config.log_level == "DEBUG"
 
+    def test_saved_config_is_owner_only(self, tmp_path):
+        if os.name == "nt":
+            pytest.skip("POSIX owner-only mode bits are not meaningful on Windows")
+
+        from hermes_katana.config import KatanaConfig
+
+        config_path = tmp_path / "config.yaml"
+        config = KatanaConfig(policy_preset="balanced", log_level="DEBUG")
+        config.save(config_path)
+
+        assert config_path.stat().st_mode & 0o777 == 0o600
+
     def test_long_path_rejected(self):
         from hermes_katana.config import KatanaConfig
 

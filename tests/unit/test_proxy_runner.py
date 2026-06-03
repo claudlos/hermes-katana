@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from hermes_katana.proxy.config import ProxyConfig
-from hermes_katana.proxy.runner import KatanaProxy, _PidInfo, _write_pid_file, default_pid_path
+from hermes_katana.proxy.runner import (
+    KatanaProxy,
+    _PidInfo,
+    _pid_matches_proxy_process,
+    _write_pid_file,
+    default_pid_path,
+)
 
 
 class TestProxyRunner:
@@ -41,6 +47,7 @@ class TestProxyRunner:
             seen["env"] = env
             return FakeProcess()
 
+        monkeypatch.setattr("hermes_katana.proxy.runner._mitmproxy_runtime_available", lambda: True)
         monkeypatch.setattr("hermes_katana.proxy.runner.subprocess.Popen", fake_popen)
         monkeypatch.setattr("hermes_katana.proxy.runner.threading.Thread", FakeThread)
 
@@ -84,6 +91,7 @@ class TestProxyRunner:
             seen["env"] = env
             return FakeProcess()
 
+        monkeypatch.setattr("hermes_katana.proxy.runner._mitmproxy_runtime_available", lambda: True)
         monkeypatch.setattr("hermes_katana.proxy.runner.subprocess.Popen", fake_popen)
         monkeypatch.setattr("hermes_katana.proxy.runner.threading.Thread", FakeThread)
         monkeypatch.setenv("HERMES_KATANA_VAULT_KEY", "secret")
@@ -119,6 +127,7 @@ class TestProxyRunner:
             seen["env"] = env
             return FakeProcess()
 
+        monkeypatch.setattr("hermes_katana.proxy.runner._mitmproxy_runtime_available", lambda: True)
         monkeypatch.setattr("hermes_katana.proxy.runner.subprocess.Popen", fake_popen)
         monkeypatch.setattr("hermes_katana.proxy.runner.threading.Thread", FakeThread)
         monkeypatch.setenv("OPENAI_API_KEY", "should-not-leak")
@@ -142,6 +151,23 @@ class TestProxyRunner:
 
         with pytest.raises(RuntimeError, match="tls_verify is false"):
             proxy.start()
+
+    def test_start_requires_mitmproxy_in_active_python(self, monkeypatch, tmp_dir):
+        monkeypatch.setattr("hermes_katana.proxy.runner._mitmproxy_runtime_available", lambda: False)
+
+        proxy = KatanaProxy(
+            config=ProxyConfig(host="127.0.0.1", port=8080, inject_credentials=False),
+            pid_path=tmp_dir / "proxy.pid",
+        )
+
+        with pytest.raises(RuntimeError, match="mitmproxy is not importable"):
+            proxy.start()
+
+    def test_pid_validation_fails_closed_without_command_line(self, monkeypatch):
+        monkeypatch.setattr("hermes_katana.proxy.runner._is_process_running", lambda pid: True)
+        monkeypatch.setattr("hermes_katana.proxy.runner._read_process_command", lambda pid: "")
+
+        assert _pid_matches_proxy_process(1234, _PidInfo(1234, "127.0.0.1", 8080, "hash", 1.0)) is False
 
     def test_status_clears_stale_pid_file(self, monkeypatch, tmp_dir):
         pid_path = tmp_dir / "proxy.pid"

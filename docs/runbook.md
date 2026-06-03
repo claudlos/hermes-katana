@@ -42,6 +42,7 @@ the matching `pip install hermes-katana[...]` command.
 | Install patches | `katana install --target /path/to/hermes --backup` |
 | Remove patches | `katana uninstall --target /path/to/hermes` |
 | Run Hermes with Katana | `katana run --target /path/to/hermes -- --task "hello"` |
+| Run Hermes and start proxy | `katana run --proxy --target /path/to/hermes -- --task "hello"` |
 | List policies | `katana policy list` |
 | Switch policy preset | `katana policy use max` |
 | Export policies to YAML | `katana policy export policy.yaml` |
@@ -552,6 +553,8 @@ katana install --target /path/to/hermes --dry-run   # preview
 katana install --target /path/to/hermes --backup     # install
 katana status --target /path/to/hermes               # confirm
 katana run --target /path/to/hermes -- --task "test"  # run
+# Add --proxy when the proxy extra is installed and you want proxy startup.
+katana run --proxy --target /path/to/hermes -- --task "test"
 ```
 
 ### Recover From Install Mistakes

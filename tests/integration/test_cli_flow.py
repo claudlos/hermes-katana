@@ -145,11 +145,17 @@ class TestCLIGoldenPath:
             TimeoutExpired=_real_subprocess.TimeoutExpired,
         )
         monkeypatch.setattr(proxy_runner_mod, "subprocess", _fake_subprocess)
+        monkeypatch.setattr(proxy_runner_mod, "_mitmproxy_runtime_available", lambda: True)
         monkeypatch.setattr(proxy_runner_mod.threading, "Thread", FakeThread)
         monkeypatch.setattr(
             proxy_runner_mod,
             "_is_process_running",
             lambda pid: process_state["running"] and pid == 4321,
+        )
+        monkeypatch.setattr(
+            proxy_runner_mod,
+            "_read_process_command",
+            lambda pid: "python -m mitmproxy.tools.main mitmdump --listen-port 9000 -s addon_script.py",
         )
         monkeypatch.setattr(
             proxy_runner_mod.KatanaProxy,
