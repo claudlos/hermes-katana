@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 
 import pytest
@@ -122,6 +123,9 @@ class TestVaultAccessLog:
         assert data["operation"] == "SET"
 
     def test_file_written_owner_only(self, access_log, log_path):
+        if os.name == "nt":
+            pytest.skip("POSIX owner-only mode bits are not meaningful on Windows")
+
         access_log.log_access("K", "SET", caller="test")
 
         assert log_path.exists()
