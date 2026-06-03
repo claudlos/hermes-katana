@@ -124,6 +124,9 @@ class TestVault:
         assert vault.get("KEY") == "value2"
 
     def test_rotate_key_writes_owner_only_recovery_journal(self, vault, monkeypatch):
+        if os.name == "nt":
+            pytest.skip("POSIX owner-only mode bits are not meaningful on Windows")
+
         vault.set("KEY", "value")
 
         journal_path = vault._path.with_suffix(".rotation_journal")
