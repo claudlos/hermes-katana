@@ -17,7 +17,7 @@
 
 ---
 
-## Hermes Katana
+## Overview
 
 Hermes Katana is a defense-in-depth security layer for AI agents. It tracks
 where text came from, scans decoded content for prompt injection and unsafe
@@ -26,16 +26,15 @@ and records decisions in a tamper-evident audit trail.
 
 The user manual and command map are published at
 [claudlos.github.io/hermes-katana](https://claudlos.github.io/hermes-katana/).
-The checked-in manual source lives at [`docs/index.html`](docs/index.html), and
-release-thread captions for the twelve infographic cards are in
-[`docs/v3_release_thread.md`](docs/v3_release_thread.md).
 
 Feature highlights:
 
 - Character-level provenance inspired by [Google DeepMind's CaMeL paper](https://arxiv.org/abs/2503.18813)
 - Runtime policy decisions for clean, tainted, dangerous, and unknown tool calls
+- Configurable human-in-the-loop escalation for tool calls that need approval
+- Purpose-trained injection classifiers — a distilled MiniLM by default, DeBERTa-v3-large for high accuracy
+- Proving Ground harness for empirical, multi-model attack-effectiveness testing
 - Explicit false-positive and adversarial regression gates
-- Optional proving-ground harness for empirical attack-effectiveness testing
 
 ---
 
@@ -67,11 +66,12 @@ See [`docs/artifacts.md`](docs/artifacts.md) for artifact setup and verification
 See [docs/quickstart.md](docs/quickstart.md) for the full setup guide and
 [docs/runbook.md](docs/runbook.md) for day-2 operations.
 
+---
 
 ## Architecture
 
 ```
-                        HermesKatana — 7-Layer Defense Model
+                        Hermes Katana — 7-Layer Defense Model
 
     ┌───────────────────────────────────────────────────────────────┐
     │                     Agent Runtime (Hermes)                    │
@@ -171,6 +171,14 @@ Declarative rules evaluated on every tool call. Three built-in presets:
 | `permissive` | LOG_ONLY | LOG_ONLY | DENY | LOG_ONLY | LOG_ONLY |
 <!-- policy-table:end -->
 
+**Human-in-the-loop.** When a decision resolves to `ESCALATE`, the
+`escalate_action` setting decides what happens next: `block` (default,
+fail-closed — correct for headless CLI/gateway runs), `acp_prompt` (ask the human
+through the agent's interactive approval prompt, e.g. in Zed/ACP editor
+sessions), or `auto_approve` (allow with a loud warning; trusted automation
+only). It falls back to `block` whenever no interactive approver is available, so
+unattended runs never silently allow.
+
 Custom YAML policies with hot-reload:
 
 ```yaml
@@ -202,6 +210,76 @@ mitmproxy-based interceptor that strips vault secrets from all outbound request 
 
 ---
 
+## Research & Models
+
+Hermes Katana v3 is backed by an empirical research program — a multi-model
+attack harness, purpose-trained injection classifiers, and a diverse,
+adversarially-validated dataset. This data-and-model work is the core of the v3
+release. The methodology and full results are written up in the companion paper,
+*Cross-Platform Transferability of Prompt Injection Attacks: Universal Attack
+Surfaces and an Origin-Aware Defense*, released alongside v3.1.
+
+### Proving Ground
+
+The Proving Ground is a sharded, resumable adversarial battery. It samples
+candidate prompt-injection attacks, replays them against real models in seeded
+sandbox workspaces, and admits only those that produce measurable behavioral
+drift across multiple targets. Every session captures per-turn runtime telemetry
+(latency, token throughput, logprob entropy), tool-call sequences, and workspace
+snapshots.
+
+Scale and headline findings from the v3 evaluation battery:
+
+- **2,363** agent-harness and API-backend sessions across **16 model/harness
+  combinations on 5 platforms**, drawn from a stratified pool of **17,643**
+  attacks, plus a separate multilingual battery over **11 languages** on three
+  models.
+- **Harness design shapes outcomes — but does not dominate model alignment.** In
+  a preregistered matched-pair test on a fixed model (Claude Haiku 4.5), the
+  permission-gated Claude Code CLI was *more* vulnerable than a flat agent
+  harness (40.8% vs 10.2%, +30.65 pp, p < 1e-6), rejecting the intuition that a
+  gated harness is inherently safer.
+- **Vulnerability is scale-dependent but not scale-eliminated:** small local
+  models (~4B) showed **48–95%** attack effectiveness; frontier models **8–10%**.
+- **Robustness is not language-invariant:** across 11 languages, mean
+  effectiveness ranged from **12% to 39%** depending on the model, and which
+  language is most exploitable does not transfer across model families.
+- With Katana scanning in front, effective attacks dropped from **12.40% to
+  0.00%** (paired n=10,774; McNemar p≈0).
+
+Run it with `katana proving-ground run|batch|synthesize`; see
+[docs/proving_ground/](docs/proving_ground/) for harness notes.
+
+### Trained classifiers
+
+The scanner cascade can route content to purpose-trained models instead of
+relying on patterns alone. The v3.1 origin-aware classifiers are published on
+Hugging Face under MIT:
+
+| Model | Role | Headline metric | Hugging Face |
+|-------|------|-----------------|--------------|
+| **DeBERTa-v3-large** | 9-class origin-aware classifier (high accuracy) | Macro F1 **0.938**, 0.48% FPR (confirmed-only benchmark) | `Carlosian/hermes-katana-17` |
+| **MiniLM-L6 (distilled)** | Default CPU scanner (~90 MB) | Macro F1 **0.931**, 0.00% benchmark FPR | `Carlosian/hermes-katana-90` |
+| **Behavioral-signature scanner** | Telemetry-only attack detection | AUC **0.847** (no semantic analysis) | bundled |
+
+The distilled MiniLM-L6 (~90 MB) runs on CPU and is the default scanner;
+DeBERTa-v3-large is the higher-accuracy model held in reserve. Both ingest a
+declared origin tier; a token ablation shows the larger model is content-driven
+(invariant to the tag) while the distilled scanner responds to declared
+provenance. The behavioral-signature scanner is a lightweight model over 33
+runtime-telemetry features and flags attacks without reading content at all.
+
+### Datasets
+
+Training and evaluation use a tiered, adversarially-validated corpus: a *gold*
+set of confirmed attacks (effective across ≥3 model families), a *silver* set of
+synthetic and teacher/critic-accepted attacks, matched *benign* controls, and
+*hard negatives* for false-positive pressure — with multilingual and encoded
+attacks represented in every split. This diverse-data generation and validation
+pipeline is the central innovation of v3.
+
+---
+
 ## CLI Reference
 
 ```
@@ -229,6 +307,10 @@ katana audit show|verify|stats|clear
 
 katana proxy start|stop|status
 
+katana artifacts status [--all]      Show ML model artifact status
+katana artifacts download SELECTOR   Download a model artifact (minilm/large)
+katana artifacts path                Show artifact cache path
+
 katana benchmark                     Run benchmark suites
 katana proving-ground ...            Run the empirical attack harness
 katana version                       Print version
@@ -238,7 +320,7 @@ katana version                       Print version
 
 ## Comparison
 
-| Feature | HermesKatana | Invariant | NeMo Guardrails | LLM Guard | Lakera Guard |
+| Feature | Hermes Katana | Invariant | NeMo Guardrails | LLM Guard | Lakera Guard |
 |---------|:---:|:---:|:---:|:---:|:---:|
 | CaMeL taint tracking | ✅ | — | — | — | — |
 | Character-level taint | ✅ | — | — | — | — |
@@ -382,7 +464,7 @@ patterns from a broader security ecosystem:
 - **[NVIDIA NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)** — Inspiration for the declarative policy DSL approach and conversation-level rail concepts.
 - **[LLM Guard by Protect AI](https://github.com/protectai/llm-guard)** — Inspiration for modular scanner architecture and the input/output scanning pattern.
 - **[Invariant Labs](https://github.com/invariantlabs-ai/invariant)** — Inspiration for policy-as-code agent security and trace-level analysis concepts.
-- **[mitmproxy](https://mitmproxy.org/)** — The excellent HTTPS proxy that powers HermesKatana's network interception layer.
+- **[mitmproxy](https://mitmproxy.org/)** — The excellent HTTPS proxy that powers Hermes Katana's network interception layer.
 
 Mentioning these projects does not imply endorsement or affiliation.
 
