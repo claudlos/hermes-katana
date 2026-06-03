@@ -97,6 +97,11 @@ def _default_access_log_path() -> Path:
     return home_or_fallback() / ".config" / "hermes-katana" / "vault_access.jsonl"
 
 
+def _owner_only_opener(path: str, flags: int) -> int:
+    """Open new access-log files with owner-only permissions."""
+    return os.open(path, flags, 0o600)
+
+
 class VaultAccessLog:
     """Append-only access log for vault operations.
 
@@ -152,11 +157,12 @@ class VaultAccessLog:
         with self._lock:
             try:
                 self._maybe_rotate()
-                with open(self._path, "a", encoding="utf-8") as f:
+                with open(self._path, "a", encoding="utf-8", opener=_owner_only_opener) as f:
                     line_data = json.dumps(asdict(entry), default=str)
                     line_hmac = self._compute_line_hmac(line_data)
                     f.write(line_data + "|" + line_hmac + "\n")
                     f.flush()
+                self._path.chmod(0o600)
             except Exception:
                 logger.debug("Failed to write vault access log", exc_info=True)
 

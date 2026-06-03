@@ -445,11 +445,13 @@ class TestCLIContracts:
         stderr = StringIO()
         monkeypatch.setattr(cli_main, "console", _test_console(stdout))
         monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        monkeypatch.delenv("KATANA_PROXY_URL", raising=False)
 
         checkout = tmp_dir / "fixture-hermes"
         checkout.mkdir()
 
         captured: dict[str, object] = {}
+        compose_calls: list[bool] = []
 
         monkeypatch.setattr(
             bootstrap_mod,
@@ -462,13 +464,16 @@ class TestCLIContracts:
         monkeypatch.setattr(
             bootstrap_mod,
             "compose_runtime_env",
-            lambda env, checkout_root=None, start_proxy=False: {
-                **env,
-                "KATANA_ACTIVE": "1",
-                "KATANA_CHECKOUT_ROOT": str(checkout),
-                "KATANA_POLICY_SOURCE": "preset max",
-                "KATANA_PROXY_URL": "http://127.0.0.1:9000",
-            },
+            lambda env, checkout_root=None, start_proxy=False: (
+                compose_calls.append(start_proxy)
+                or {
+                    **env,
+                    "KATANA_ACTIVE": "1",
+                    "KATANA_CHECKOUT_ROOT": str(checkout),
+                    "KATANA_POLICY_SOURCE": "preset max",
+                    **({"KATANA_PROXY_URL": "http://127.0.0.1:9000"} if start_proxy else {}),
+                }
+            ),
         )
         monkeypatch.setattr(cli_main.shutil, "which", lambda cmd: "hermes.exe")
 
@@ -489,7 +494,17 @@ class TestCLIContracts:
         env = captured["env"]
         assert env["KATANA_CHECKOUT_ROOT"] == str(checkout)
         assert env["KATANA_POLICY_SOURCE"] == "preset max"
-        assert env["KATANA_PROXY_URL"] == "http://127.0.0.1:9000"
+        assert "KATANA_PROXY_URL" not in env
+        assert compose_calls == [False]
+
+        result = self.runner.invoke(
+            cli_main.main,
+            ["run", "--proxy", "--target", str(checkout), "--", "--task", "hello"],
+        )
+
+        assert result.exit_code == 0
+        assert compose_calls == [False, True]
+        assert captured["env"]["KATANA_PROXY_URL"] == "http://127.0.0.1:9000"
 
     def test_restore_uses_installer_manifest(self, monkeypatch, tmp_dir):
         stdout = StringIO()

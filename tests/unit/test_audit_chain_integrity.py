@@ -22,6 +22,25 @@ def test_rotation_preserves_inter_file_chain(audit_path):
     assert trail.verify_chain() is True
 
 
+def test_query_and_stats_include_rotated_history(audit_path):
+    trail = AuditTrail(path=audit_path, max_size=10_000, max_rotations=5)
+    trail.log(AuditEntry(event_type=AuditEventType.TOOL_CALL, tool_name="before", decision="allow"))
+    rotated = trail.rotate()
+    trail.log(AuditEntry(event_type=AuditEventType.TOOL_CALL, tool_name="after", decision="deny"))
+
+    assert rotated is not None
+
+    results = trail.query(event_type=AuditEventType.TOOL_CALL)
+    stats = trail.stats()
+
+    assert [entry.tool_name for entry in results] == ["after", "before"]
+    assert stats["total_entries"] == 2
+    assert stats["by_event_type"]["tool_call"] == 2
+    assert stats["by_decision"]["allow"] == 1
+    assert stats["by_decision"]["deny"] == 1
+    assert stats["rotated_files"] == 1
+
+
 def test_missing_rotated_file_breaks_chain_verification(audit_path):
     trail = AuditTrail(path=audit_path, max_size=10_000, max_rotations=5)
     trail.log(AuditEntry(event_type=AuditEventType.TOOL_CALL, tool_name="before"))

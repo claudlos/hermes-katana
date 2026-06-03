@@ -17,6 +17,7 @@ __all__ = [
 
 
 import hashlib
+import importlib.util
 import json
 import logging
 import os
@@ -239,13 +240,21 @@ def _pid_matches_proxy_process(pid: int, info: Optional[_PidInfo] = None) -> boo
 
     command = _read_process_command(pid)
     if not command:
-        return info is not None
+        return False
 
     markers = ["mitmproxy.tools.main", "mitmdump", "addon_script.py"]
     if info is not None:
         markers.append(f"--listen-port {info.port}")
 
     return all(marker in command for marker in markers)
+
+
+def _mitmproxy_runtime_available() -> bool:
+    """Return True when mitmproxy is importable by the active Python runtime."""
+    try:
+        return importlib.util.find_spec("mitmproxy.tools.main") is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
 
 
 def _invoke_kill_process(kill_process: Any, pid: int, info: Optional[_PidInfo]) -> None:
@@ -421,6 +430,12 @@ class KatanaProxy:
 
         if self.config.inject_credentials and not self.config.tls_verify:
             raise RuntimeError("Proxy refuses to start with credential injection enabled while tls_verify is false.")
+
+        if not _mitmproxy_runtime_available():
+            raise RuntimeError(
+                "mitmproxy is not importable in the active Python environment. "
+                "Install the proxy extra with: pip install 'hermes-katana\\[proxy]'"
+            )
 
         # Build the mitmdump command
         cmd = [

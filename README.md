@@ -300,6 +300,7 @@ katana install --target PATH         Patch a Hermes checkout
 katana uninstall --target PATH       Remove Katana patches
 katana restore --manifest PATH       Restore from backup
 katana run --target PATH -- ...      Run Hermes with Katana protections
+katana run --proxy --target PATH -- ...  Also start the configured HTTPS proxy
 
 katana scan TEXT                     Scan text for injections/secrets
 katana scan-file PATH                Scan a file on disk

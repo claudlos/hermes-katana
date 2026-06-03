@@ -1261,8 +1261,14 @@ def restore(manifest: str, dry_run: bool) -> None:
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
 @click.option("--target", "-t", type=click.Path(), default=None, help="Path to an installed Hermes checkout.")
+@click.option(
+    "--proxy/--no-proxy",
+    "start_proxy",
+    default=False,
+    help="Start the checkout-configured Katana proxy before launching Hermes.",
+)
 @click.pass_context
-def run(ctx: click.Context, target: str | None) -> None:
+def run(ctx: click.Context, target: str | None, start_proxy: bool) -> None:
     """Run Hermes with Katana protection.
 
     Pass Hermes arguments after --.
@@ -1293,7 +1299,7 @@ def run(ctx: click.Context, target: str | None) -> None:
             env = compose_runtime_env(
                 env,
                 checkout_root=runtime_state.checkout_root,
-                start_proxy=True,
+                start_proxy=start_proxy,
             )
             console.print(f"   Checkout: {runtime_state.checkout_root}")
             console.print(f"   Policy: {runtime_state.policy_source}")
@@ -1309,6 +1315,8 @@ def run(ctx: click.Context, target: str | None) -> None:
     proxy_url = env.get("KATANA_PROXY_URL")
     if proxy_url:
         console.print(f"   Proxy: {proxy_url}")
+    elif runtime_state is not None and getattr(runtime_state, "proxy_enabled", False) and not start_proxy:
+        console.print("   Proxy: [dim]configured, not started (use --proxy to start it)[/dim]")
     else:
         console.print("   Proxy: [dim]not configured (set KATANA_PROXY_URL)[/dim]")
 

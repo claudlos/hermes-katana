@@ -121,6 +121,12 @@ class TestVaultAccessLog:
         assert data["key_name"] == "K"
         assert data["operation"] == "SET"
 
+    def test_file_written_owner_only(self, access_log, log_path):
+        access_log.log_access("K", "SET", caller="test")
+
+        assert log_path.exists()
+        assert log_path.stat().st_mode & 0o777 == 0o600
+
     def test_operations_normalized_to_upper(self, access_log):
         access_log.log_access("K", "get")
         history = access_log.get_access_history("K")
