@@ -259,15 +259,22 @@ Hugging Face under MIT:
 | Model | Role | Headline metric | Hugging Face |
 |-------|------|-----------------|--------------|
 | **DeBERTa-v3-large** | 9-class origin-aware classifier (high accuracy) | Macro F1 **0.938**, 0.48% FPR (confirmed-only benchmark) | `Carlosian/hermes-katana-17` |
-| **MiniLM-L6 (distilled)** | Default CPU scanner (~90 MB) | Macro F1 **0.931**, 0.00% benchmark FPR | `Carlosian/hermes-katana-90` |
+| **MiniLM-L6 (distilled)** | Distilled CPU model (~90 MB) | Macro F1 **0.931**, 0.00% benchmark FPR | `Carlosian/hermes-katana-90` |
 | **Behavioral-signature scanner** | Telemetry-only attack detection | AUC **0.847** (no semantic analysis) | bundled |
 
-The distilled MiniLM-L6 (~90 MB) runs on CPU and is the default scanner;
-DeBERTa-v3-large is the higher-accuracy model held in reserve. Both ingest a
-declared origin tier; a token ablation shows the larger model is content-driven
-(invariant to the tag) while the distilled scanner responds to declared
-provenance. The behavioral-signature scanner is a lightweight model over 33
-runtime-telemetry features and flags attacks without reading content at all.
+These are the models evaluated in the paper, published for download and
+reproduction. Both ingest a declared origin tier; a token ablation shows
+DeBERTa-v3-large is content-driven (invariant to the tag) while the distilled
+MiniLM responds to declared provenance. The behavioral-signature scanner is a
+lightweight model over 33 runtime-telemetry features and flags attacks without
+reading content at all.
+
+For production scanning the toolkit installs a distilled MiniLM **ONNX** artifact
+by default (CPU, no PyTorch) via `katana artifacts download minilm`; see
+[`docs/artifacts.md`](docs/artifacts.md) for the runtime artifact registry and
+its `minilm` / `minilm_torch` / `large` selectors. (The v17 research models above
+are published on Hugging Face for reproduction and are not yet wired into that
+registry.)
 
 ### Datasets
 
@@ -308,7 +315,7 @@ katana audit show|verify|stats|clear
 katana proxy start|stop|status
 
 katana artifacts status [--all]      Show ML model artifact status
-katana artifacts download SELECTOR   Download a model artifact (minilm/large)
+katana artifacts download SELECTOR   Download a model artifact (minilm, minilm_torch, large)
 katana artifacts path                Show artifact cache path
 
 katana benchmark                     Run benchmark suites
