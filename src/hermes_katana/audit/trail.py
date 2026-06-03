@@ -402,6 +402,14 @@ class AuditTrail:
             except OSError as exc:
                 logger.debug("Could not read audit log %s: %s", audit_file, exc)
 
+    def _safe_file_size(self, path: Path) -> int:
+        """Return a file size, treating concurrent rotation/removal as zero."""
+        try:
+            return path.stat().st_size
+        except OSError as exc:
+            logger.debug("Could not stat audit log %s: %s", path, exc)
+            return 0
+
     def _maybe_rotate(self) -> None:
         """Check if the log file needs rotation and rotate if so."""
         try:
@@ -662,8 +670,8 @@ class AuditTrail:
 
         files = self._chain_files()
         if files:
-            result["file_size"] = sum(path.stat().st_size for path in files if path.exists())
-            result["active_file_size"] = self._path.stat().st_size if self._path.exists() else 0
+            result["file_size"] = sum(self._safe_file_size(path) for path in files)
+            result["active_file_size"] = self._safe_file_size(self._path)
             result["file_path"] = str(self._path)
             result["history_files"] = [str(path) for path in files]
 
@@ -687,10 +695,13 @@ class AuditTrail:
                 logger.debug("Stats computation error: %s", exc)
 
         # Count rotated files
-        if self._path.parent.exists():
-            pattern = f"{self._path.stem}_*{self._path.suffix}"
-            rotated = list(self._path.parent.glob(pattern))
-            result["rotated_files"] = len(rotated)
+        try:
+            if self._path.parent.exists():
+                pattern = f"{self._path.stem}_*{self._path.suffix}"
+                rotated = list(self._path.parent.glob(pattern))
+                result["rotated_files"] = len(rotated)
+        except OSError as exc:
+            logger.debug("Could not count rotated audit logs: %s", exc)
 
         return result
 

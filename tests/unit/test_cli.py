@@ -506,6 +506,37 @@ class TestCLIContracts:
         assert compose_calls == [False, True]
         assert captured["env"]["KATANA_PROXY_URL"] == "http://127.0.0.1:9000"
 
+    def test_run_renders_proxy_extra_bootstrap_error(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+
+        checkout = tmp_dir / "fixture-hermes"
+        checkout.mkdir()
+
+        monkeypatch.setattr(
+            bootstrap_mod,
+            "load_checkout_state",
+            lambda checkout_root=None: SimpleNamespace(
+                checkout_root=Path(checkout_root) if checkout_root else checkout,
+                policy_source="preset max",
+            ),
+        )
+
+        def fail_compose_runtime_env(env, checkout_root=None, start_proxy=False):
+            raise RuntimeError("Install the proxy extra with: pip install 'hermes-katana[proxy]'")
+
+        monkeypatch.setattr(bootstrap_mod, "compose_runtime_env", fail_compose_runtime_env)
+
+        result = self.runner.invoke(
+            cli_main.main,
+            ["run", "--proxy", "--target", str(checkout), "--", "--task", "hello"],
+        )
+
+        assert result.exit_code == 1
+        assert "hermes-katana[proxy]" in stderr.getvalue()
+
     def test_restore_uses_installer_manifest(self, monkeypatch, tmp_dir):
         stdout = StringIO()
         stderr = StringIO()

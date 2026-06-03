@@ -119,6 +119,43 @@ class TestRuntimeBootstrap:
         assert runtime2.state.policy_preset == "max"
         assert runtime2 is not runtime1
 
+    def test_runtime_cache_invalidates_when_policy_dir_changes(self, monkeypatch, tmp_dir):
+        checkout = fixture_checkout(HERMES_V010_CORE_SNAPSHOT, tmp_dir)
+        monkeypatch.setattr(KatanaInstaller, "_generate_ca_cert", _stub_ca_cert)
+        KatanaInstaller().install(checkout)
+        policy_dir = checkout / "policies"
+        policy_dir.mkdir()
+        policy_file = policy_dir / "custom.yaml"
+        policy_file.write_text("name: custom\npolicies: []\n", encoding="utf-8")
+        cfg = checkout / ".katana" / "katana.yaml"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8").replace("custom_dir: null", "custom_dir: policies"), encoding="utf-8"
+        )
+        bootstrap_mod.reset_runtime_cache()
+        monkeypatch.setattr(bootstrap_mod, "_open_vault", lambda: None)
+        monkeypatch.setattr(bootstrap_mod, "_collect_vault_values", lambda vault: set())
+
+        class FakeProxy:
+            def __init__(self, config=None, vault=None, audit=None):
+                self.config = config
+
+            def status(self):
+                return {
+                    "running": False,
+                    "config": {"host": self.config.host, "port": self.config.port},
+                }
+
+        monkeypatch.setattr(bootstrap_mod, "KatanaProxy", FakeProxy)
+
+        runtime1 = bootstrap_mod.get_runtime_bundle(checkout)
+        policy_file.write_text("name: custom-updated\npolicies: []\n", encoding="utf-8")
+        runtime2 = bootstrap_mod.get_runtime_bundle(checkout)
+
+        assert runtime1 is not None
+        assert runtime2 is not None
+        assert runtime1.state.policy_source == f"custom dir {policy_dir}"
+        assert runtime2 is not runtime1
+
     def test_ensure_dispatcher_bootstrap_attaches_chain_and_escalator(self, monkeypatch, tmp_dir):
         checkout = fixture_checkout(HERMES_V010_CORE_SNAPSHOT, tmp_dir)
         monkeypatch.setattr(KatanaInstaller, "_generate_ca_cert", _stub_ca_cert)
