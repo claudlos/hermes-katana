@@ -171,7 +171,7 @@ class TestPluginSetup:
 
     def test_plugin_metadata(self):
         assert hermes_plugin.plugin_name == "katana"
-        assert hermes_plugin.plugin_version == "3.0.0"
+        assert hermes_plugin.plugin_version == "3.1.0"
 
     def test_setup_creates_middleware_chain(self):
         ctx = MockPluginContext(config={"audit_enabled": False})

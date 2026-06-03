@@ -25,6 +25,9 @@ DEFAULT_MINILM_ONNX_REPO = "Carlosian/hermes-katana-v15-distill-minilm-onnx"
 DEFAULT_MINILM_TORCH_REPO = "Carlosian/hermes-katana-v15-distill-minilm"
 DEFAULT_V15_LARGE_REPO = "Carlosian/hermes-katana-v15-large"
 DEFAULT_REVISION = ARTIFACT_REVISION
+# v15 runtime artifacts are pinned to their own HF revision, decoupled from the
+# package version so a package version bump never retargets their download.
+V15_REVISION = "v3.0.0"
 ARTIFACT_MANIFEST = "artifact_manifest.json"
 
 MINILM_ONNX_REQUIRED_FILES = (
@@ -158,7 +161,7 @@ _BASE_ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
         display_name="Katana v15 MiniLM ONNX",
         repo_id=DEFAULT_MINILM_ONNX_REPO,
         repo_type="model",
-        revision=DEFAULT_REVISION,
+        revision=V15_REVISION,
         required_files=MINILM_ONNX_REQUIRED_FILES,
         allow_patterns=MINILM_ONNX_ALLOW_PATTERNS,
         size_label="~88 MB",
@@ -182,7 +185,7 @@ _BASE_ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
         display_name="Katana v15 MiniLM PyTorch",
         repo_id=DEFAULT_MINILM_TORCH_REPO,
         repo_type="model",
-        revision=DEFAULT_REVISION,
+        revision=V15_REVISION,
         required_files=MINILM_TORCH_REQUIRED_FILES,
         allow_patterns=MINILM_TORCH_ALLOW_PATTERNS,
         size_label="~88 MB",
@@ -200,7 +203,7 @@ _BASE_ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
         display_name="Katana v15 Large",
         repo_id=DEFAULT_V15_LARGE_REPO,
         repo_type="model",
-        revision=DEFAULT_REVISION,
+        revision=V15_REVISION,
         required_files=V15_LARGE_REQUIRED_FILES,
         allow_patterns=V15_LARGE_ALLOW_PATTERNS,
         size_label="large",
