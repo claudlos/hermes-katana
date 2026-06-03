@@ -123,6 +123,23 @@ class TestVault:
         vault.set("KEY", "value2")
         assert vault.get("KEY") == "value2"
 
+    def test_rotate_key_writes_owner_only_recovery_journal(self, vault, monkeypatch):
+        vault.set("KEY", "value")
+
+        journal_path = vault._path.with_suffix(".rotation_journal")
+
+        def fail_vault_write(entries):
+            raise RuntimeError("stop after journal")
+
+        monkeypatch.setattr(vault, "_write_vault", fail_vault_write)
+
+        with pytest.raises(RuntimeError, match="stop after journal"):
+            vault.rotate_key()
+
+        assert journal_path.exists()
+        assert journal_path.stat().st_mode & 0o777 == 0o600
+        assert json.loads(journal_path.read_text(encoding="utf-8"))["status"] == "in_progress"
+
 
 # ======================================================================
 # Circuit breaker (lock/unlock)
