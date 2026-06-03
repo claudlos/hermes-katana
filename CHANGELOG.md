@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-06-03
+
 ### Added
+- v3.1 preprint under `paper/` (*Cross-Platform Transferability of Prompt Injection Attacks: Universal Attack Surfaces and an Origin-Aware Defense*), self-contained (LaTeX source, figures, and bibliography), buildable with `pdflatex`/`bibtex` via the included Makefile.
+- Released the v17 origin-aware prompt-injection classifiers on Hugging Face under MIT: `Carlosian/hermes-katana-17` (DeBERTa-v3-large teacher) and `Carlosian/hermes-katana-90` (distilled MiniLM-L6 CPU scanner).
 - GitHub Pages static manual at `docs/index.html`.
 - Generated policy documentation check via `scripts/generate_policy_assets.py`.
 
@@ -15,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Built-in policy YAML files are now the source of truth for runtime defaults and README preset documentation.
 - The strict built-in policy preset is now named `max`; users with older configs should reinstall or upgrade and run `katana policy use max`.
 - Proving Ground helper entry points now use packaged module paths instead of repository-root compatibility shims.
+
+### Fixed
+- Proving Ground analysis scripts (`factorial_decompose.py`, `harness_matrix.py`) no longer double-count `shard_*.fp.jsonl` false-positive sidecar files when globbing `shard_*.jsonl`.
 
 ### Removed
 - Legacy root compatibility shims and duplicated Proving Ground research trees from the public repository root.
