@@ -1,4 +1,4 @@
-main.pdf: main.tex bibliography.bib neurips.sty extra_pkgs.tex
+main.pdf: main.tex bibliography.bib neurips.sty extra_pkgs.tex fig_confusion.tex fig_roc.tex
 	pdflatex main
 	bibtex main
 	pdflatex main
