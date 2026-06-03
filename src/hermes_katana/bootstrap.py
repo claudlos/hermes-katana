@@ -55,6 +55,7 @@ _MANAGED_ENV_KEYS = (
 )
 _TRUTHY = {"1", "true", "yes", "on"}
 _RUNTIME_CACHE: dict[Path, "RuntimeBundle"] = {}
+_RUNTIME_CACHE_SIGNATURES: dict[Path, tuple[object, ...]] = {}
 
 
 @dataclass
@@ -102,6 +103,7 @@ class ScannerRuntimeConfig(TypedDict):
 def reset_runtime_cache() -> None:
     """Clear cached runtime bundles. Intended for tests."""
     _RUNTIME_CACHE.clear()
+    _RUNTIME_CACHE_SIGNATURES.clear()
 
 
 def discover_checkout_root(start: str | Path | None = None) -> Optional[Path]:
@@ -218,13 +220,41 @@ def get_runtime_bundle(checkout_root: str | Path | None = None) -> Optional[Runt
     if state is None:
         return None
 
+    signature = _runtime_cache_signature(state)
     cached = _RUNTIME_CACHE.get(state.checkout_root)
-    if cached is not None:
+    if cached is not None and _RUNTIME_CACHE_SIGNATURES.get(state.checkout_root) == signature:
         return cached
 
     runtime = _build_runtime_bundle(state)
     _RUNTIME_CACHE[state.checkout_root] = runtime
+    _RUNTIME_CACHE_SIGNATURES[state.checkout_root] = signature
     return runtime
+
+
+def _runtime_cache_signature(state: CheckoutRuntimeState) -> tuple[object, ...]:
+    """Return a filesystem signature for config inputs that shape the runtime."""
+    parts: list[object] = [_path_signature(state.config_path)]
+    if state.policy_dir is not None:
+        parts.append(_policy_dir_signature(state.policy_dir))
+    return tuple(parts)
+
+
+def _policy_dir_signature(policy_dir: Path) -> tuple[object, ...]:
+    """Return a signature for policy files loaded from one directory."""
+    try:
+        policy_files = sorted(set(policy_dir.glob("*.yaml")) | set(policy_dir.glob("*.yml")))
+    except OSError:
+        return (str(policy_dir), None)
+    return tuple((path.name, _path_signature(path)) for path in policy_files if path.is_file())
+
+
+def _path_signature(path: Path) -> tuple[object, ...]:
+    """Return a compact signature for one file path."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return (str(path), None)
+    return (str(path), stat.st_mtime_ns, stat.st_size)
 
 
 def compose_runtime_env(

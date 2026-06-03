@@ -38,6 +38,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markup import escape as _rich_escape
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
@@ -1261,8 +1262,14 @@ def restore(manifest: str, dry_run: bool) -> None:
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
 )
 @click.option("--target", "-t", type=click.Path(), default=None, help="Path to an installed Hermes checkout.")
+@click.option(
+    "--proxy/--no-proxy",
+    "start_proxy",
+    default=False,
+    help="Start the checkout-configured Katana proxy before launching Hermes.",
+)
 @click.pass_context
-def run(ctx: click.Context, target: str | None) -> None:
+def run(ctx: click.Context, target: str | None, start_proxy: bool) -> None:
     """Run Hermes with Katana protection.
 
     Pass Hermes arguments after --.
@@ -1293,7 +1300,7 @@ def run(ctx: click.Context, target: str | None) -> None:
             env = compose_runtime_env(
                 env,
                 checkout_root=runtime_state.checkout_root,
-                start_proxy=True,
+                start_proxy=start_proxy,
             )
             console.print(f"   Checkout: {runtime_state.checkout_root}")
             console.print(f"   Policy: {runtime_state.policy_source}")
@@ -1302,13 +1309,15 @@ def run(ctx: click.Context, target: str | None) -> None:
     except SystemExit:
         raise
     except Exception as exc:
-        err_console.print(f"[red]Runtime bootstrap failed:[/red] {exc}")
+        err_console.print(f"[red]Runtime bootstrap failed:[/red] {_rich_escape(str(exc))}")
         raise SystemExit(EXIT_ERROR)
 
     # Check if proxy should be started
     proxy_url = env.get("KATANA_PROXY_URL")
     if proxy_url:
         console.print(f"   Proxy: {proxy_url}")
+    elif runtime_state is not None and getattr(runtime_state, "proxy_enabled", False) and not start_proxy:
+        console.print("   Proxy: [dim]configured, not started (use --proxy to start it)[/dim]")
     else:
         console.print("   Proxy: [dim]not configured (set KATANA_PROXY_URL)[/dim]")
 
@@ -1762,7 +1771,7 @@ def proxy_start(host: str, port: int) -> None:
     except ImportError:
         console.print("\n   [yellow]Proxy module not available.[/yellow]\n")
     except Exception as exc:
-        err_console.print(f"\n   [red]Failed to start proxy:[/red] {exc}\n")
+        err_console.print(f"\n   [red]Failed to start proxy:[/red] {_rich_escape(str(exc))}\n")
         raise SystemExit(EXIT_ERROR)
 
 

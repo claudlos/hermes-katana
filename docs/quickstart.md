@@ -218,6 +218,15 @@ katana proxy stop
   katana run --target /path/to/hermes -- --task "hello"
   ```
 
+  `katana run` does not start the HTTPS proxy unless you ask for it. If you
+  want the generated checkout proxy to start with Hermes, install the `proxy`
+  extra and pass `--proxy`:
+
+  ```bash
+  pip install -e ".[proxy]"
+  katana run --proxy --target /path/to/hermes -- --task "hello"
+  ```
+
 - **Write custom policies** -- see the [Policy System](../README.md#policy-system) section
 - **Day-2 operations** -- see [docs/runbook.md](runbook.md)
 - **Full API reference** -- see [docs/API.md](API.md)
