@@ -1,5 +1,6 @@
-Cross-Platform Transferability of Prompt Injection Attacks
-===========================================================
+Cross-Platform Transferability of Prompt Injection Attacks:
+A Taxonomy of Universal Vulnerabilities in Large Language Models
+================================================================
 
 arXiv-ready paper (NeurIPS format).
 
@@ -10,6 +11,8 @@ Files
   neurips.sty        - NeurIPS 2025 style file
   extra_pkgs.tex     - Package imports
   Makefile           - Build system
+  archive/cross-platform-transferability-taxonomy-old.pdf
+                    - Earlier paper version kept for historical reference
 
 Compile locally
 ---------------

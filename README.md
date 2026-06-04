@@ -217,8 +217,8 @@ Hermes Katana v3 is backed by an empirical research program — a multi-model
 attack harness, purpose-trained injection classifiers, and a diverse,
 adversarially-validated dataset. This data-and-model work is the core of the v3
 release. The methodology and full results are written up in the companion paper,
-*Cross-Platform Transferability of Prompt Injection Attacks: Universal Attack
-Surfaces and an Origin-Aware Defense*, released alongside v3.1.
+*Cross-Platform Transferability of Prompt Injection Attacks: A Taxonomy of
+Universal Vulnerabilities in Large Language Models*, released alongside v3.1.
 
 ### Proving Ground
 
