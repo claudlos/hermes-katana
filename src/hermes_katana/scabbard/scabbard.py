@@ -7,11 +7,12 @@ This is the public API that Katana middleware and other integrations consume.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Optional, Protocol
 
 from hermes_katana.scabbard.config import ScabbardConfig
-from hermes_katana.scabbard.fusion import ClassificationResult, Decision, FusionClassifier
+from hermes_katana.scabbard.fusion import ATTACK_LABELS, ClassificationResult, Decision, FusionClassifier
 from hermes_katana.scabbard.normalizer import normalize
 
 logger = logging.getLogger(__name__)
@@ -20,11 +21,47 @@ _CANONICAL_CATEGORY_ALIASES = {
     "exfiltration_attempt": "exfiltration",
 }
 
+_PLAIN_USER_DOC_SUMMARY_RE = re.compile(
+    r"^\s*(?:please\s+)?(?:summari[sz]e|outline|condense|explain)\s+"
+    r"(?:the\s+|this\s+|that\s+|an?\s+)?"
+    r"(?:readme|changelog|release\s+notes|documentation|docs?|section|article|file|page|text|passage|document)\b",
+    re.IGNORECASE,
+)
+_DOC_SUMMARY_SUSPICIOUS_RE = re.compile(
+    r"\b(?:ignore|disregard|previous\s+instructions?|system\s+prompt|api\s*key|secret|token|password|"
+    r"credential|ssh|env(?:ironment)?\s+variables?|exfiltrat\w*|send|email|post|curl|https?://|"
+    r"delete|run|execute|shell|command|developer\s+mode|dan)\b",
+    re.IGNORECASE,
+)
+
 
 def _canonicalize_result_category(result: ClassificationResult) -> ClassificationResult:
     """Normalize legacy/training labels at the public API boundary."""
     result.top_category = _CANONICAL_CATEGORY_ALIASES.get(result.top_category, result.top_category)
     return result
+
+
+def _is_plain_user_document_summary_request(text: str, origin: Optional[str]) -> bool:
+    """Return True for short standalone benign document-summary task requests."""
+    if origin not in (None, "user_input"):
+        return False
+    stripped = (text or "").strip()
+    if not stripped or len(stripped) > 180 or "\n" in stripped:
+        return False
+    if not _PLAIN_USER_DOC_SUMMARY_RE.search(stripped):
+        return False
+    return _DOC_SUMMARY_SUSPICIOUS_RE.search(stripped) is None
+
+
+def _allow_plain_document_summary_request() -> ClassificationResult:
+    scores = {label: 0.0 for label in ATTACK_LABELS}
+    scores["clean"] = 1.0
+    return ClassificationResult(
+        scores=scores,
+        decision=Decision.ALLOW,
+        top_category="clean",
+        confidence=0.0,
+    )
 
 
 class _ResultClassifier(Protocol):
@@ -269,6 +306,8 @@ class ScabbardClassifier:
         # KatanaV11Classifier (v1.0 model) takes highest priority: 9-class
         # origin-aware classification.
         if self.katana_v11_classifier is not None:
+            if _is_plain_user_document_summary_request(text, origin):
+                return _allow_plain_document_summary_request()
             try:
                 result = self.katana_v11_classifier.classify_result(text, origin=origin)
                 normalized = normalize(text, aggressive=aggressive_normalize)

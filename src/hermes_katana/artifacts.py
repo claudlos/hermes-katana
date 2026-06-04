@@ -73,7 +73,7 @@ V15_LARGE_ALLOW_PATTERNS = (*V15_LARGE_REQUIRED_FILES, "README.md")
 DEFAULT_V17_LARGE_REPO = "Carlosian/hermes-katana-17"
 DEFAULT_V17_MINILM_REPO = "Carlosian/hermes-katana-90"
 V17_LARGE_REVISION = "a08883466abd2924587ac0646fa693c0a27b50af"
-V17_MINILM_REVISION = "fc52b343e206d190bcb773a32a909a3885fdf480"
+V17_MINILM_REVISION = "b4832fed0cb05d7f663184e7fde456f3043d8ec4"
 
 V17_LARGE_REQUIRED_FILES = (
     "model.safetensors",
@@ -582,6 +582,18 @@ def resolve_v15_large(
 ) -> Path:
     """Return a ready optional large v15 artifact directory."""
     spec = v15_large_spec(repo_id=repo_id, revision=revision)
+    return resolve_artifact(spec, download=download, target_dir=target_dir)
+
+
+def resolve_v17_minilm(
+    *,
+    download: bool | None = None,
+    repo_id: str | None = None,
+    revision: str | None = None,
+    target_dir: str | Path | None = None,
+) -> Path:
+    """Return a ready v17 origin-aware MiniLM PyTorch checkpoint artifact directory."""
+    spec = v17_minilm_spec(repo_id=repo_id, revision=revision)
     return resolve_artifact(spec, download=download, target_dir=target_dir)
 
 

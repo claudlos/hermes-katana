@@ -79,9 +79,10 @@ For the simplest non-interactive full setup:
 katana setup full
 ```
 
-This downloads every registered model artifact, installs the ONNX Runtime CPU,
-PyTorch CPU, and Proving Ground dependency groups, then verifies that all of
-them are present.
+This downloads every managed setup model artifact, installs the ONNX Runtime
+CPU, PyTorch CPU, and Proving Ground dependency groups, then verifies that all
+of them are present. Research artifacts such as `v17_minilm` and `v17_large`
+remain explicit downloads.
 
 For model artifacts only:
 
@@ -96,12 +97,12 @@ katana artifacts setup --yes          # default choices: small ONNX model only
 katana artifacts setup --small        # small ONNX model only
 katana artifacts setup --small-torch  # small PyTorch checkpoint only
 katana artifacts setup --large        # larger PyTorch model only
-katana artifacts setup --all          # every registered model
+katana artifacts setup --all          # every managed setup model
 katana setup --fast-cpu               # ONNX Runtime dependencies only
 katana setup --torch-cpu              # PyTorch CPU dependencies only
 katana setup --proving-ground         # install Proving Ground dependencies
 katana setup --yes --proving-ground   # small ONNX model, ONNX Runtime, plus Proving Ground
-katana setup full                     # all registered models, setup dependencies, and verification
+katana setup full                     # managed setup models, setup dependencies, and verification
 ```
 
 ## Direct download
@@ -112,6 +113,8 @@ Explicit network access:
 katana artifacts download minilm
 katana artifacts download minilm_torch
 katana artifacts download large
+katana artifacts download v17_minilm
+katana artifacts download v17_large
 ```
 
 Override the repo or revision:
@@ -150,12 +153,18 @@ katana artifacts setup --yes
 - `KATANA_MINILM_ONNX_DIR`: direct path to a ready MiniLM ONNX artifact directory.
 - `KATANA_MINILM_TORCH_DIR`: direct path to a ready MiniLM PyTorch artifact directory.
 - `KATANA_V15_LARGE_DIR`: direct path to a ready large v15 artifact directory.
+- `KATANA_V17_MINILM_DIR`: direct path to a ready v17 MiniLM artifact directory.
+- `KATANA_V17_LARGE_DIR`: direct path to a ready v17 large artifact directory.
 - `KATANA_HF_REPO_ID`: default MiniLM Hugging Face repo override.
 - `KATANA_HF_REVISION`: default MiniLM revision override. Pin this to a tag or commit SHA for reproducible deployments.
 - `KATANA_MINILM_TORCH_HF_REPO_ID`: MiniLM PyTorch Hugging Face repo override.
 - `KATANA_MINILM_TORCH_HF_REVISION`: MiniLM PyTorch revision override.
 - `KATANA_V15_LARGE_HF_REPO_ID`: large model Hugging Face repo override.
 - `KATANA_V15_LARGE_HF_REVISION`: large model revision override.
+- `KATANA_V17_MINILM_HF_REPO_ID`: v17 MiniLM Hugging Face repo override.
+- `KATANA_V17_MINILM_HF_REVISION`: v17 MiniLM revision override.
+- `KATANA_V17_LARGE_HF_REPO_ID`: v17 large Hugging Face repo override.
+- `KATANA_V17_LARGE_HF_REVISION`: v17 large revision override.
 - `KATANA_ARTIFACT_AUTO_DOWNLOAD`: set to `1` only when runtime auto-download is desired.
 - `KATANA_HF_TOKEN` or `HF_TOKEN`: optional token for private/gated Hugging Face repos.
 
