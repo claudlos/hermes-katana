@@ -453,7 +453,7 @@ def _verify_full_setup(*, target_dir: str | None) -> None:
         raise click.ClickException("Full setup verification failed")
 
     console.print(
-        "[green]Full setup verified[/green] all registered artifacts and optional setup dependencies are present."
+        "[green]Full setup verified[/green] all managed setup artifacts and optional setup dependencies are present."
     )
 
 
@@ -942,7 +942,7 @@ def preflight(target: str | None, json_output: bool) -> None:
 @click.option("--small", is_flag=True, help="Download the small MiniLM ONNX model artifact.")
 @click.option("--small-torch", is_flag=True, help="Download the small MiniLM PyTorch checkpoint artifact.")
 @click.option("--large", is_flag=True, help="Download the large PyTorch model artifact.")
-@click.option("--all", "all_models", is_flag=True, help="Download every registered model.")
+@click.option("--all", "all_models", is_flag=True, help="Download every managed setup model.")
 @click.option("--no-large", is_flag=True, help="Skip optional large models.")
 @click.option(
     "--fast-cpu",
@@ -998,7 +998,7 @@ def setup(
     """Run first-use setup for optional models and research harness extras.
 
     Pass full to install every setup dependency group, download every
-    registered model artifact, and verify readiness after installation.
+    managed setup model artifact, and verify readiness after installation.
     """
     install_onnx_runtime = onnx_runtime_opt_in is not None
     no_onnx_runtime = onnx_runtime_opt_out is not None
@@ -2184,7 +2184,7 @@ def artifacts_download(
 @click.option("--small", is_flag=True, help="Download the small MiniLM ONNX model artifact.")
 @click.option("--small-torch", is_flag=True, help="Download the small MiniLM PyTorch checkpoint artifact.")
 @click.option("--large", is_flag=True, help="Download the large PyTorch model artifact.")
-@click.option("--all", "all_models", is_flag=True, help="Download every registered model.")
+@click.option("--all", "all_models", is_flag=True, help="Download every managed setup model.")
 @click.option("--no-large", is_flag=True, help="Skip optional large models.")
 @click.option("--target-dir", default=None, type=click.Path(), help="Local artifact directory or cache root.")
 @click.option("--force", is_flag=True, help="Force re-download when using huggingface_hub.")

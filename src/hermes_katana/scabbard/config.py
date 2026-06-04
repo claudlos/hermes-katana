@@ -48,6 +48,8 @@ from hermes_katana.artifacts import (
     resolve_minilm_onnx,
     resolve_minilm_torch,
     resolve_v15_large,
+    resolve_v17_minilm,
+    v17_minilm_spec,
 )
 
 # -----------------------------------------------------------------------
@@ -79,6 +81,7 @@ _KATANA_V14_BEST = _CHECKPOINTS / "katana_v14" / "best"  # PRODUCTION (data_v7, 
 _KATANA_V15_BEST = _CHECKPOINTS / "katana_v15" / "best"  # candidate (data_v8; explicit only)
 _KATANA_V15_MINILM_BEST = _CHECKPOINTS / "katana_v15_distill_minilm" / "best"
 _KATANA_V15_MINILM_TAG = "katana_v15_distill_minilm"
+_KATANA_V17_MINILM_TAG = "katana_v17_minilm"
 
 
 def _newest_available_katana_checkpoint() -> Path:
@@ -150,6 +153,11 @@ def _katana_v15_minilm_torch_artifact_path() -> Path:
 def _katana_v15_large_artifact_path() -> Path:
     """Return a verified large v15 artifact path, downloading only if opted in."""
     return resolve_v15_large(download=None)
+
+
+def _katana_v17_minilm_artifact_path() -> Path:
+    """Return a verified v17 MiniLM artifact path, downloading only if opted in."""
+    return resolve_v17_minilm(download=None)
 
 
 def _module_available(module_name: str) -> bool:
@@ -344,6 +352,11 @@ class ScabbardConfig:
         if backend == "torch":
             return artifact_status(minilm_torch_spec()).present
         return False
+
+    @classmethod
+    def katana_v17_minilm_available(cls) -> bool:
+        """Return True if the v17 origin-aware MiniLM artifact is present locally."""
+        return artifact_status(v17_minilm_spec()).present
 
     @classmethod
     def katana_default_available(cls) -> bool:
@@ -602,6 +615,35 @@ class ScabbardConfig:
             allow_threshold=allow_threshold,
             block_threshold=block_threshold,
             model_version=_KATANA_V15_MINILM_TAG,
+            centroid_path=None,
+            tfidf_path=None,
+            fusion_model=None,
+        )
+
+    @classmethod
+    def katana_v17_minilm(
+        cls,
+        *,
+        model_path: Optional[str] = None,
+        default_origin: str = "user_input",
+        allow_threshold: float = 0.3,
+        block_threshold: float = 0.5,
+        backend: str = "torch",
+        device: Optional[str] = None,
+    ) -> "ScabbardConfig":
+        """Pin to the v3.1 origin-aware distilled MiniLM-L6 research artifact."""
+        if backend != "torch":
+            raise ValueError("katana_v17_minilm ships as a PyTorch safetensors artifact; use backend='torch'")
+        resolved_path = model_path or str(_katana_v17_minilm_artifact_path())
+        return cls(
+            profile="standard",
+            katana_v11_path=resolved_path,
+            katana_v11_default_origin=default_origin,
+            katana_v11_backend=backend,
+            katana_v11_device=device,
+            allow_threshold=allow_threshold,
+            block_threshold=block_threshold,
+            model_version=_KATANA_V17_MINILM_TAG,
             centroid_path=None,
             tfidf_path=None,
             fusion_model=None,
