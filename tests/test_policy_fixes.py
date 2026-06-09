@@ -54,6 +54,45 @@ class TestBalancedUnknownToolDefault:
         assert result.action == PolicyResult.ESCALATE
 
 
+    def test_engine_allows_known_clean_hermes_tools(self):
+        """Known clean Hermes primitives should not fall through to the unknown-tool catchall."""
+        from hermes_katana.policy.engine import PolicyEngine
+        from hermes_katana.policy.models import PolicyResult
+
+        engine = PolicyEngine.with_defaults("balanced")
+        cases = [
+            ("skill_view", {"name": "hermes-agent"}),
+            ("skills_list", {}),
+            ("write_file", {"path": "notes.txt", "content": "safe clean content"}),
+            ("patch", {"path": "notes.txt", "old_string": "a", "new_string": "b"}),
+            ("execute_code", {"code": "print('hello')"}),
+            ("todo", {"todos": []}),
+            ("process", {"action": "poll", "session_id": "abc"}),
+            ("session_search", {"query": "katana"}),
+            ("web_search", {"query": "Hermes Agent docs"}),
+            ("web_extract", {"urls": ["https://example.com"]}),
+        ]
+
+        for tool_name, args in cases:
+            result = engine.evaluate(tool_name, args, {})
+            assert result.action == PolicyResult.ALLOW, (tool_name, result)
+            assert result.matched_policy is not None
+            assert result.matched_policy.name != "balanced_catchall_clean"
+
+    def test_engine_still_escalates_tainted_file_mutation_tools(self):
+        from hermes_katana.policy.engine import PolicyEngine
+        from hermes_katana.policy.models import PolicyResult
+
+        engine = PolicyEngine.with_defaults("balanced")
+        taint_ctx = {"tainted_fields": {"content": {"is_tainted": True, "source": "web", "labels": [], "level": 5}}}
+        for tool_name, args in [
+            ("write_file", {"path": "notes.txt", "content": "web text"}),
+            ("patch", {"path": "notes.txt", "old_string": "a", "new_string": "web text"}),
+        ]:
+            result = engine.evaluate(tool_name, args, taint_ctx)
+            assert result.action == PolicyResult.ESCALATE, (tool_name, result)
+
+
 # ---------------------------------------------------------------------------
 # GAP 4.1 — Middleware bypass detection
 # ---------------------------------------------------------------------------
