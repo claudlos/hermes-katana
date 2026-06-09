@@ -343,3 +343,9 @@ class TestCurrentHermesSnapshotReviewFixes:
         assert "_session_cwd_overrides" in src
         assert "_session_cwd_overrides[task_id] = new_cwd" in src
         assert "_session_cwd_overrides.get(task_id)" in src
+
+    def test_gateway_runtime_fallback_does_not_log_provider_bundle_values(self):
+        src = (_CURRENT_SNAPSHOT_DIR / "gateway" / "run.py").read_text(encoding="utf-8")
+
+        assert "defaulting to %s for provider %s" not in src
+        assert 'model, runtime_kwargs["provider"]' not in src

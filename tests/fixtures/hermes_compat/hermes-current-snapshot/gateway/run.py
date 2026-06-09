@@ -2754,8 +2754,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 model = get_default_model_for_provider(runtime_kwargs["provider"])
                 if model:
                     logger.info(
-                        "No model configured — defaulting to %s for provider %s",
-                        model, runtime_kwargs["provider"],
+                        "No model configured — defaulting to provider catalog model %s",
+                        model,
                     )
             except Exception:
                 pass
