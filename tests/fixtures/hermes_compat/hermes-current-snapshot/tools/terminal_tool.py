@@ -941,6 +941,7 @@ def _maybe_reap_docker_orphans(container_config: Dict[str, Any]) -> None:
 # This is never exposed to the model -- only infrastructure code calls it.
 # Thread-safe because each task_id is unique per rollout.
 _task_env_overrides: Dict[str, Dict[str, Any]] = {}
+_session_cwd_overrides: Dict[str, str] = {}
 
 
 def register_task_env_overrides(task_id: str, overrides: Dict[str, Any]):
@@ -959,29 +960,27 @@ def register_task_env_overrides(task_id: str, overrides: Dict[str, Any]):
         task_id: The rollout's unique task identifier
         overrides: Dict of config keys to override
     """
-    _task_env_overrides[task_id] = overrides
-
-    # If a live environment already exists for this task, a freshly registered
-    # ``cwd`` override (e.g. the ACP client switching the editor's project root
-    # mid-session via ``session/load`` / ``session/resume``) must take effect on
-    # the cached env too. ``terminal_tool`` resolves the per-command cwd as
-    # ``workdir > env.cwd > config/override cwd`` so that ordinary in-session
-    # ``cd`` state is preserved; without syncing here the override would sit
-    # below the (already-set) ``env.cwd`` and be silently ignored once any
-    # command has run. Pushing it onto the live env keeps ``cd`` tracking intact
-    # while letting an explicit ACP cwd change win, as the client expects.
     new_cwd = overrides.get("cwd")
-    if isinstance(new_cwd, str) and new_cwd.strip():
-        # The live env is cached under the raw task_id for per-session surfaces
-        # (ACP/gateway/dashboard) and under the collapsed container id for
-        # isolation-keyed rollouts. Try the raw id first, then the container id,
-        # so a CWD-only override (which collapses to "default") still finds and
-        # updates the originating session's env.
-        container_id = _resolve_container_task_id(task_id)
-        with _env_lock:
-            env = _active_environments.get(task_id) or _active_environments.get(container_id)
-        if env is not None and getattr(env, "cwd", None) is not None:
-            env.cwd = new_cwd
+    with _env_lock:
+        _task_env_overrides[task_id] = overrides
+
+        # If a live environment already exists for this task, a freshly
+        # registered ``cwd`` override (e.g. the ACP client switching project
+        # roots mid-session) must take effect. CWD-only overrides collapse to
+        # the shared container key, so keep those in a raw-task map instead of
+        # mutating the shared environment cwd.
+        if isinstance(new_cwd, str) and new_cwd.strip():
+            container_id = _resolve_container_task_id(task_id)
+            if container_id != task_id:
+                _session_cwd_overrides[task_id] = new_cwd
+                env = _active_environments.get(task_id)
+            else:
+                _session_cwd_overrides.pop(task_id, None)
+                env = _active_environments.get(task_id) or _active_environments.get(container_id)
+            if env is not None and getattr(env, "cwd", None) is not None:
+                env.cwd = new_cwd
+        else:
+            _session_cwd_overrides.pop(task_id, None)
 
 
 def clear_task_env_overrides(task_id: str):
@@ -990,7 +989,9 @@ def clear_task_env_overrides(task_id: str):
 
     Called during cleanup to avoid stale entries accumulating.
     """
-    _task_env_overrides.pop(task_id, None)
+    with _env_lock:
+        _task_env_overrides.pop(task_id, None)
+        _session_cwd_overrides.pop(task_id, None)
 
 
 def _resolve_container_task_id(task_id: Optional[str]) -> str:
@@ -1769,6 +1770,7 @@ def _resolve_command_cwd(
     workdir: Optional[str],
     env: Any,
     default_cwd: str,
+    task_id: Optional[str] = None,
 ) -> str:
     """Return the cwd for a command, preferring the live session cwd.
 
@@ -1780,6 +1782,12 @@ def _resolve_command_cwd(
     """
     if workdir:
         return workdir
+
+    if task_id:
+        with _env_lock:
+            session_cwd = _session_cwd_overrides.get(task_id)
+        if isinstance(session_cwd, str) and session_cwd.strip():
+            return session_cwd
 
     live_cwd = getattr(env, "cwd", None)
     if isinstance(live_cwd, str) and live_cwd.strip():
@@ -2089,6 +2097,7 @@ def terminal_tool(
                 workdir=workdir,
                 env=env,
                 default_cwd=cwd,
+                task_id=task_id,
             )
             try:
                 if env_type == "local":
@@ -2310,6 +2319,7 @@ def terminal_tool(
                             workdir=workdir,
                             env=env,
                             default_cwd=cwd,
+                            task_id=task_id,
                         ),
                     }
                     result = env.execute(command, **execute_kwargs)
