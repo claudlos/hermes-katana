@@ -5,6 +5,7 @@ configurable resource limits (CPU, memory, disk), and optional filesystem
 persistence via bind mounts.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -118,6 +119,11 @@ def _sanitize_label_value(value: str) -> str:
     cleaned = _LABEL_VALUE_OK_RE.sub("_", value)
     cleaned = cleaned[:63] or "unknown"
     return cleaned
+
+
+def _stable_label_hash(value: str) -> str:
+    """Return a stable Docker-label-safe hash for exact label matching."""
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
 
 
 def _get_active_profile_name() -> str:
@@ -793,12 +799,17 @@ class DockerEnvironment(BaseEnvironment):
         # Values are limited to the safe character set defined by
         # _sanitize_label_value(); the active Hermes profile is captured at
         # container-start time and never changes for the container's lifetime.
-        profile_name = _sanitize_label_value(_get_active_profile_name())
+        profile_raw = _get_active_profile_name()
+        profile_name = _sanitize_label_value(profile_raw)
         task_label = _sanitize_label_value(task_id)
+        task_hash = _stable_label_hash(task_id)
+        profile_hash = _stable_label_hash(profile_raw)
         label_args = [
             "--label", "hermes-agent=1",
             "--label", f"hermes-task-id={task_label}",
             "--label", f"hermes-profile={profile_name}",
+            "--label", f"hermes-task-id-hash={task_hash}",
+            "--label", f"hermes-profile-hash={profile_hash}",
         ]
         # Save args for container recreation on "No such container" recovery.
         self._image = image
@@ -810,6 +821,8 @@ class DockerEnvironment(BaseEnvironment):
             "hermes-agent": "1",
             "hermes-task-id": task_label,
             "hermes-profile": profile_name,
+            "hermes-task-id-hash": task_hash,
+            "hermes-profile-hash": profile_hash,
         }
 
         # Cross-process container reuse (issue #20561 — docs claim "ONE long-lived
@@ -826,7 +839,7 @@ class DockerEnvironment(BaseEnvironment):
         # force a clean start.
         reused = False
         if persist_across_processes:
-            existing = self._find_reusable_container(task_label, profile_name)
+            existing = self._find_reusable_container(task_hash, profile_hash, task_label, profile_name)
             if existing is not None:
                 container_id, state = existing
                 self._container_id = container_id
@@ -930,9 +943,9 @@ class DockerEnvironment(BaseEnvironment):
         hermes_env = _load_hermes_env_vars() if forward_keys else {}
         for key in sorted(forward_keys):
             value = os.getenv(key)
-            if not value:
+            if value is None:
                 value = hermes_env.get(key)
-            if value:
+            if value is not None:
                 exec_env[key] = value
 
         args = []
@@ -992,9 +1005,11 @@ class DockerEnvironment(BaseEnvironment):
         self._container_id = None
 
         # 1. Try label-based reuse (another process may have recreated it).
-        task_label = self._labels.get("hermes-task-id", "")
-        profile_label = self._labels.get("hermes-profile", "")
-        existing = self._find_reusable_container(task_label, profile_label)
+        task_hash = self._labels.get("hermes-task-id-hash", "")
+        profile_hash = self._labels.get("hermes-profile-hash", "")
+        task_label = self._labels.get("hermes-task-id")
+        profile_label = self._labels.get("hermes-profile")
+        existing = self._find_reusable_container(task_hash, profile_hash, task_label, profile_label)
         if existing is not None:
             cid, state = existing
             if state == "running":
@@ -1119,7 +1134,13 @@ class DockerEnvironment(BaseEnvironment):
         logger.debug("Docker --storage-opt support: %s", _storage_opt_ok)
         return _storage_opt_ok
 
-    def _find_reusable_container(self, task_label: str, profile_label: str) -> Optional[tuple[str, str]]:
+    def _find_reusable_container(
+        self,
+        task_hash: str,
+        profile_hash: str,
+        task_label: str | None = None,
+        profile_label: str | None = None,
+    ) -> Optional[tuple[str, str]]:
         """Look for an existing container labeled for this (task, profile).
 
         Returns ``(container_id, state)`` on hit, ``None`` on miss / on any
@@ -1132,15 +1153,27 @@ class DockerEnvironment(BaseEnvironment):
         matches containers that happened to be named ``hermes-*`` but were
         started by some other tool.
         """
+        existing = self._find_reusable_container_with_filters([
+            "label=hermes-agent=1",
+            f"label=hermes-task-id-hash={task_hash}",
+            f"label=hermes-profile-hash={profile_hash}",
+        ])
+        if existing is not None or task_label is None or profile_label is None:
+            return existing
+        return self._find_reusable_container_with_filters([
+            "label=hermes-agent=1",
+            f"label=hermes-task-id={task_label}",
+            f"label=hermes-profile={profile_label}",
+        ])
+
+    def _find_reusable_container_with_filters(self, label_filters: list[str]) -> Optional[tuple[str, str]]:
         try:
+            cmd = [self._docker_exe, "ps", "-a"]
+            for label_filter in label_filters:
+                cmd.extend(["--filter", label_filter])
+            cmd.extend(["--format", "{{.ID}}\t{{.State}}"])
             result = subprocess.run(
-                [
-                    self._docker_exe, "ps", "-a",
-                    "--filter", "label=hermes-agent=1",
-                    "--filter", f"label=hermes-task-id={task_label}",
-                    "--filter", f"label=hermes-profile={profile_label}",
-                    "--format", "{{.ID}}\t{{.State}}",
-                ],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=10,

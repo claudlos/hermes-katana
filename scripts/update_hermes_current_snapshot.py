@@ -92,13 +92,46 @@ def _copy_snapshot_files(source: Path, snapshot_dir: Path) -> dict[str, dict[str
     return manifest_files
 
 
-def _write_manifest(snapshot_dir: Path, commit: str, files: dict[str, dict[str, int | str]]) -> Path:
+def _read_manifest(manifest_path: Path) -> dict | None:
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return manifest if isinstance(manifest, dict) else None
+
+
+def _current_manifest_timestamp(
+    existing: dict | None,
+    commit: str,
+    files: dict[str, dict[str, int | str]],
+) -> str | None:
+    """Return the existing timestamp when the manifest content is unchanged."""
+    if existing is None:
+        return None
+    if existing.get("hermes_commit") != commit or existing.get("files") != dict(sorted(files.items())):
+        return None
+    captured_at = existing.get("captured_at")
+    return captured_at if isinstance(captured_at, str) and captured_at else None
+
+
+def _write_manifest(
+    snapshot_dir: Path,
+    commit: str,
+    files: dict[str, dict[str, int | str]],
+    *,
+    previous_manifest: dict | None = None,
+) -> Path:
+    manifest_path = snapshot_dir / "MANIFEST.json"
+    captured_at = _current_manifest_timestamp(previous_manifest, commit, files)
+    if captured_at is None:
+        captured_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     manifest = {
         "hermes_commit": commit,
-        "captured_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "captured_at": captured_at,
         "files": dict(sorted(files.items())),
     }
-    manifest_path = snapshot_dir / "MANIFEST.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=False) + "\n", encoding="utf-8")
     return manifest_path
 
@@ -133,8 +166,9 @@ def refresh_current_snapshot(
     if not re.fullmatch(r"[0-9a-f]{40}", resolved_commit):
         raise ValueError("Hermes commit must be a 40-character lowercase hex SHA")
 
+    previous_manifest = _read_manifest(snapshot_dir / "MANIFEST.json")
     files = _copy_snapshot_files(source, snapshot_dir)
-    manifest_path = _write_manifest(snapshot_dir, resolved_commit, files)
+    manifest_path = _write_manifest(snapshot_dir, resolved_commit, files, previous_manifest=previous_manifest)
     _update_expected_commit(compat_test, resolved_commit)
     return resolved_commit, manifest_path
 

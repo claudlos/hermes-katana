@@ -42,8 +42,9 @@ jobs:
       - name: Check drift and auto-refresh snapshot PR
         env:
           GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           python scripts/hermes_drift_autorepair.py \
             --checkout "${RUNNER_TEMP}/hermes-agent" \
-            --default-branch "${{ github.event.repository.default_branch }}" \
+            --default-branch "${DEFAULT_BRANCH}" \
             --pr

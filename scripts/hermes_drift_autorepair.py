@@ -27,6 +27,7 @@ VALIDATION_COMMANDS = [
         "-m",
         "ruff",
         "check",
+        "scripts/hermes_drift_autorepair.py",
         "scripts/update_hermes_current_snapshot.py",
         "tests/unit/test_update_hermes_current_snapshot.py",
         "tests/unit/test_hermes_drift_autorepair.py",
@@ -82,12 +83,11 @@ def _check_drift(checkout: Path) -> tuple[int, str]:
     return result.returncode, output
 
 
-
-
 def _restore_hermes_checkout(checkout: Path) -> None:
     """Undo check_hermes_drift mutations before copying snapshot fixtures."""
     subprocess.run(["git", "-C", str(checkout), "reset", "--hard", "HEAD"], check=True, text=True, capture_output=True)
     subprocess.run(["git", "-C", str(checkout), "clean", "-fd"], check=True, text=True, capture_output=True)
+
 
 def _refresh_snapshot(checkout: Path) -> bool:
     result = _run_visible([sys.executable, "scripts/update_hermes_current_snapshot.py", "--source", str(checkout)])
@@ -144,6 +144,7 @@ def _open_or_update_pr(branch: str, title: str, body_path: Path, default_branch:
     _git("checkout", "-B", branch, check=True)
     _git("add", *SNAPSHOT_PATHS, check=True)
     _git("commit", "-m", "chore: refresh Hermes compatibility snapshot", check=True)
+    _git("fetch", "origin", f"refs/heads/{branch}:refs/remotes/origin/{branch}", check=False)
     _git("push", "--force-with-lease", "origin", branch, check=True)
 
     existing = _run(["gh", "pr", "list", "--head", branch, "--json", "number", "--jq", ".[0].number // empty"])
@@ -178,7 +179,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkout", required=True, type=Path, help="Path to the latest Hermes Agent checkout")
     parser.add_argument("--default-branch", required=True, help="Repository default branch for PR targets")
-    parser.add_argument("--pr", action="store_true", help="Open/update a snapshot refresh PR when running on default branch")
+    parser.add_argument(
+        "--pr", action="store_true", help="Open/update a snapshot refresh PR when running on default branch"
+    )
     args = parser.parse_args(argv)
 
     checkout = args.checkout.resolve()
@@ -192,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     validation_status: int | None = None
     validation_output = ""
     changed = False
-    if args.pr and _can_open_pr(args.default_branch):
+    if args.pr and drift_status != 0 and _can_open_pr(args.default_branch):
         _restore_hermes_checkout(checkout)
         changed = _refresh_snapshot(checkout)
         if changed:
@@ -212,7 +215,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("hermes-current snapshot already matches latest Hermes; no PR needed.")
     elif args.pr:
-        print("Skipping snapshot PR: not on the default branch or no GitHub token is available.")
+        if drift_status == 0:
+            print("Skipping snapshot PR: drift check passed.")
+        else:
+            print("Skipping snapshot PR: not on the default branch or no GitHub token is available.")
 
     if drift_status != 0:
         return drift_status

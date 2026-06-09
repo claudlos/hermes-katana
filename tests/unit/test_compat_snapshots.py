@@ -317,3 +317,29 @@ class TestHermesResultHookContract:
             "transform_tool_result must be invoked after post_tool_call so the "
             "plugin can replace output the observational post hook prepared."
         )
+
+
+class TestCurrentHermesSnapshotReviewFixes:
+    """Guard local fixes applied to the refreshed current snapshot fixture."""
+
+    def test_tool_bridge_preserves_tracing_fields(self):
+        src = (_CURRENT_SNAPSHOT_DIR / "model_tools.py").read_text(encoding="utf-8")
+
+        assert "turn_id=turn_id" in src
+        assert "api_request_id=api_request_id" in src
+
+    def test_docker_reuse_uses_hash_labels_and_preserves_empty_env_overrides(self):
+        src = (_CURRENT_SNAPSHOT_DIR / "tools" / "environments" / "docker.py").read_text(encoding="utf-8")
+
+        assert "def _stable_label_hash" in src
+        assert "hermes-task-id-hash" in src
+        assert "hermes-profile-hash" in src
+        assert "if value is None:" in src
+        assert "if value is not None:" in src
+
+    def test_terminal_cwd_overrides_are_session_scoped(self):
+        src = (_CURRENT_SNAPSHOT_DIR / "tools" / "terminal_tool.py").read_text(encoding="utf-8")
+
+        assert "_session_cwd_overrides" in src
+        assert "_session_cwd_overrides[task_id] = new_cwd" in src
+        assert "_session_cwd_overrides.get(task_id)" in src

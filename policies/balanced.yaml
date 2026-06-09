@@ -224,6 +224,31 @@ policies:
   tags:
   - side-effect
   - filesystem
+- name: balanced_execute_code_high_taint
+  description: Deny execute_code calls with high taint (level >= 7).
+  tool_pattern: execute_code
+  conditions:
+  - field: '*'
+    operator: taint_level_gte
+    value: 7
+  action: deny
+  priority: 100
+  tags:
+  - side-effect
+  - code-execution
+  - high-taint
+- name: balanced_execute_code_tainted
+  description: Escalate execute_code calls with low/medium taint.
+  tool_pattern: execute_code
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: escalate
+  priority: 95
+  tags:
+  - side-effect
+  - code-execution
 - name: balanced_send_message_tainted
   description: Block outbound messages containing tainted data (exfiltration risk).
   tool_pattern: send_message
@@ -370,9 +395,12 @@ policies:
   - read-only
   - tainted-read
 - name: balanced_process_tainted_log
-  description: Log-only for tainted process inspection.
+  description: Log-only for tainted read-like process inspection.
   tool_pattern: process
   conditions:
+  - field: action
+    operator: matches_pattern
+    value: ^(list|poll|log|wait)$
   - field: '*'
     operator: contains_taint
     value: true
@@ -381,6 +409,21 @@ policies:
   tags:
   - read-only
   - tainted-read
+- name: balanced_process_tainted_mutation
+  description: Escalate tainted process mutation/control actions.
+  tool_pattern: process
+  conditions:
+  - field: action
+    operator: matches_pattern
+    value: ^(kill|write|submit|close)$
+  - field: '*'
+    operator: contains_taint
+    value: true
+  action: escalate
+  priority: 95
+  tags:
+  - side-effect
+  - process
 - name: balanced_notes_tainted
   description: Deny notes tool when arguments carry web taint (data poisoning risk).
   tool_pattern: notes
@@ -404,9 +447,13 @@ policies:
   - known-tool
   - notes
 - name: balanced_write_file_clean
-  description: Allow clean file writes in balanced/development mode; tainted writes are handled by higher-priority rules.
+  description: Allow clean file writes in balanced/development mode; tainted writes are handled by higher-priority
+    rules.
   tool_pattern: write_file
-  conditions: []
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: false
   action: allow
   priority: 50
   tags:
@@ -414,9 +461,13 @@ policies:
   - filesystem
   - known-tool
 - name: balanced_patch_clean
-  description: Allow clean file patches in balanced/development mode; tainted patches are handled by higher-priority rules.
+  description: Allow clean file patches in balanced/development mode; tainted patches are handled by higher-priority
+    rules.
   tool_pattern: patch
-  conditions: []
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: false
   action: allow
   priority: 50
   tags:
@@ -424,9 +475,13 @@ policies:
   - filesystem
   - known-tool
 - name: balanced_execute_code_clean
-  description: Allow clean execute_code calls in balanced/development mode; this mirrors clean terminal behavior.
+  description: Allow clean execute_code calls in balanced/development mode; this mirrors clean terminal
+    behavior.
   tool_pattern: execute_code
-  conditions: []
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: false
   action: allow
   priority: 50
   tags:
@@ -454,20 +509,27 @@ policies:
   - skills
   - known-tool
 - name: balanced_todo_clean
-  description: Allow clean todo updates; tainted todo content is logged by the higher-priority tainted rule.
+  description: Allow clean todo updates; tainted todo content is logged by the higher-priority tainted
+    rule.
   tool_pattern: todo
-  conditions: []
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: false
   action: allow
-  priority: 35
+  priority: 50
   tags:
   - session-state
   - known-tool
 - name: balanced_process_clean
   description: Allow clean process management calls in balanced/development mode.
   tool_pattern: process
-  conditions: []
+  conditions:
+  - field: '*'
+    operator: contains_taint
+    value: false
   action: allow
-  priority: 35
+  priority: 50
   tags:
   - process
   - known-tool
@@ -481,7 +543,8 @@ policies:
   - read-only
   - known-tool
 - name: balanced_web_search_allow
-  description: Allow web_search; it is a read-only network lookup and fetched content is handled as tool output.
+  description: Allow web_search; it is a read-only network lookup and fetched content is handled as tool
+    output.
   tool_pattern: web_search
   conditions: []
   action: allow
@@ -491,7 +554,8 @@ policies:
   - web
   - known-tool
 - name: balanced_web_extract_allow
-  description: Allow web_extract; it is a read-only network lookup and fetched content is handled as tool output.
+  description: Allow web_extract; it is a read-only network lookup and fetched content is handled as tool
+    output.
   tool_pattern: web_extract
   conditions: []
   action: allow

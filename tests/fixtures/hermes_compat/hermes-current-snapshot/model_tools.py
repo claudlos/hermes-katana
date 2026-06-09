@@ -992,6 +992,8 @@ def handle_function_call(
                 tool_request_middleware_trace=list(_tool_middleware_trace),
                 enabled_toolsets=enabled_toolsets,
                 disabled_toolsets=disabled_toolsets,
+                turn_id=turn_id,
+                api_request_id=api_request_id,
             )
 
     _tool_original_args = dict(function_args)

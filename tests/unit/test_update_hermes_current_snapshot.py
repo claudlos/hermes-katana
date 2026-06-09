@@ -87,6 +87,36 @@ def test_refresh_current_snapshot_removes_stale_snapshot_files(tmp_dir):
     assert not stale_file.exists()
 
 
+def test_refresh_current_snapshot_preserves_manifest_timestamp_when_unchanged(tmp_dir):
+    script = _load_refresh_script()
+    source = _write_fake_hermes_checkout(tmp_dir, script.SNAPSHOT_FILES)
+    snapshot_dir = tmp_dir / "snapshot"
+    compat_test = tmp_dir / "test_compat_snapshots.py"
+    _write_compat_test(compat_test)
+    commit = "c" * 40
+
+    script.refresh_current_snapshot(
+        source,
+        snapshot_dir=snapshot_dir,
+        compat_test=compat_test,
+        commit=commit,
+    )
+    manifest_path = snapshot_dir / "MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["captured_at"] = "2026-01-01T00:00:00+00:00"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    script.refresh_current_snapshot(
+        source,
+        snapshot_dir=snapshot_dir,
+        compat_test=compat_test,
+        commit=commit,
+    )
+
+    refreshed = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert refreshed["captured_at"] == "2026-01-01T00:00:00+00:00"
+
+
 def test_refresh_current_snapshot_rejects_invalid_commit_override(tmp_dir):
     script = _load_refresh_script()
     source = _write_fake_hermes_checkout(tmp_dir, script.SNAPSHOT_FILES)
