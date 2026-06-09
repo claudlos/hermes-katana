@@ -1,14 +1,14 @@
 {
   "hermes_commit": "57775e9e161087dbe55e096c038f512233c03381",
-  "captured_at": "2026-06-09T16:53:26+00:00",
+  "captured_at": "2026-06-09T23:40:58+00:00",
   "files": {
     "gateway/platforms/base.py": {
       "sha256": "1cafcf46f72330a4218bed7f30788f1b427b2a872021da57806edd7b04567abd",
       "size": 207206
     },
     "gateway/run.py": {
-      "sha256": "c325156ec96cec094df220cba2f5fbbf0ebd61a4cadb264c6df4ea46fae633fd",
-      "size": 757347
+      "sha256": "92c77921759632c1f52e1e1ddf4c5ad2ea3d877de7eab18f26583d2f3371ea7a",
+      "size": 757326
     },
     "hermes_cli/__init__.py": {
       "sha256": "afa14ed30f6a1f4454e5740dca24b7e37c4d6e45c875026eafa89ae057d958c2",
