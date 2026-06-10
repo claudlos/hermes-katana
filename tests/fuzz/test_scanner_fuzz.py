@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import random
 import unicodedata
 from dataclasses import dataclass
@@ -29,6 +30,12 @@ from hermes_katana.scanner import (
     scan_input,
     scan_output,
 )
+
+# Hard ceiling for the composed-evasion sweep (audit finding E4). The sweep is
+# deterministically seeded, so this is a stable regression gate, not a flaky
+# threshold: it is set with margin above the measured baseline bypass rate so a
+# genuine recall regression trips it while normal run-to-run noise does not.
+MAX_COMPOSED_BYPASS_RATE = float(os.environ.get("KATANA_MAX_COMPOSED_BYPASS_RATE", "0.50"))
 
 # ---------------------------------------------------------------------------
 # Attack cores — payloads we expect to stay detectable after mutation
@@ -425,15 +432,22 @@ def test_composed_evasion_sweep(tmp_path, request):
         lines.append(f"- core={b.core!r} evasion={b.evasion} risk={b.risk:.2f} payload={safe_payload!r}")
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
-    # Sanity bound: >40% bypass on composed evasions is a red flag but not
-    # a test failure (scanner is detection-only, not a silver bullet).
-    # Emit as a pytest user warning so it's visible in output.
-    if bypasses and len(bypasses) / total > 0.40:
-        pytest.warns(UserWarning)  # no-op marker; keep visible
+    bypass_rate = len(bypasses) / max(total, 1)
+
+    # Hard ceiling (audit finding E4): the old code called pytest.warns(...) as
+    # a bare expression — a no-op context manager that was never entered, so
+    # the sweep could never fail no matter how high the bypass rate climbed.
+    # Now a regression past MAX_COMPOSED_BYPASS_RATE fails the test outright;
+    # the report file pinpoints which stacks regressed.
+    if bypass_rate > MAX_COMPOSED_BYPASS_RATE:
         print(
             f"\n[fuzz] COMPOSED-EVASION BYPASS RATE HIGH: "
-            f"{len(bypasses)}/{total} ({100 * len(bypasses) / total:.1f}%) — "
-            f"see {report_path}"
+            f"{len(bypasses)}/{total} ({100 * bypass_rate:.1f}%) — see {report_path}"
+        )
+        pytest.fail(
+            f"Composed-evasion bypass rate {bypass_rate:.1%} exceeds ceiling "
+            f"{MAX_COMPOSED_BYPASS_RATE:.0%} ({len(bypasses)}/{total} payloads "
+            f"reached ALLOW). See {report_path}."
         )
 
 

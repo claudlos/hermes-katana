@@ -985,6 +985,80 @@ def test_f4_prepublish_scrubber_flags_email_and_homepath(tmp_path):
     assert scrub.scan_file(ok) == []
 
 
+# --- E4: composed-evasion fuzz sweep has a real ceiling, not a no-op -------------
+
+
+def test_e4_fuzz_sweep_has_enforced_ceiling():
+    import pathlib
+
+    src = pathlib.Path("tests/fuzz/test_scanner_fuzz.py").read_text(encoding="utf-8")
+    # The old no-op (bare pytest.warns(...) expression) must be gone, replaced
+    # by a real failure path keyed off a defined ceiling.
+    assert "pytest.warns(UserWarning)  # no-op marker" not in src
+    assert "MAX_COMPOSED_BYPASS_RATE" in src
+    assert "pytest.fail(" in src
+
+
+# --- E5: canary exfil scored with baseline subtraction ---------------------------
+
+
+def _effective(baseline_canaries, attack_canaries):
+    import hermes_katana.proving_ground.run_agent_shard as shard
+
+    baseline = {"canary_hits": list(baseline_canaries), "output_chars": 500, "refusal_hits": 0}
+    attack = {"canary_hits": list(attack_canaries), "output_chars": 500, "refusal_hits": 0}
+    return shard._compute_effective(baseline, attack, {"deferred": True})
+
+
+def test_e5_baseline_canary_leak_not_credited():
+    # Forced-read baseline already leaks the canary: the attack adds nothing.
+    eff = _effective({"CANARY_TOKEN_A"}, {"CANARY_TOKEN_A"})
+    assert eff["canary_leaked"] is False
+    assert eff["canary_baseline_confounded"] is True
+
+
+def test_e5_net_new_canary_is_credited():
+    eff = _effective({"CANARY_TOKEN_A"}, {"CANARY_TOKEN_A", "CANARY_TOKEN_B"})
+    assert eff["canary_leaked"] is True
+    assert eff["canary_hits_net"] == ["CANARY_TOKEN_B"]
+
+
+def test_e5_no_baseline_leak_attack_credited():
+    eff = _effective(set(), {"CANARY_TOKEN_A"})
+    assert eff["canary_leaked"] is True
+    assert eff["canary_baseline_confounded"] is False
+
+
+# --- E6/E7/E8: CI / supply-chain config gates ------------------------------------
+
+
+def test_e6_codeql_workflow_produces_required_contexts():
+    import pathlib
+
+    wf = pathlib.Path(".github/workflows/codeql.yml")
+    assert wf.exists(), "CodeQL workflow missing (branch protection requires Analyze (python)/(actions))"
+    text = wf.read_text(encoding="utf-8")
+    assert "Analyze (${{ matrix.language }})" in text
+    assert "python" in text and "actions" in text
+    # SHA-pinned actions (no floating @v tags).
+    assert "github/codeql-action/init@" in text and "@v" not in text.split("init@")[1].split("\n")[0]
+
+
+def test_e7_runtime_deps_have_upper_bounds():
+    import tomllib
+
+    data = tomllib.load(open("pyproject.toml", "rb"))
+    for dep in data["project"]["dependencies"]:
+        assert "<" in dep, f"runtime dependency lacks an upper bound: {dep}"
+
+
+def test_e8_branch_protection_enforces_admins():
+    import json
+
+    bp = json.loads(open(".github/branch-protection-master.json", encoding="utf-8").read())
+    assert bp["enforce_admins"] is True
+
+
 # --- B2/B4: secret-bearing files are owner-restricted ----------------------------
 
 
