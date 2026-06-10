@@ -48,3 +48,14 @@ jobs:
         uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           category: "/language:${{ matrix.language }}"
+          # This repo also has GitHub's *default* CodeQL setup enabled, which
+          # owns the code-scanning alert surface. An advanced workflow that
+          # ALSO uploads SARIF is rejected ("analyses from advanced
+          # configurations cannot be processed when the default setup is
+          # enabled"). So this workflow runs the analysis to produce the
+          # required "Analyze (python)/(actions)" status checks (audit finding
+          # E6) but does not upload — default setup posts the alerts. To
+          # consolidate later, disable default setup and flip this to
+          # `upload: always`, or drop this workflow and require default
+          # setup's "CodeQL" check in branch protection instead.
+          upload: never
