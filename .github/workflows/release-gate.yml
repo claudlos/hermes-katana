@@ -128,6 +128,24 @@ jobs:
         with:
           name: release-dist
           path: dist
+      - name: Refresh repository visibility in event payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # actions/attest@v4.1.0 selects the Sigstore instance based on
+          # repository.visibility from the event payload (GITHUB_EVENT_PATH).
+          # If the repository was temporarily private during a push (e.g. during
+          # a PII/history purge), the stale payload causes the action to use
+          # GitHub's private Sigstore, which returns 401 on non-Enterprise
+          # accounts even for public repositories.
+          # Patch the event payload with the current live visibility so the
+          # correct Sigstore instance (public-good) is always selected.
+          visibility=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.visibility')
+          echo "Current repository visibility: ${visibility}"
+          tmp=$(mktemp)
+          jq --arg v "${visibility}" '.repository.visibility = $v' "$GITHUB_EVENT_PATH" > "${tmp}"
+          cp "${tmp}" "$GITHUB_EVENT_PATH"
+          rm -f "${tmp}"
       - name: Attest release artifact provenance
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
