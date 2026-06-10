@@ -182,9 +182,7 @@ class KatanaAddon:
     def _is_explicitly_allowed(self, host: str) -> bool:
         """Whether *host* appears in the configured allowlist (operator intent)."""
         host_lower = host.lower()
-        return any(
-            host_lower == d or host_lower.endswith(f".{d}") for d in getattr(self.config, "allowed_domains", [])
-        )
+        return any(host_lower == d or host_lower.endswith(f".{d}") for d in getattr(self.config, "allowed_domains", []))
 
     @staticmethod
     def _is_private_destination(host: str) -> bool:
@@ -205,9 +203,7 @@ class KatanaAddon:
             import ipaddress
 
             ip = ipaddress.ip_address(candidate)
-            return bool(
-                ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_unspecified
-            )
+            return bool(ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_unspecified)
         except ValueError:
             pass
         if candidate in {

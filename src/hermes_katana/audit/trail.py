@@ -499,8 +499,7 @@ class AuditTrail:
             return False
         if anchored != head_hash:
             logger.error(
-                "Audit chain head %s... does not match anchored head %s... — "
-                "log truncation or rollback detected.",
+                "Audit chain head %s... does not match anchored head %s... — log truncation or rollback detected.",
                 head_hash[:12],
                 (anchored or "")[:12],
             )

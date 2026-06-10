@@ -554,9 +554,7 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                     # Never soften a degraded verdict: a deny-on-timeout or
                     # fallback BLOCK is a fail-closed decision, not a
                     # low-confidence classification of short text.
-                    softened = (
-                        degraded is None and len(text.strip()) < 96 and not has_scabbard_adversarial_signal(text)
-                    )
+                    softened = degraded is None and len(text.strip()) < 96 and not has_scabbard_adversarial_signal(text)
                     if softened:
                         ctx.extras.setdefault("scabbard_softened_blocks", []).append(
                             {

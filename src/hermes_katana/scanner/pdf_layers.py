@@ -296,7 +296,9 @@ def detect_pdf_layers(pdf_content: str) -> list[PDFLayerFinding]:
     # absent, so PDF object structure alone keeps the analyzers running (D5).
     looks_like_pdf = pdf_text.strip().startswith("%PDF") or "%!PS" in pdf_text[:10]
     if not looks_like_pdf:
-        has_pdf_structure = ("endobj" in pdf_text and " obj" in pdf_text) or "startxref" in pdf_text or "%%EOF" in pdf_text
+        has_pdf_structure = (
+            ("endobj" in pdf_text and " obj" in pdf_text) or "startxref" in pdf_text or "%%EOF" in pdf_text
+        )
         if not has_pdf_structure:
             return findings
 

@@ -63,9 +63,7 @@ def _check_output_scrubbing(cases: list[dict]) -> list[str]:
         chain.execute_post(ctx)
         scrubbed = bool(ctx.extras.get("output_redacted") or ctx.extras.get("scabbard_output_redacted"))
         if scrubbed != expected:
-            failures.append(
-                f"  OUTPUT: {case['id']} expected_output_findings={expected} but scrubbed={scrubbed}"
-            )
+            failures.append(f"  OUTPUT: {case['id']} expected_output_findings={expected} but scrubbed={scrubbed}")
     print(
         f"OK: output scrubbing correct on {len(output_cases)} cases"
         if not failures

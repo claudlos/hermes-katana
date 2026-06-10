@@ -18,8 +18,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from hermes_katana.middleware import CallContext, DispatchDecision
 from hermes_katana.middleware.integration import create_default_chain
 

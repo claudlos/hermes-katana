@@ -25,11 +25,10 @@ classifiers = [
 ]
 
 # Audit finding E7: runtime deps are bounded below AND above. Lower bounds are
-# the tested floor; upper bounds pin the next major (or, for cryptography/
-# mitmproxy where minors carry breaking security-relevant changes, the next
-# minor) so an unattended upgrade of a security-critical library cannot silently
-# change behaviour. A hash-pinned lockfile for reproducible installs lives at
-# requirements-lock.txt; CI installs with --require-hashes from it.
+# the tested floor; upper bounds pin the next major so an unattended upgrade of
+# a security-critical library cannot silently change behaviour.
+# Follow-up (not yet done): a hash-pinned lockfile + `pip install
+# --require-hashes` lane in CI for fully reproducible installs.
 dependencies = [
     "pydantic>=2.0,<3.0",
     "pyyaml>=6.0,<7.0",
