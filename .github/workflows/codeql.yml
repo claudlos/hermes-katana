@@ -48,3 +48,8 @@ jobs:
         uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           category: "/language:${{ matrix.language }}"
+          # Default Setup is enabled on this repository; uploading from an
+          # advanced workflow at the same time causes a conflict error.
+          # Analysis still runs (satisfying required status checks) but SARIF
+          # upload is delegated entirely to Default Setup.
+          upload: never
