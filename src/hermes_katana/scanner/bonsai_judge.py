@@ -70,8 +70,16 @@ _UNAVAILABLE = BonsaiJudgment(
 
 
 def _build_prompt(risk_report: dict[str, Any]) -> str:
-    """Build a compact user prompt from the risk report."""
-    return f"Risk report:\n```json\n{json.dumps(risk_report, indent=2)}\n```\nDecision?"
+    """Build a compact user prompt from the risk report.
+
+    The report embeds attacker-controlled excerpts, so it is sanitized
+    (length-capped, fence/role breakouts stripped) and framed as untrusted
+    data before being shown to the judge (audit finding D5).
+    """
+    from hermes_katana.scanner.judge_runtime import JUDGE_DATA_CAVEAT, sanitize_risk_report
+
+    safe_report = sanitize_risk_report(risk_report)
+    return f"{JUDGE_DATA_CAVEAT}\nRisk report:\n```json\n{json.dumps(safe_report, indent=2)}\n```\nDecision?"
 
 
 def _parse_response(text: str) -> dict[str, Any]:

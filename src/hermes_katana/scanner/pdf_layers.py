@@ -291,10 +291,16 @@ def detect_pdf_layers(pdf_content: str) -> list[PDFLayerFinding]:
     if not pdf_text or len(pdf_text) < 10:
         return findings
 
-    # Check if this is actually a PDF
-    if not pdf_text.strip().startswith("%PDF") and "%!PS" not in pdf_text[:10]:
-        # Not a PDF, return empty
-        return findings
+    # Skip clearly-non-PDF text quickly — but don't fail open on a missing
+    # %PDF header: lenient readers parse files whose header is displaced or
+    # absent, so PDF object structure alone keeps the analyzers running (D5).
+    looks_like_pdf = pdf_text.strip().startswith("%PDF") or "%!PS" in pdf_text[:10]
+    if not looks_like_pdf:
+        has_pdf_structure = (
+            ("endobj" in pdf_text and " obj" in pdf_text) or "startxref" in pdf_text or "%%EOF" in pdf_text
+        )
+        if not has_pdf_structure:
+            return findings
 
     # Analyze different layers
     findings.extend(_analyze_pdf_string_stream(pdf_text))

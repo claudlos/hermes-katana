@@ -24,20 +24,25 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+# Audit finding E7: runtime deps are bounded below AND above. Lower bounds are
+# the tested floor; upper bounds pin the next major so an unattended upgrade of
+# a security-critical library cannot silently change behaviour.
+# Follow-up (not yet done): a hash-pinned lockfile + `pip install
+# --require-hashes` lane in CI for fully reproducible installs.
 dependencies = [
-    "pydantic>=2.0",
-    "pyyaml>=6.0",
-    "cryptography>=41.0",
-    "click>=8.0",
-    "keyring>=24.0",
-    "requests>=2.32.5",
-    "rich>=13.0",
-    "bitarray>=2.8",
-    "pyahocorasick>=2.0",
+    "pydantic>=2.0,<3.0",
+    "pyyaml>=6.0,<7.0",
+    "cryptography>=41.0,<47.0",
+    "click>=8.0,<9.0",
+    "keyring>=24.0,<26.0",
+    "requests>=2.32.5,<3.0",
+    "rich>=13.0,<15.0",
+    "bitarray>=2.8,<4.0",
+    "pyahocorasick>=2.0,<3.0",
 ]
 
 [project.optional-dependencies]
-proxy = ["mitmproxy>=10.0"]
+proxy = ["mitmproxy>=10.0,<13.0"]
 fast-cpu = [
     "numpy>=1.24",
     "onnxruntime>=1.17",

@@ -88,6 +88,13 @@ jobs:
             --cov-report=xml \
             --cov-report=term-missing \
             -v
+      - name: Detection gates (always-on, no external corpus)
+        # Audit finding E2: keep an always-on detection lane so the security
+        # claims are exercised on every run and "0 eval cases ran" is a hard
+        # failure rather than a silent green check.
+        run: |
+          python tests/smoke/false_positive_gate.py
+          pytest tests/smoke/test_smoke_corpus_eval.py tests/smoke/test_canonical_attack_recall.py -q
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1

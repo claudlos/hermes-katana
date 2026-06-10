@@ -119,6 +119,12 @@ class TestHistoryFlush:
 
 
 class TestAccessLogHMAC:
+    # Audit fix B1: the access log no longer derives an HMAC key from public
+    # constants. These tests pin an explicit key so verification is keyed.
+    @pytest.fixture(autouse=True)
+    def _log_key(self, monkeypatch):
+        monkeypatch.setenv("HERMES_KATANA_LOG_KEY", "test-hardening-log-key")
+
     def test_log_and_verify(self, tmp_path):
         from hermes_katana.vault.access_log import VaultAccessLog
 

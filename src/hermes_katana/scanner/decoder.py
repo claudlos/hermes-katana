@@ -76,12 +76,11 @@ class DecoderFinding:
 # Encoding detection patterns (precompiled at module load)
 # ---------------------------------------------------------------------------
 
-# Base64: 20+ chars of base64 alphabet, optional padding
-_RE_BASE64 = re.compile(r"[A-Za-z0-9+/\-_]{20,}={0,2}")
-
-# Base32: 16+ chars of base32 alphabet (A-Z, 2-7) with optional = padding,
-# must end with = padding or be a multiple of 8 chars (stricter than base64)
-_RE_BASE32 = re.compile(r"[A-Z2-7]{16,}(?:={1,6})?", re.ASCII)
+# Base64: 11+ chars of base64 alphabet plus optional padding — base64 of an
+# 8-byte payload like "rm -rf /" is 11 alphabet chars + "=". The previous 20+
+# floor skipped short encoded commands entirely (audit finding D2);
+# _is_textlike + the inner scanners gate false positives.
+_RE_BASE64 = re.compile(r"[A-Za-z0-9+/\-_]{11,}={0,2}")
 
 # Explicit cipher instruction markers (ROT13, Caesar, Base32)
 _RE_CIPHER_INSTRUCTION = re.compile(
@@ -94,8 +93,9 @@ _RE_CIPHER_INSTRUCTION = re.compile(
     re.IGNORECASE,
 )
 
-# Hex: 16+ hex chars (with optional 0x prefix) or \xNN sequences
-_RE_HEX_BLOCK = re.compile(r"(?:0x)?[0-9a-fA-F]{16,}")
+# Hex: 12+ hex chars (with optional 0x prefix) or \xNN sequences — 6 bytes,
+# enough for short encoded commands (audit finding D2)
+_RE_HEX_BLOCK = re.compile(r"(?:0x)?[0-9a-fA-F]{12,}")
 _RE_HEX_ESCAPES = re.compile(r"(?:\\x[0-9a-fA-F]{2}){4,}")
 
 # URL-encoding: 2+ percent-encoded bytes
@@ -107,8 +107,9 @@ _RE_HTML_ENTITIES = re.compile(r"(?:&#\d+;|&#x[0-9a-fA-F]+;|&\w+;){1,}")
 # Unicode escapes: 2+ consecutive \\uXXXX
 _RE_UNICODE_ESCAPES = re.compile(r"(?:\\u[0-9a-fA-F]{4}){2,}")
 
-# Base32: 20+ chars of base32 alphabet (A-Z, 2-7), optional padding
-_RE_BASE32 = re.compile(r"[A-Z2-7]{20,}={0,6}")
+# Base32: 16+ chars of base32 alphabet (A-Z, 2-7), optional padding
+# (single definition — an earlier duplicate silently shadowed a stricter one)
+_RE_BASE32 = re.compile(r"[A-Z2-7]{16,}={0,6}")
 
 # ROT13/Caesar explicit instruction markers
 _RE_ROT13_INSTRUCTION = re.compile(

@@ -21,9 +21,12 @@ from __future__ import annotations
 
 import ahocorasick
 import json
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "FastPatternCategory",
@@ -140,15 +143,36 @@ def _build_automaton() -> ahocorasick.Automaton:
 
 _CORPUS_DIR = Path(__file__).resolve().parents[3] / "training" / "scanner_data"
 
+_corpus_warned = False
+
+
+def _warn_corpus_missing(name: str) -> None:
+    """Warn once that the optional corpus extension is not installed (D1)."""
+    global _corpus_warned  # noqa: PLW0603
+    if _corpus_warned:
+        return
+    _corpus_warned = True
+    logger.warning(
+        "Optional 145k-corpus phrase file %s not found under %s; the fast "
+        "pattern scanner is running on the bundled curated phrase set only "
+        "(~1k phrases). Detection numbers quoted for the corpus-extended "
+        "configuration do not apply to this checkout.",
+        name,
+        _CORPUS_DIR,
+    )
+
 
 def _extend_with_corpus(automaton: ahocorasick.Automaton) -> int:
-    """Load 145k-derived English phrases into the automaton.
+    """Extend the automaton with the OPTIONAL 145k-derived English phrases.
 
+    The corpus file is not shipped in the public checkout; when absent the
+    automaton keeps only the bundled curated patterns (warned once).
     Maps phrases to categories based on keyword presence.
     Returns count of added patterns.
     """
     bloom_file = _CORPUS_DIR / "bloom_phrases_en.txt"
     if not bloom_file.exists():
+        _warn_corpus_missing(bloom_file.name)
         return 0
 
     _CATEGORY_KWS: dict[FastPatternCategory, list[str]] = {

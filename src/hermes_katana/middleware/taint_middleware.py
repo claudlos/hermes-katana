@@ -55,7 +55,7 @@ class KatanaTaintMiddleware(KatanaMiddleware):
 
     def pre_dispatch(self, ctx: CallContext) -> DispatchDecision:
         """Check taint flows for all tool arguments."""
-        from hermes_katana.taint import FlowDecision
+        from hermes_katana.taint import FlowDecision, source_risk_level
 
         tracker = self.tracker
         tainted_fields: dict[str, Any] = {}
@@ -76,9 +76,10 @@ class KatanaTaintMiddleware(KatanaMiddleware):
                     "source": origins[0] if origins else "unknown",
                     "labels": labels,
                     "readers": [reader.name for reader in tainted_val.readers] if tainted_val.readers else [],
-                    "level": max((source.label.value if hasattr(source.label, "value") else 5) for source in sources)
-                    if sources
-                    else 0,
+                    # 0-10 risk gradient from the per-label risk table (NOT the
+                    # enum ordinal — see taint.labels.source_risk_level). This is
+                    # what the policy engine's taint_level_gte/lte rules read.
+                    "level": max((source_risk_level(source) for source in sources), default=0),
                 }
 
                 flow_decision = tracker.check_flow(tainted_val, ctx.tool_name, ctx.args)

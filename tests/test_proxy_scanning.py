@@ -370,11 +370,18 @@ class TestBasicFunctionality:
     """Verify existing proxy behaviors still work."""
 
     def test_ignored_host_skipped(self):
+        # Audit fix C2: pypi.org is no longer ignored by default — only the
+        # key-pinned sigstore/TUF endpoints remain on the bypass list.
         addon = _make_addon()
-        flow = MockFlow(request=MockRequest(host="pypi.org"))
+        flow = MockFlow(request=MockRequest(host="rekor.sigstore.dev"))
         addon.request(flow)
         assert flow.response is None
         assert addon._stats["requests_ignored"] == 1
+
+    def test_package_hosts_scanned_by_default(self):
+        addon = _make_addon()
+        assert addon._is_ignored_host("pypi.org") is False
+        assert addon._is_ignored_host("files.pythonhosted.org") is False
 
     def test_domain_allowlist_blocks(self):
         addon = _make_addon(allowed_domains=["api.openai.com"])

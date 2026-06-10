@@ -79,15 +79,22 @@ class ProxyConfig(BaseModel):
     )
     ignore_hosts: list[str] = Field(
         default_factory=lambda: [
-            # Sigstore / TUF update infrastructure
+            # Sigstore / TUF update infrastructure only: these endpoints pin
+            # their own keys and break under MITM, and their payloads are
+            # signature-verified by the client.
             "rekor.sigstore.dev",
             "fulcio.sigstore.dev",
             "tuf-repo-cdn.sigstore.dev",
-            # OS update / package manager hosts
-            "pypi.org",
-            "files.pythonhosted.org",
         ],
-        description="Hosts to pass through without scanning.",
+        description=(
+            "Hosts to pass through WITHOUT ANY interception: no request or "
+            "response scanning, no secret-leak detection, no size limits — "
+            "in both directions. Keep this list minimal. Package-manager "
+            "hosts (pypi.org, files.pythonhosted.org) are deliberately NOT "
+            "ignored by default (audit finding C2); point pip at the Katana "
+            "CA (e.g. REQUESTS_CA_BUNDLE) or re-add them explicitly if you "
+            "accept unscanned traffic to them."
+        ),
     )
     tls_verify: bool = Field(
         default=True,
@@ -127,6 +134,17 @@ class ProxyConfig(BaseModel):
     inject_credentials: bool = Field(
         default=True,
         description="Inject API keys from vault for known LLM providers.",
+    )
+    allow_private_destinations: bool = Field(
+        default=False,
+        description=(
+            "Permit proxied requests to loopback, RFC1918, link-local, and "
+            "cloud-metadata destinations. Off by default (audit finding C4): "
+            "with an empty allowed_domains list the proxy would otherwise "
+            "forward — and inject credentials into — SSRF-style requests to "
+            "localhost or 169.254.169.254. Hosts explicitly listed in "
+            "allowed_domains are always permitted."
+        ),
     )
     health_check_port: Optional[int] = Field(
         default=None,

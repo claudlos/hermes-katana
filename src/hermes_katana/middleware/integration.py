@@ -104,11 +104,14 @@ def _profile_defaults(profile: str) -> dict[str, Any]:
     if profile == "fast_cpu":
         from hermes_katana.scabbard import ScabbardConfig
 
+        # Timeout decision "escalate", not "allow": fast_cpu is an enforcing
+        # profile, so a classifier timeout must surface through the escalation
+        # policy instead of silently allowing the call (audit finding A6).
         scabbard_config = replace(
             ScabbardConfig.katana_v15_minilm(backend="onnx"),
             protectai_enabled=False,
             classifier_timeout_seconds=0.5,
-            classifier_timeout_decision="allow",
+            classifier_timeout_decision="escalate",
         )
         return {
             "scabbard.config": scabbard_config,
@@ -197,13 +200,49 @@ def collect_chain_diagnostics(chain: Any) -> dict[str, Any]:
             inactive.append(mw.name)
 
     scabbard = middleware_by_name.get("katana.scabbard")
+    scabbard_clf = getattr(scabbard, "_classifier", None)
     scabbard_cfg = getattr(scabbard, "_config", None)
+    if scabbard_cfg is None and scabbard_clf is not None:
+        scabbard_cfg = getattr(scabbard_clf, "config", None)
     if scabbard_cfg is not None:
         backend = getattr(scabbard_cfg, "katana_v11_backend", None)
         device = getattr(scabbard_cfg, "katana_v11_device", None)
         ml["scabbard_backend"] = backend
         ml["scabbard_device"] = "cpu" if backend in {"onnx", "onnx_int8"} and not device else device
         ml["model_version"] = getattr(scabbard_cfg, "model_version", None)
+
+    # Scabbard readiness: enforcement on the rule-based fallback is a degraded
+    # deployment and must be visible here, not only in per-call extras
+    # (audit finding A1).
+    ml["scabbard_profile"] = getattr(scabbard_cfg, "profile", None) if scabbard_cfg is not None else None
+    trained_signal: Any = getattr(scabbard_clf, "trained_signal_active", None) if scabbard_clf is not None else None
+    if trained_signal is None and scabbard is not None:
+        try:
+            from hermes_katana.scabbard import ScabbardConfig
+
+            if scabbard_cfg is not None:
+                trained_signal = bool(
+                    getattr(scabbard_cfg, "katana_v11_path", None)
+                    or getattr(scabbard_cfg, "deberta_model_cls", None)
+                    or getattr(scabbard_cfg, "deberta_model", None)
+                    or getattr(scabbard_cfg, "fusion_model", None)
+                    or (
+                        getattr(scabbard_cfg, "zvec_backbone_path", None)
+                        and getattr(scabbard_cfg, "zvec_projector_path", None)
+                    )
+                )
+            else:
+                # Lazy default: mirrors what the middleware will resolve on
+                # first classify (runtime_default), without loading models.
+                profile = ScabbardConfig.default_runtime_profile()
+                if ml["scabbard_profile"] is None:
+                    ml["scabbard_profile"] = profile
+                trained_signal = profile != "minimal"
+        except Exception:  # noqa: BLE001
+            trained_signal = None
+    ml["scabbard_trained_signal"] = trained_signal
+    if "katana.scabbard" in active and trained_signal is False:
+        degraded.append("katana.scabbard")
 
     try:
         from hermes_katana.scanner import _OPTIONAL_IMPORT_ERRORS
@@ -269,11 +308,17 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
 
     @property
     def classifier(self) -> Any:
-        """Lazy-load the ScabbardClassifier to avoid import cost at wire time."""
+        """Lazy-load the ScabbardClassifier to avoid import cost at wire time.
+
+        When no config was wired in, resolve the best locally ready runtime
+        (production > standard > minimal) instead of pinning the rule-based
+        minimal profile — a fresh checkout otherwise ran enforcement on rules
+        alone without saying so (audit finding A1).
+        """
         if self._classifier is None:
             from hermes_katana.scabbard import ScabbardClassifier, ScabbardConfig
 
-            cfg = self._config or ScabbardConfig.minimal()
+            cfg = self._config or ScabbardConfig.runtime_default()
             self._classifier = ScabbardClassifier(cfg)
         return self._classifier
 
@@ -394,12 +439,24 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
             from hermes_katana.scabbard.fusion import ClassificationResult, Decision
 
             fallback = (getattr(cfg, "classifier_timeout_decision", "allow") or "allow").lower()
-            decision = Decision.BLOCK if fallback == "deny" else Decision.ALLOW
+            logger.warning(
+                "Scabbard classifier exceeded %.2fs timeout; applying timeout decision %r",
+                timeout,
+                fallback,
+            )
+            if fallback == "deny":
+                decision, confidence = Decision.BLOCK, 1.0
+            elif fallback == "escalate":
+                # Confidence 0.5 reaches the pre_dispatch FLAG/ESCALATE band.
+                decision, confidence = Decision.FLAG, 0.5
+            else:
+                decision, confidence = Decision.ALLOW, 0.0
             return ClassificationResult(
                 scores={"clean": 1.0 if decision == Decision.ALLOW else 0.0},
                 decision=decision,
                 top_category="timeout_fallback",
-                confidence=0.0 if decision == Decision.ALLOW else 1.0,
+                confidence=confidence,
+                degraded="classifier_timeout",
             )
         finally:
             ex.shutdown(wait=False, cancel_futures=True)
@@ -453,6 +510,7 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
         routes: list[dict[str, Any]] = []
         skipped: dict[str, dict[str, Any]] = {}
         by_arg: dict[str, dict[str, Any]] = {}
+        degraded_args: list[dict[str, Any]] = []
         scanned_count = 0
         skipped_count = 0
 
@@ -488,9 +546,15 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                     used_origins[leaf_name] = origin
                 result_dict = result.to_dict()
                 by_arg[leaf_name] = result_dict
+                degraded = getattr(result, "degraded", None)
+                if degraded:
+                    degraded_args.append({"arg": leaf_name, "reason": degraded})
 
                 if result.decision == ScabbardDecision.BLOCK:
-                    softened = len(text.strip()) < 96 and not has_scabbard_adversarial_signal(text)
+                    # Never soften a degraded verdict: a deny-on-timeout or
+                    # fallback BLOCK is a fail-closed decision, not a
+                    # low-confidence classification of short text.
+                    softened = degraded is None and len(text.strip()) < 96 and not has_scabbard_adversarial_signal(text)
                     if softened:
                         ctx.extras.setdefault("scabbard_softened_blocks", []).append(
                             {
@@ -504,6 +568,8 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                     ctx.deny(f"Scabbard blocked ({result.top_category}, confidence={result.confidence:.2f})")
                     ctx.extras["scabbard_result"] = result_dict
                     ctx.extras["scabbard_results_by_arg"] = by_arg
+                    if degraded_args:
+                        ctx.extras["scabbard_degraded"] = degraded_args
                     ctx.extras["scabbard_risk_score"] = result.confidence
                     ctx.extras["scabbard_model_version"] = self.model_version
                     ctx.extras["scabbard_route_counts"] = {"scanned": scanned_count, "skipped": skipped_count}
@@ -530,6 +596,20 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
             ctx.extras["scabbard_model_version"] = self.model_version
         if used_origins:
             ctx.extras["scabbard_arg_origins"] = used_origins
+
+        if degraded_args:
+            # The verdicts above came from a weaker path than configured
+            # (missing/failed trained classifier, or a timeout fallback).
+            # Strict mode fails closed on that instead of trusting them.
+            ctx.extras["scabbard_degraded"] = degraded_args
+            logger.warning(
+                "Scabbard ran degraded for %s (%s)",
+                ctx.tool_name,
+                "; ".join(f"{d['arg']}: {d['reason']}" for d in degraded_args),
+            )
+            if self._route_mode == "strict":
+                ctx.escalate(f"Scabbard degraded ({degraded_args[0]['reason']}); failing closed in strict mode")
+                return DispatchDecision.ESCALATE
 
         if worst_confidence >= 0.5:
             # FLAG — add taint hint for downstream middleware
@@ -564,16 +644,22 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
         worst_confidence = 0.0
         worst_result: dict[str, Any] | None = None
         by_path: dict[str, dict[str, Any]] = {}
+        degraded_paths: list[dict[str, Any]] = []
         for fragment in fragments:
             result = self._classify_with_timeout(fragment.text, "tool_output")
             self._record_shadow(fragment.text, "tool_output", result, ctx)
             result_dict = result.to_dict()
             by_path[fragment.path] = result_dict
+            degraded = getattr(result, "degraded", None)
+            if degraded:
+                degraded_paths.append({"path": fragment.path, "reason": degraded})
             if result.confidence > worst_confidence:
                 worst_confidence = result.confidence
                 worst_result = result_dict
 
         ctx.extras["scabbard_output_results_by_path"] = by_path
+        if degraded_paths:
+            ctx.extras["scabbard_output_degraded"] = degraded_paths
         if worst_result is not None:
             ctx.extras["scabbard_output_result"] = worst_result
             ctx.extras["scabbard_output_risk_score"] = worst_confidence
@@ -702,6 +788,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
         check_unicode: bool = True,
         check_content: bool = True,
         enforce_output_findings: bool = False,
+        redact_output_secrets: bool = True,
         route_aware: bool = True,
         enabled: bool = True,
     ) -> None:
@@ -712,6 +799,11 @@ class KatanaScanMiddleware(KatanaMiddleware):
         ``ctx.extras['output_redacted']=True`` whenever a finding fires. Default
         is False to preserve backward compatibility; production deployments
         that want fail-closed output scanning should opt in.
+
+        Audit finding C3 (MED, 2026-06-09): secret-class findings are the
+        exception — a credential in tool output is exfiltration in progress,
+        so they redact by default (``redact_output_secrets=True``) even when
+        general output enforcement is off.
         """
         super().__init__(name="katana.scan", enabled=enabled, priority=80)
         self._vault_values = vault_values or set()
@@ -722,6 +814,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
         self._check_unicode = check_unicode
         self._check_content = check_content
         self._enforce_output_findings = enforce_output_findings
+        self._redact_output_secrets = redact_output_secrets
         self._route_aware = route_aware
 
     @staticmethod
@@ -887,13 +980,18 @@ class KatanaScanMiddleware(KatanaMiddleware):
                     )
                     # Codex audit #4: enforce — replace output with a marker
                     # rather than letting downstream consumers see flagged
-                    # content. Opt-in via enforce_output_findings.
-                    if self._enforce_output_findings:
+                    # content. Opt-in via enforce_output_findings — except
+                    # secret-class findings, which redact by default (audit
+                    # finding C3: log-only secret egress is exfiltration).
+                    secret_leak = bool(getattr(result, "secret_findings", None)) and self._redact_output_secrets
+                    if self._enforce_output_findings or secret_leak:
                         ctx.tool_output = (
                             f"[HermesKatana] Tool output redacted by post-dispatch scanner: {result.summary}"
                         )
                         ctx.extras["output_redacted"] = True
                         ctx.extras["output_redacted_reason"] = result.summary
+                        if secret_leak:
+                            ctx.extras["output_secret_redacted"] = True
         except Exception:
             logger.debug("Post-dispatch scan failed for %s", ctx.tool_name, exc_info=True)
 
@@ -1682,6 +1780,7 @@ def create_default_chain(
         check_unicode=cfg.get("scan.check_unicode", True),
         check_content=cfg.get("scan.check_content", True),
         enforce_output_findings=cfg.get("scan.enforce_output_findings", False),
+        redact_output_secrets=cfg.get("scan.redact_output_secrets", True),
         route_aware=cfg.get("scan.route_aware", True),
         enabled=cfg.get("scan.enabled", True),
     )

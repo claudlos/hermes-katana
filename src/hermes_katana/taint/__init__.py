@@ -52,6 +52,8 @@ from hermes_katana.taint.labels import (
     TaintLabel,
     TrustLevel,
     default_trust_for,
+    risk_level_for,
+    source_risk_level,
 )
 from hermes_katana.taint.tracker import TaintTracker, TrackerStats
 from hermes_katana.taint.value import (
@@ -80,6 +82,8 @@ __all__ = [
     "Source",
     "Reader",
     "default_trust_for",
+    "risk_level_for",
+    "source_risk_level",
     # Values
     "TaintedValue",
     "TaintedStr",

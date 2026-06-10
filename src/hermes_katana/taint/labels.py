@@ -17,6 +17,8 @@ __all__ = [
     "TrustLevel",
     "TaintLabel",
     "default_trust_for",
+    "risk_level_for",
+    "source_risk_level",
     "Source",
     "Reader",
 ]
@@ -131,6 +133,66 @@ _DEFAULT_TRUST: dict[TaintLabel, TrustLevel] = {
 def default_trust_for(label: TaintLabel) -> TrustLevel:
     """Return the default trust level for a given taint label."""
     return _DEFAULT_TRUST.get(label, TrustLevel.UNTRUSTED)
+
+
+# ---------------------------------------------------------------------------
+# Risk levels (0-10) — the taint "gradient" used by the policy engine
+# ---------------------------------------------------------------------------
+# IMPORTANT: this is the security severity of a source, NOT the enum ordinal.
+# Earlier code used ``TaintLabel.value`` (the declaration order produced by
+# ``auto()``) as the "level". That made WEB_CONTENT (ordinal 4) score as
+# *medium* taint, so it never reached the policy's high-taint DENY threshold
+# (>=7) — the single most common untrusted web source could write files and run
+# code while only escalating. The mapping below decouples risk from ordinal:
+# untrusted external sources (web / MCP / unknown) are >=7 so the high-taint
+# DENY rules actually fire; trusted sources (user / system) are 0.
+
+_RISK_LEVEL: dict[TaintLabel, int] = {
+    TaintLabel.USER: 0,
+    TaintLabel.SYSTEM: 0,
+    TaintLabel.TOOL_OUTPUT: 5,
+    TaintLabel.WEB_CONTENT: 8,
+    TaintLabel.FILE_CONTENT: 5,
+    TaintLabel.MEMORY: 5,
+    TaintLabel.MCP: 8,
+    # Tool-description poisoning is pre-execution → highest risk.
+    TaintLabel.MCP_TOOL_DESCRIPTION: 9,
+    TaintLabel.MCP_TOOL_RESULT: 8,
+    TaintLabel.MCP_RESOURCE: 8,
+    TaintLabel.MCP_PROMPT: 8,
+    TaintLabel.AGENT: 4,
+    TaintLabel.AGENT_DELEGATED: 6,
+    TaintLabel.CROSS_SESSION: 6,
+    TaintLabel.UNKNOWN: 9,
+}
+
+
+def risk_level_for(label: TaintLabel) -> int:
+    """Return the 0-10 policy risk level for a taint *label*.
+
+    Unknown/unmapped labels default to 9 (fail closed — treat unclassified
+    data as nearly maximally untrusted).
+    """
+    return _RISK_LEVEL.get(label, 9)
+
+
+def source_risk_level(source: "Source") -> int:
+    """Return the 0-10 policy risk level for a *source*.
+
+    Combines the per-label risk table with the source's explicit
+    ``trust_level`` so callers that override trust are honored:
+
+    * ``TRUSTED``   -> 0 (e.g. the system prompt)
+    * ``UNTRUSTED`` -> at least 7 (always reaches the high-taint DENY band)
+    * otherwise     -> the per-label risk
+    """
+    label_risk = risk_level_for(source.label)
+    trust = getattr(source, "trust_level", None)
+    if trust is TrustLevel.TRUSTED:
+        return 0
+    if trust is TrustLevel.UNTRUSTED:
+        return max(label_risk, 7)
+    return label_risk
 
 
 # ---------------------------------------------------------------------------

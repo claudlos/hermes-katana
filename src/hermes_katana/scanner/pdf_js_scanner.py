@@ -354,7 +354,9 @@ def _deep_scan_with_fitz(pdf_bytes: bytes) -> list[PDFJSFinding]:
         return []
     findings: list[PDFJSFinding] = []
     try:
-        doc = _fitz.open(stream=pdf_bytes, filetype="pdf", encoding="utf-8")
+        # No `encoding` kwarg: fitz.open does not accept one, and the
+        # TypeError was silently caught — disabling the deep scan (D5).
+        doc = _fitz.open(stream=pdf_bytes, filetype="pdf")
         # Check document-level JavaScript
         js_actions = doc.get_js()  # type: ignore[attr-defined]
         if js_actions:
@@ -417,10 +419,15 @@ def detect_pdf_js(pdf_content: str | bytes) -> list[PDFJSFinding]:
     if not text or len(text) < 10:
         return findings
 
-    # Require PDF header — skip plain text quickly
+    # Skip plain text quickly — but don't fail open on a missing %PDF header:
+    # lenient PDF readers parse files whose header is displaced or absent, so
+    # PDF object structure alone keeps the detectors running (D5).
     stripped = text.lstrip()
-    if not (stripped.startswith("%PDF") or "%PDF-" in text[:1024]):
-        return findings
+    looks_like_pdf = stripped.startswith("%PDF") or "%PDF-" in text[:1024]
+    if not looks_like_pdf:
+        has_pdf_structure = ("endobj" in text and " obj" in text) or "startxref" in text or "%%EOF" in text
+        if not has_pdf_structure:
+            return findings
 
     # Run all regex-based sub-detectors
     findings.extend(_detect_js_entries(text))

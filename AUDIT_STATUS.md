@@ -57,13 +57,13 @@ on the current tree plus spot checks run during reconciliation.
 | 14 | JSONL append is not crash-atomic | Open | Writes fsync, but a partial trailing line can still poison verification. |
 | 15 | Proxy keeps vault secrets in plaintext set | Fixed locally | Proxy now collects vault values per scan instead of keeping a long-lived `KatanaAddon._vault_values` plaintext cache. |
 | 16 | Proxy scrubbing bypassed by compression/multipart/binary | Fixed locally | Request/response scanning now decodes gzip/deflate bodies and parses `multipart/*` payloads part-by-part before scanning; binary bodies still route through `scan_bytes`. |
-| 17 | `HERMES_KATANA_VAULT_KEY` is popped | Needs decision | Current tests assert consumption; decide whether this is intended security behavior or a usability bug. |
+| 17 | `HERMES_KATANA_VAULT_KEY` is popped | Fixed locally (2026-06 audit B5) | The env var is still popped (child-process hygiene) but the validated key is cached in-process, so rotation rollback and second readers work; `_delete_master_key` clears the cache. |
 | 18 | `katana run` launches without Katana protection | Fixed before this tranche | Current CLI composes runtime env and tests assert `KATANA_ACTIVE`/policy state. |
 | 19 | CA private-key passphrase derived from on-disk salt | Open | Needs key handling redesign or documentation downgrade. |
 | 20 | `pip install hermes-katana` does not resolve | Partially fixed | README/quickstart now use source install; PyPI publish remains open. |
 | 21 | README quickstart output was fictional | Fixed | README/quickstart now describe actual Rich output instead of a fake line report. |
 | 22 | README links to missing `docs/research/` | Fixed | Missing research links removed from README. |
-| 23 | Operator's home dir hard-coded in shipped scripts | Verified obsolete | No remaining tracked matches; the depersonalize pass replaced the last fixture path with `/home/user/`. |
+| 23 | Operator's home dir hard-coded in shipped scripts | Resolved at HEAD only | No remaining tracked matches at HEAD (depersonalize pass replaced the last fixture path with `/home/user/`), but the real home-directory paths persist in **git history** (pre-depersonalization commits). Anyone cloning the repo can recover them; treat the association as burned or rewrite history (`git filter-repo`) and force-push — tracked as 2026-06 audit finding F4. `tools/prepublish_scrub.py` now blocks reintroduction in tracked files. |
 | 24 | `zvec` dependency in `[ml]` resolves wrong package | Fixed | Removed the PyPI `zvec` dependency from the `ml` extra. |
 | 25 | Zero false-positive guarantee is false | Partially fixed | README guarantee removed; scanner FP tuning remains product work. |
 | 26 | `<0.5 ms / 1KB` performance claim is false | Fixed | README now says to benchmark locally instead of publishing fixed latency claims. |
@@ -76,9 +76,9 @@ on the current tree plus spot checks run during reconciliation.
 
 | ID | Finding | Status | Notes |
 |---:|---|---|---|
-| 31 | HMAC-over-vault allows rollback | Open | Needs monotonic version/counter or external anchor. |
-| 32 | HMAC key derived with string-prefix SHA-256 | Open | Replace with HKDF or equivalent KDF separation. |
-| 33 | AES-GCM uses no AAD | Open | Add stable metadata as AAD. |
+| 31 | HMAC-over-vault allows rollback | Largely fixed (2026-06 audit B6) | Vault format v3 binds an authenticated write counter into the HMAC message and exposes `Vault.write_counter` for external monotonicity monitoring. Full rollback detection still needs external state (e.g. keyring counter) — a rolled-back file with its matching old counter remains internally valid. |
+| 32 | HMAC key derived with string-prefix SHA-256 | Fixed (2026-06 audit B6) | v3 derives the HMAC subkey via HKDF-SHA256; legacy construction retained only to verify pre-v3 files, which upgrade on next write. |
+| 33 | AES-GCM uses no AAD | Fixed (2026-06 audit B6) | New entries bind the vault key name as AAD (HKV3 blobs), preventing ciphertext transplantation; legacy blobs remain readable until rewritten. |
 | 34 | Audit `compute_hash` uses `json.dumps(..., default=str)` | Open | Still present in `audit/trail.py`. |
 | 35 | Headless Linux degrades to in-memory master key | Open | Needs explicit fail/opt-in behavior. |
 | 36 | `vault.set()` lost-update race | Open | Needs file lock around read-modify-write. |

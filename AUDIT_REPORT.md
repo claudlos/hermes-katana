@@ -312,7 +312,13 @@ input** — it does not weaken detection of actual attacks.
    shows 5 743 entries — earlier installs left state on this machine.
    `katana audit verify` succeeded against it (chain integrity preserved
    across two install generations), which is a good sign for the hash-chain
-   design.
+   design. *Qualification (2026-06 audit, finding B3/B7): at the audited
+   commit this verification proves **self-consistency only**. The keyless
+   SHA-256 chain has no secret and no anchored head, so an attacker with
+   file access could truncate the log (or regenerate the whole chain) and
+   still pass `katana audit verify`. It is not, by itself, tamper
+   resistance. Chain-head anchoring with a keyed HMAC was added after this
+   report; unkeyed deployments remain self-consistency-only.*
 
 4. **`.gitignore` still references `/research/` and `training/checkpoints/`**
    etc. Good — these large-blob paths are not in the clone.
@@ -469,8 +475,10 @@ The audit report itself is at `hermes-katana/AUDIT_REPORT.md`.
 
 For a v3.0.0 security toolkit, **the engineering posture is unusually
 strong**: clean lint, clean format, clean mypy CI smoke, clean packaging,
-clean dependency CVE scan, working hash-chained audit trail across
-installation generations, exhaustive self-audit doc (`AUDIT_STATUS.md`),
+clean dependency CVE scan, a hash-chained audit trail that stays
+self-consistent across installation generations (see the §6 "Issues
+observed" qualification — without a keyed, anchored head this is
+consistency, not tamper resistance), exhaustive self-audit doc (`AUDIT_STATUS.md`),
 sensible scanner & policy architecture, and accurate detection on the
 deliberately-malicious inputs that were tested live.
 
