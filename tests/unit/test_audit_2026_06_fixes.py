@@ -358,6 +358,90 @@ def test_b1_no_path_derived_fallback_key(tmp_path, monkeypatch):
     assert line_hmac != legacy
 
 
+# --- B3: audit chain head is anchored against truncation/rollback ----------------
+
+
+def _anchored_trail(tmp_path, monkeypatch, n=5):
+    monkeypatch.setenv("HERMES_KATANA_LOG_KEY", "test-anchor-key")
+    from hermes_katana.audit.trail import AuditEntry, AuditEventType, AuditTrail
+
+    trail = AuditTrail(path=tmp_path / "audit.jsonl")
+    for i in range(n):
+        trail.log(AuditEntry(event_type=AuditEventType.TOOL_CALL, tool_name=f"tool_{i}", decision="allow"))
+    return trail
+
+
+def test_b3_intact_anchored_chain_verifies(tmp_path, monkeypatch):
+    trail = _anchored_trail(tmp_path, monkeypatch)
+    assert (tmp_path / "audit.jsonl.anchor").exists()
+    assert trail.verify_chain() is True
+
+
+def test_b3_tail_truncation_detected(tmp_path, monkeypatch):
+    trail = _anchored_trail(tmp_path, monkeypatch)
+    log_path = tmp_path / "audit.jsonl"
+    lines = log_path.read_text().splitlines()
+    # Drop the newest two entries: the remaining prefix is an internally
+    # consistent chain, which the pre-fix verifier accepted.
+    log_path.write_text("\n".join(lines[:-2]) + "\n")
+    assert trail.verify_chain() is False
+
+
+def test_b3_full_log_deletion_detected(tmp_path, monkeypatch):
+    trail = _anchored_trail(tmp_path, monkeypatch)
+    (tmp_path / "audit.jsonl").unlink()
+    assert trail.verify_chain() is False
+
+
+def test_b3_anchor_deletion_detected(tmp_path, monkeypatch):
+    trail = _anchored_trail(tmp_path, monkeypatch)
+    (tmp_path / "audit.jsonl.anchor").unlink()
+    assert trail.verify_chain() is False
+
+
+def test_b3_forged_anchor_detected(tmp_path, monkeypatch):
+    import json as json_mod
+
+    trail = _anchored_trail(tmp_path, monkeypatch)
+    anchor_path = tmp_path / "audit.jsonl.anchor"
+    payload = json_mod.loads(anchor_path.read_text())
+    log_path = tmp_path / "audit.jsonl"
+    lines = log_path.read_text().splitlines()
+    log_path.write_text("\n".join(lines[:-2]) + "\n")
+    # Attacker rewrites the anchor to the truncated head but cannot MAC it.
+    truncated_head = json_mod.loads(lines[-3])["entry_hash"]
+    payload["last_hash"] = truncated_head
+    anchor_path.write_text(json_mod.dumps(payload))
+    assert trail.verify_chain() is False
+
+
+def test_b3_reanchor_accepts_trusted_state(tmp_path, monkeypatch):
+    trail = _anchored_trail(tmp_path, monkeypatch)
+    log_path = tmp_path / "audit.jsonl"
+    lines = log_path.read_text().splitlines()
+    log_path.write_text("\n".join(lines[:-2]) + "\n")
+    assert trail.verify_chain() is False
+    assert trail.reanchor() is True
+    assert trail.verify_chain() is True
+
+
+def test_b3_unkeyed_trail_warns_and_stays_self_consistent(tmp_path, monkeypatch, caplog):
+    import logging
+
+    import hermes_katana.vault.store as store
+    from hermes_katana.audit.trail import AuditEntry, AuditEventType, AuditTrail
+
+    monkeypatch.delenv("HERMES_KATANA_LOG_KEY", raising=False)
+    monkeypatch.setattr(store, "_get_master_key", lambda: None)
+    trail = AuditTrail(path=tmp_path / "audit.jsonl")
+    with caplog.at_level(logging.WARNING, logger="hermes_katana.audit.trail"):
+        trail.log(AuditEntry(event_type=AuditEventType.TOOL_CALL, tool_name="t", decision="allow"))
+    assert not (tmp_path / "audit.jsonl.anchor").exists()
+    assert any("NOT tamper-evident" in rec.message for rec in caplog.records)
+    # Legacy behaviour preserved: self-consistency still verifiable.
+    assert trail.verify_chain() is True
+
+
 # --- B5: env master-key fallback must be re-readable -----------------------------
 
 

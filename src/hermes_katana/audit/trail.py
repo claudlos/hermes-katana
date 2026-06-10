@@ -27,18 +27,20 @@ __all__ = [
 
 
 import hashlib
+import hmac as _hmac_mod
 import json
 import logging
 import os
 import shutil
 import threading
+import time
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from pydantic import BaseModel, Field
-from hermes_katana._files import AdvisoryFileLock
+from hermes_katana._files import AdvisoryFileLock, atomic_write_text
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,32 @@ _DEFAULT_MAX_SIZE = 10 * 1024 * 1024
 
 # Maximum number of rotated files to keep
 _DEFAULT_MAX_ROTATIONS = 10
+
+# Domain-separation context for the chain-head anchor HMAC key.
+_ANCHOR_CONTEXT = b"hermes-katana:audit-anchor:"
+
+
+def _resolve_anchor_key() -> Optional[bytes]:
+    """Resolve the secret key used to HMAC the chain-head anchor.
+
+    Resolution order mirrors the vault access log (audit finding B1):
+    ``HERMES_KATANA_LOG_KEY``, then a subkey derived from the vault master
+    key in the OS keyring. Returns None when no secret is available — the
+    chain is then self-consistent only and NOT anchored against
+    truncation/rollback.
+    """
+    env_key = os.environ.get("HERMES_KATANA_LOG_KEY")
+    if env_key:
+        return hashlib.sha256(_ANCHOR_CONTEXT + env_key.encode()).digest()
+    try:
+        from hermes_katana.vault.store import _get_master_key
+
+        master = _get_master_key()
+    except Exception:  # noqa: BLE001
+        master = None
+    if master:
+        return hashlib.sha256(_ANCHOR_CONTEXT + master).digest()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +277,12 @@ class AuditTrail:
         self._last_hash: str = _GENESIS_HASH
         self._entry_count: int = 0
 
+        # Chain-head anchor state (audit finding B3): the head hash is
+        # persisted to an HMAC'd sidecar so truncating/rolling back the log
+        # files cannot pass verify_chain().
+        self._anchor_hmac_key: Optional[bytes] = None
+        self._anchor_key_resolved = False
+
         # Ensure parent directory exists
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -340,6 +374,10 @@ class AuditTrail:
                     fp.flush()
                     os.fsync(fp.fileno())
 
+                # Anchor the new chain head while still holding the file lock
+                # so concurrent processes cannot clobber it with a stale head.
+                self._write_anchor(entry.entry_hash)
+
             # Update in-memory state (O(1))
             self._last_hash = entry.entry_hash
             self._entry_count += 1
@@ -373,6 +411,115 @@ class AuditTrail:
             return last_hash
         except Exception:
             return _GENESIS_HASH
+
+    # ------------------------------------------------------------------
+    # Chain-head anchor (audit finding B3)
+    # ------------------------------------------------------------------
+
+    @property
+    def _anchor_path(self) -> Path:
+        """Sidecar file holding the HMAC'd chain head."""
+        return self._path.with_name(self._path.name + ".anchor")
+
+    def _get_anchor_key(self) -> Optional[bytes]:
+        """Resolve (once) the anchor HMAC key; warn loudly when unkeyed."""
+        if not self._anchor_key_resolved:
+            self._anchor_hmac_key = _resolve_anchor_key()
+            self._anchor_key_resolved = True
+            if self._anchor_hmac_key is None:
+                logger.warning(
+                    "No integrity key available for the audit trail anchor (no "
+                    "HERMES_KATANA_LOG_KEY and no vault master key in the keyring). "
+                    "The hash chain is self-consistent only — truncation or rollback "
+                    "of the log files is NOT tamper-evident."
+                )
+        return self._anchor_hmac_key
+
+    def _anchor_mac(self, key: bytes, last_hash: str) -> str:
+        msg = json.dumps({"last_hash": last_hash}, sort_keys=True).encode("utf-8")
+        return _hmac_mod.new(key, msg, hashlib.sha256).hexdigest()
+
+    def _write_anchor(self, last_hash: str) -> None:
+        """Persist the chain head to the HMAC'd sidecar (no-op when unkeyed)."""
+        key = self._get_anchor_key()
+        if key is None:
+            return
+        payload = {
+            "last_hash": last_hash,
+            "updated_at": time.time(),  # informational; not covered by the MAC
+            "hmac": self._anchor_mac(key, last_hash),
+        }
+        try:
+            # The anchor holds no secrets — integrity comes from the HMAC, so
+            # a permissive mode is fine and avoids per-entry ACL overhead.
+            atomic_write_text(self._anchor_path, json.dumps(payload), mode=0o644)
+        except Exception:  # noqa: BLE001
+            logger.warning("Could not write audit chain anchor", exc_info=True)
+
+    def _read_anchor(self) -> tuple[str, Optional[str]]:
+        """Read the anchor sidecar.
+
+        Returns (status, last_hash): status is "missing", "invalid", or "ok".
+        Only "ok" carries an authenticated last_hash.
+        """
+        if not self._anchor_path.exists():
+            return "missing", None
+        key = self._get_anchor_key()
+        if key is None:
+            return "invalid", None
+        try:
+            payload = json.loads(self._anchor_path.read_text(encoding="utf-8"))
+            anchored = str(payload["last_hash"])
+            expected = self._anchor_mac(key, anchored)
+            if not _hmac_mod.compare_digest(str(payload.get("hmac", "")), expected):
+                return "invalid", None
+            return "ok", anchored
+        except Exception:  # noqa: BLE001
+            return "invalid", None
+
+    def _verify_anchor(self, head_hash: str) -> bool:
+        """Check the recomputed chain head against the anchored head."""
+        key = self._get_anchor_key()
+        if key is None:
+            # No secret available: anchoring impossible; verify_chain already
+            # warned that only self-consistency is guaranteed.
+            return True
+        status, anchored = self._read_anchor()
+        if status == "missing":
+            if head_hash == _GENESIS_HASH:
+                return True
+            logger.error(
+                "Audit chain has entries but no anchor — possible rollback or "
+                "anchor deletion. If the current state is trusted (e.g. after a "
+                "migration), call AuditTrail.reanchor()."
+            )
+            return False
+        if status == "invalid":
+            logger.error("Audit chain anchor is invalid or unauthenticated — possible tampering.")
+            return False
+        if anchored != head_hash:
+            logger.error(
+                "Audit chain head %s... does not match anchored head %s... — "
+                "log truncation or rollback detected.",
+                head_hash[:12],
+                (anchored or "")[:12],
+            )
+            return False
+        return True
+
+    def reanchor(self) -> bool:
+        """Accept the current chain state as trusted and anchor its head.
+
+        Administrative operation for migrations/restores. Returns True when
+        an anchor was written (i.e. an integrity key is available).
+        """
+        with self._rlock:
+            with self._file_lock:
+                head = _GENESIS_HASH
+                for entry, _file in self._iter_entries_from_chain():
+                    head = entry.entry_hash
+                self._write_anchor(head)
+        return self._get_anchor_key() is not None
 
     def _chain_files(self) -> list[Path]:
         """Return rotated audit logs followed by the active log."""
@@ -481,7 +628,9 @@ class AuditTrail:
         """
         files = self._chain_files()
         if not files:
-            return True
+            # An authenticated anchor pointing at a non-empty chain means the
+            # log files were deleted, not that nothing was ever logged.
+            return self._verify_anchor(_GENESIS_HASH)
 
         prev_hash = _GENESIS_HASH
         try:
@@ -531,7 +680,10 @@ class AuditTrail:
 
                         prev_hash = stored_hash
 
-            return True
+            # Self-consistency proven; now check the head against the anchor
+            # so a truncated/rolled-back (but internally consistent) chain
+            # cannot pass (audit finding B3).
+            return self._verify_anchor(prev_hash)
 
         except Exception as exc:
             logger.error("Chain verification error: %s", exc)
