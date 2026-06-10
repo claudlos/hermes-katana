@@ -40,6 +40,11 @@ __all__ = [
 # Default max log size before rotation (5 MB)
 _DEFAULT_MAX_SIZE = 5 * 1024 * 1024
 
+# Sentinel written instead of an HMAC when no integrity key is available.
+# Lines carrying it can never pass verify_integrity() — absence of a key
+# must not silently produce forgeable "tamper evidence".
+_UNKEYED_MARKER = "UNKEYED"
+
 
 @dataclass(frozen=True, slots=True)
 class AccessEntry:
@@ -118,6 +123,8 @@ class VaultAccessLog:
         self._path = path or _default_access_log_path()
         self._max_size = max_size
         self._lock = threading.Lock()
+        self._hmac_key: Optional[bytes] = None
+        self._warned_unkeyed = False
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -157,12 +164,17 @@ class VaultAccessLog:
         with self._lock:
             try:
                 self._maybe_rotate()
+                created = not self._path.exists()
                 with open(self._path, "a", encoding="utf-8", opener=_owner_only_opener) as f:
                     line_data = json.dumps(asdict(entry), default=str)
                     line_hmac = self._compute_line_hmac(line_data)
                     f.write(line_data + "|" + line_hmac + "\n")
                     f.flush()
                 self._path.chmod(0o600)
+                if created:
+                    from hermes_katana._files import harden_owner_only
+
+                    harden_owner_only(self._path)
             except Exception:
                 logger.debug("Failed to write vault access log", exc_info=True)
 
@@ -255,22 +267,65 @@ class VaultAccessLog:
                 self._path.unlink()
 
     def _compute_line_hmac(self, line_data: str) -> str:
-        """Compute HMAC-SHA256 for a single log line for tamper evidence."""
+        """Compute HMAC-SHA256 for a single log line for tamper evidence.
+
+        Returns the UNKEYED sentinel when no secret key is available — an
+        attacker-recomputable digest would be worse than an honest gap.
+        """
         hmac_key = self._get_hmac_key()
+        if hmac_key is None:
+            return _UNKEYED_MARKER
         return _hmac_mod.new(hmac_key, line_data.encode("utf-8"), hashlib.sha256).hexdigest()
 
-    def _get_hmac_key(self) -> bytes:
-        """Derive an HMAC key for log integrity."""
+    def _get_hmac_key(self) -> Optional[bytes]:
+        """Resolve the log-integrity HMAC key — never from public constants.
+
+        Resolution order:
+
+        1. ``HERMES_KATANA_LOG_KEY`` environment variable (explicit override).
+        2. A subkey derived from the vault master key in the OS keyring
+           (same pattern store._compute_hmac uses for the vault itself).
+
+        Returns None when neither source is available. Entries are then
+        written UNKEYED and ``verify_integrity()`` fails closed; the old
+        behaviour (key derived from the public log path) let anyone
+        recompute valid HMACs after editing the log (audit finding B1).
+        """
+        if self._hmac_key is not None:
+            return self._hmac_key
+
         env_key = os.environ.get("HERMES_KATANA_LOG_KEY")
         if env_key:
-            return hashlib.sha256(env_key.encode()).digest()
-        return hashlib.sha256(b"hermes-katana-access-log:" + str(self._path).encode()).digest()
+            self._hmac_key = hashlib.sha256(env_key.encode()).digest()
+            return self._hmac_key
+
+        master: Optional[bytes] = None
+        try:
+            from hermes_katana.vault.store import _get_master_key
+
+            master = _get_master_key()
+        except Exception:  # noqa: BLE001
+            master = None
+        if master:
+            self._hmac_key = hashlib.sha256(b"hmac:access-log:" + master).digest()
+            return self._hmac_key
+
+        if not self._warned_unkeyed:
+            self._warned_unkeyed = True
+            logger.warning(
+                "No integrity key available for the vault access log (no "
+                "HERMES_KATANA_LOG_KEY and no vault master key in the keyring). "
+                "Entries will be written UNKEYED and verify_integrity() will "
+                "report failure until a key is available."
+            )
+        return None
 
     def verify_integrity(self) -> bool:
         """Verify HMAC integrity of all log entries.
 
-        Returns True if all lines have valid HMACs (or the log is empty).
-        Returns False if any line has been tampered with.
+        Returns True only when every line carries a valid HMAC under the
+        current key. UNKEYED lines, lines written under a key that is no
+        longer available, and tampered lines all fail (fail closed).
         """
         if not self._path.exists():
             return True
@@ -283,7 +338,11 @@ class VaultAccessLog:
                     if "|" not in line:
                         return False
                     line_data, line_hmac = line.rsplit("|", 1)
+                    if line_hmac == _UNKEYED_MARKER:
+                        return False
                     expected = self._compute_line_hmac(line_data)
+                    if expected == _UNKEYED_MARKER:
+                        return False
                     if not _hmac_mod.compare_digest(line_hmac, expected):
                         return False
             return True

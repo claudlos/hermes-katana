@@ -278,6 +278,10 @@ def _compute_hmac(data: dict[str, str], key: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
+# In-process cache for an env-provided master key (see _get_master_key).
+_ENV_KEY_CACHE: Optional[bytes] = None
+
+
 def _get_master_key() -> Optional[bytes]:
     """Retrieve the master key from the OS keyring.
 
@@ -305,10 +309,18 @@ def _get_master_key() -> Optional[bytes]:
     except Exception as exc:
         logger.warning("Failed to read keyring: %s, falling back to environment variable", exc)
 
-    # Fallback: check environment variable
+    # Fallback: check environment variable. The var is popped so the key is
+    # not left visible to child processes (GAP 2.3), but the value is cached
+    # in-process — consuming it outright made every later call return None,
+    # breaking rotation rollback and second readers (audit finding B5).
+    global _ENV_KEY_CACHE
     raw_env = os.environ.pop("HERMES_KATANA_VAULT_KEY", None)
     if raw_env:
-        return _validate_key(base64.b64decode(raw_env))
+        key = _validate_key(base64.b64decode(raw_env))
+        _ENV_KEY_CACHE = key
+        return key
+    if _ENV_KEY_CACHE is not None:
+        return _ENV_KEY_CACHE
     return None
 
 
@@ -341,6 +353,8 @@ def _set_master_key(key: bytes) -> None:
 
 def _delete_master_key() -> None:
     """Remove the master key from the OS keyring."""
+    global _ENV_KEY_CACHE
+    _ENV_KEY_CACHE = None
     try:
         import keyring
 

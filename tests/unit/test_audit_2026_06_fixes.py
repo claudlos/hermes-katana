@@ -304,3 +304,132 @@ def test_a6_fast_cpu_profile_defaults_to_escalate_on_timeout():
         pytest.skip("fast_cpu profile artifacts not present in this checkout")
     assert cfg.classifier_timeout_decision == "escalate"
     assert cfg.classifier_timeout_seconds > 0
+
+
+# --- B1: access-log HMAC key never comes from public constants ------------------
+
+
+def test_b1_unkeyed_log_fails_verification(tmp_path, monkeypatch):
+    import hermes_katana.vault.store as store
+    from hermes_katana.vault.access_log import VaultAccessLog
+
+    monkeypatch.delenv("HERMES_KATANA_LOG_KEY", raising=False)
+    monkeypatch.setattr(store, "_get_master_key", lambda: None)
+    log = VaultAccessLog(path=tmp_path / "access.jsonl")
+    log.log_access("KEY1", "GET", caller="test")
+    raw = (tmp_path / "access.jsonl").read_text()
+    assert raw.strip().endswith("|UNKEYED")
+    # Forgeable/keyless tamper evidence must read as NOT verified.
+    assert log.verify_integrity() is False
+
+
+def test_b1_master_key_derived_hmac_verifies(tmp_path, monkeypatch):
+    import hermes_katana.vault.store as store
+    from hermes_katana.vault.access_log import VaultAccessLog
+
+    monkeypatch.delenv("HERMES_KATANA_LOG_KEY", raising=False)
+    monkeypatch.setattr(store, "_get_master_key", lambda: b"k" * 32)
+    log = VaultAccessLog(path=tmp_path / "access.jsonl")
+    log.log_access("KEY1", "GET", caller="test")
+    assert log.verify_integrity() is True
+    # A different master key must not verify the same log.
+    monkeypatch.setattr(store, "_get_master_key", lambda: b"x" * 32)
+    other = VaultAccessLog(path=tmp_path / "access.jsonl")
+    assert other.verify_integrity() is False
+
+
+def test_b1_no_path_derived_fallback_key(tmp_path, monkeypatch):
+    # The old behaviour derived the key from the (public) log path, letting
+    # anyone recompute valid HMACs. Pin that it is gone.
+    import hashlib
+    import hmac as hmac_mod
+
+    import hermes_katana.vault.store as store
+    from hermes_katana.vault.access_log import VaultAccessLog
+
+    monkeypatch.delenv("HERMES_KATANA_LOG_KEY", raising=False)
+    monkeypatch.setattr(store, "_get_master_key", lambda: b"k" * 32)
+    log_path = tmp_path / "access.jsonl"
+    log = VaultAccessLog(path=log_path)
+    log.log_access("KEY1", "GET", caller="test")
+    line_data, line_hmac = log_path.read_text().strip().rsplit("|", 1)
+    legacy_key = hashlib.sha256(b"hermes-katana-access-log:" + str(log_path).encode()).digest()
+    legacy = hmac_mod.new(legacy_key, line_data.encode(), hashlib.sha256).hexdigest()
+    assert line_hmac != legacy
+
+
+# --- B5: env master-key fallback must be re-readable -----------------------------
+
+
+def test_b5_env_master_key_rereadable_but_scrubbed(monkeypatch):
+    import base64
+    import os
+
+    import hermes_katana.vault.store as store
+
+    key = base64.b64encode(b"m" * 32).decode()
+    monkeypatch.setenv("HERMES_KATANA_VAULT_KEY", key)
+    monkeypatch.setattr(store, "_ENV_KEY_CACHE", None)
+
+    # Force the keyring path to fail so the env fallback is exercised.
+    try:
+        import keyring
+
+        def _no_keyring(*a, **k):
+            raise KeyError("no key in keyring")
+
+        monkeypatch.setattr(keyring, "get_password", _no_keyring)
+    except ImportError:
+        pass  # _get_master_key falls through to the env var on its own
+
+    first = store._get_master_key()
+    second = store._get_master_key()
+    assert first == b"m" * 32
+    assert second == b"m" * 32, "second in-process read must still see the key (rotation rollback)"
+    # GAP 2.3 hygiene preserved: the env var itself is scrubbed after first read.
+    assert "HERMES_KATANA_VAULT_KEY" not in os.environ
+
+
+# --- B2/B4: secret-bearing files are owner-restricted ----------------------------
+
+
+def test_b2_atomic_write_hardens_restrictive_modes(tmp_path, monkeypatch):
+    calls = []
+    import hermes_katana._files as files_mod
+
+    monkeypatch.setattr(files_mod.os, "name", "nt", raising=False)
+    monkeypatch.setattr(files_mod, "harden_owner_only", lambda p: calls.append(p) or True)
+    files_mod.atomic_write_text(tmp_path / "vault.json", "{}", mode=0o600)
+    assert calls == [tmp_path / "vault.json"]
+
+
+def test_b2_atomic_write_skips_hardening_for_open_modes(tmp_path, monkeypatch):
+    calls = []
+    import hermes_katana._files as files_mod
+
+    monkeypatch.setattr(files_mod.os, "name", "nt", raising=False)
+    monkeypatch.setattr(files_mod, "harden_owner_only", lambda p: calls.append(p) or True)
+    files_mod.atomic_write_text(tmp_path / "public.txt", "x", mode=0o644)
+    assert calls == []
+
+
+def test_b4_honey_store_and_planted_files_use_atomic_owner_only(tmp_path, monkeypatch):
+    import hermes_katana._files as files_mod
+    from hermes_katana.vault.honey_tokens import HoneyFileMonitor, HoneyTokenVault
+
+    hardened = []
+    real = files_mod.atomic_write_text
+
+    def _spy(path, content, *, mode=0o600, encoding="utf-8"):
+        hardened.append((path, mode))
+        real(path, content, mode=mode, encoding=encoding)
+
+    monkeypatch.setattr(files_mod, "atomic_write_text", _spy)
+    vault = HoneyTokenVault(path=tmp_path / "honey.json", audit_enabled=False)
+    vault.create("lure_key")
+    planted = vault.plant_file("lure_key", file_path=tmp_path / "decoy.json")
+    monitor = HoneyFileMonitor()
+    honey_file = monitor.plant(tmp_path, filename="api_keys.txt")
+    assert planted.exists() and honey_file.exists()
+    assert all(mode == 0o600 for _, mode in hardened)
+    assert {tmp_path / "honey.json", planted, honey_file} <= {p for p, _ in hardened}

@@ -35,7 +35,6 @@ import logging
 import os
 import secrets
 import string
-import tempfile
 import threading
 import time
 import urllib.parse
@@ -354,17 +353,12 @@ class HoneyTokenVault:
             self._tokens = {}
 
     def _save(self) -> None:
-        """Atomically persist tokens to JSON store."""
+        """Atomically persist tokens to JSON store (owner-only)."""
+        from hermes_katana._files import atomic_write_text
+
         self._path.parent.mkdir(parents=True, exist_ok=True)
         data = {name: tok.to_dict() for name, tok in self._tokens.items()}
-        payload = json.dumps(data, indent=2)
-        fd, tmp = tempfile.mkstemp(dir=self._path.parent, prefix=".honey_tokens_", suffix=".tmp")
-        try:
-            os.write(fd, payload.encode("utf-8"))
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        Path(tmp).replace(self._path)
+        atomic_write_text(self._path, json.dumps(data, indent=2), mode=0o600)
 
     # ------------------------------------------------------------------
     # Token management
@@ -522,7 +516,9 @@ class HoneyTokenVault:
             dest.parent.mkdir(parents=True, exist_ok=True)
             key = config_key or name
             payload = json.dumps({key: token.value, "_type": token.kind.value}, indent=2)
-            dest.write_text(payload, encoding="utf-8")
+            from hermes_katana._files import atomic_write_text
+
+            atomic_write_text(dest, payload, mode=0o600)
 
             token.planted_file = str(dest)
             self._save()
@@ -631,7 +627,9 @@ class HoneyFileMonitor:
         if content is None:
             content = json.dumps({"service_reference": f"decoy-{uuid.uuid4().hex}"}, indent=2)
 
-        dest.write_bytes(content.encode("utf-8"))
+        from hermes_katana._files import atomic_write_text
+
+        atomic_write_text(dest, content, mode=0o600)
 
         with self._lock:
             try:
