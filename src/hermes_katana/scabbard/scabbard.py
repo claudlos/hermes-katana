@@ -273,6 +273,30 @@ class ScabbardClassifier:
         self.deberta_classifier = deberta_classifier
         self.katana_v11_classifier = katana_v11_classifier
 
+        # A trained signal means at least one learned component is live; without
+        # one, classification is the rule-based fallback only — record that
+        # loudly so middleware/diagnostics can refuse to treat it as the real
+        # enforcement layer (audit findings A1/A5, 2026-06-09).
+        self.trained_signal_active = (
+            katana_v11_classifier is not None
+            or deberta_classifier is not None
+            or embedder is not None
+            or fusion_model is not None
+        )
+        self.degraded_reason: Optional[str] = None
+        if not self.trained_signal_active:
+            if self.config.profile == "minimal":
+                self.degraded_reason = "minimal_profile_rule_based_only"
+                logger.info("Scabbard running the rule-based 'minimal' profile (no trained signal).")
+            else:
+                self.degraded_reason = "trained_artifacts_unavailable"
+                logger.warning(
+                    "Scabbard profile %r configured but no trained component loaded; "
+                    "classification degrades to the rule-based fallback, which does NOT "
+                    "reliably block prompt injections.",
+                    self.config.profile,
+                )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -303,6 +327,8 @@ class ScabbardClassifier:
             :class:`ClassificationResult` with scores, decision, and
             metadata.
         """
+        degraded_reason: Optional[str] = None
+
         # KatanaV11Classifier (v1.0 model) takes highest priority: 9-class
         # origin-aware classification.
         if self.katana_v11_classifier is not None:
@@ -326,6 +352,7 @@ class ScabbardClassifier:
                             result.decision = Decision.FLAG
                 return _canonicalize_result_category(result)
             except Exception:  # noqa: BLE001
+                degraded_reason = "katana_v11_exception"
                 logger.warning(
                     "KatanaV11Classifier failed, falling back to legacy classifiers",
                     exc_info=True,
@@ -355,6 +382,7 @@ class ScabbardClassifier:
                             result.decision = Decision.FLAG
                 return _canonicalize_result_category(result)
             except Exception:  # noqa: BLE001
+                degraded_reason = degraded_reason or "deberta_exception"
                 logger.warning(
                     "DeBERTaClassifier failed, falling back to fusion pipeline",
                     exc_info=True,
@@ -386,6 +414,12 @@ class ScabbardClassifier:
             elif result.confidence > self.config.allow_threshold:
                 result.decision = Decision.FLAG
 
+        # Reaching the fusion path through an exception fallback, or running
+        # without any trained signal at all, is a degraded verdict — stamp it
+        # so callers can fail closed instead of trusting a silent downgrade.
+        stamp = degraded_reason or self.degraded_reason
+        if stamp:
+            result.degraded = stamp
         return _canonicalize_result_category(result)
 
     def classify_with_details(

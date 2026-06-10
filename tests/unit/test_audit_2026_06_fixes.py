@@ -121,3 +121,186 @@ def test_a8_non_benign_commands_rejected(cmd):
 @pytest.mark.parametrize("cmd", ["ls -la", "cat file.txt", "git status", "pwd", "cat a | grep b"])
 def test_a8_genuinely_benign_commands_allowed(cmd):
     assert _is_benign_command(cmd)
+
+
+# --- A1: rule-based fallback is loud, refusable, and visible in diagnostics ----
+
+
+def test_a1_runtime_default_fails_closed_when_required(monkeypatch):
+    from hermes_katana.scabbard import ScabbardConfig
+
+    monkeypatch.setenv("HERMES_KATANA_REQUIRE_TRAINED_SCABBARD", "1")
+    monkeypatch.setattr(ScabbardConfig, "default_runtime_profile", classmethod(lambda cls: "minimal"))
+    with pytest.raises(RuntimeError, match="REQUIRE_TRAINED_SCABBARD"):
+        ScabbardConfig.runtime_default()
+
+
+def test_a1_runtime_default_warns_on_minimal_fallback(monkeypatch, caplog):
+    import logging
+
+    from hermes_katana.scabbard import ScabbardConfig
+
+    monkeypatch.delenv("HERMES_KATANA_REQUIRE_TRAINED_SCABBARD", raising=False)
+    monkeypatch.setattr(ScabbardConfig, "default_runtime_profile", classmethod(lambda cls: "minimal"))
+    with caplog.at_level(logging.WARNING, logger="hermes_katana.scabbard.config"):
+        cfg = ScabbardConfig.runtime_default()
+    assert cfg.profile == "minimal"
+    assert any("rule-based" in rec.message for rec in caplog.records)
+
+
+def test_a1_diagnostics_flag_rule_based_scabbard_as_degraded():
+    from hermes_katana.middleware.chain import MiddlewareChain
+    from hermes_katana.middleware.integration import KatanaScabbardMiddleware, collect_chain_diagnostics
+    from hermes_katana.scabbard import ScabbardConfig
+
+    chain = MiddlewareChain()
+    mw = KatanaScabbardMiddleware(config=ScabbardConfig.minimal())
+    mw.classifier  # force the lazy load so readiness reflects reality
+    chain.add(mw)
+    diag = collect_chain_diagnostics(chain)
+    assert diag["ml"]["scabbard_trained_signal"] is False
+    assert "katana.scabbard" in diag["scanners"]["degraded"]
+
+
+# --- A5: classifier exceptions / missing models stamp a degraded verdict --------
+
+
+def test_a5_rule_based_results_are_stamped_degraded():
+    from hermes_katana.scabbard import ScabbardClassifier, ScabbardConfig
+
+    clf = ScabbardClassifier(ScabbardConfig.minimal())
+    assert clf.trained_signal_active is False
+    result = clf.classify("please summarize this paragraph about gardening")
+    assert result.degraded is not None
+    assert result.to_dict()["degraded"] == result.degraded
+
+
+def test_a5_v11_exception_fallback_is_stamped():
+    from hermes_katana.scabbard import ScabbardClassifier, ScabbardConfig
+
+    class _Boom:
+        def classify_result(self, text, origin=None):
+            raise RuntimeError("model crashed")
+
+    clf = ScabbardClassifier(ScabbardConfig.minimal())
+    clf.katana_v11_classifier = _Boom()
+    result = clf.classify("hello world")
+    assert result.degraded == "katana_v11_exception"
+
+
+def test_a5_strict_route_mode_fails_closed_on_degraded():
+    from hermes_katana.middleware.chain import CallContext, DispatchDecision
+    from hermes_katana.middleware.integration import KatanaScabbardMiddleware
+    from hermes_katana.scabbard import ScabbardConfig
+
+    mw = KatanaScabbardMiddleware(config=ScabbardConfig.minimal(), route_mode="strict")
+    ctx = CallContext(
+        tool_name="web_fetch",
+        args={"query": "please summarize the latest public research about solar panel efficiency"},
+    )
+    decision = mw.pre_dispatch(ctx)
+    assert ctx.extras["scabbard_route_counts"]["scanned"] >= 1, "precondition: arg must be routed to Scabbard"
+    assert decision == DispatchDecision.ESCALATE
+    assert ctx.extras["scabbard_degraded"]
+
+
+def test_a5_balanced_route_mode_stamps_degraded_but_allows():
+    from hermes_katana.middleware.chain import CallContext, DispatchDecision
+    from hermes_katana.middleware.integration import KatanaScabbardMiddleware
+    from hermes_katana.scabbard import ScabbardConfig
+
+    mw = KatanaScabbardMiddleware(config=ScabbardConfig.minimal(), route_mode="balanced")
+    ctx = CallContext(
+        tool_name="web_fetch",
+        args={"query": "please summarize the latest public research about solar panel efficiency"},
+    )
+    decision = mw.pre_dispatch(ctx)
+    assert ctx.extras["scabbard_route_counts"]["scanned"] >= 1, "precondition: arg must be routed to Scabbard"
+    assert decision == DispatchDecision.ALLOW
+    assert ctx.extras["scabbard_degraded"]
+
+
+# --- A6: classifier timeout no longer silently allows ---------------------------
+
+
+class _SlowClassifier:
+    """Stub whose classify() always outlives the configured timeout."""
+
+    def __init__(self, decision: str):
+        from hermes_katana.scabbard import ScabbardConfig
+
+        self.config = ScabbardConfig(
+            classifier_timeout_seconds=0.05,
+            classifier_timeout_decision=decision,
+        )
+
+    def classify(self, text, origin=None):
+        import time
+
+        time.sleep(2.0)
+        raise AssertionError("classify should have timed out")
+
+
+def _timeout_result(decision: str):
+    from hermes_katana.middleware.integration import KatanaScabbardMiddleware
+
+    mw = KatanaScabbardMiddleware()
+    mw._classifier = _SlowClassifier(decision)
+    return mw._classify_with_timeout("some text", None)
+
+
+def test_a6_config_rejects_unknown_timeout_decision():
+    from hermes_katana.scabbard import ScabbardConfig
+
+    with pytest.raises(ValueError, match="classifier_timeout_decision"):
+        ScabbardConfig(classifier_timeout_decision="alow")
+
+
+def test_a6_timeout_escalate_yields_flag_and_degraded():
+    from hermes_katana.scabbard.fusion import Decision
+
+    res = _timeout_result("escalate")
+    assert res.decision == Decision.FLAG
+    assert res.degraded == "classifier_timeout"
+    assert res.confidence >= 0.5  # reaches the pre_dispatch ESCALATE band
+
+
+def test_a6_timeout_deny_yields_block():
+    from hermes_katana.scabbard.fusion import Decision
+
+    res = _timeout_result("deny")
+    assert res.decision == Decision.BLOCK
+    assert res.degraded == "classifier_timeout"
+
+
+def test_a6_timeout_allow_is_still_stamped_degraded():
+    from hermes_katana.scabbard.fusion import Decision
+
+    res = _timeout_result("allow")
+    assert res.decision == Decision.ALLOW
+    assert res.degraded == "classifier_timeout"
+
+
+def test_a6_deny_timeout_block_is_not_softened_away():
+    from hermes_katana.middleware.chain import CallContext, DispatchDecision
+    from hermes_katana.middleware.integration import KatanaScabbardMiddleware
+
+    mw = KatanaScabbardMiddleware(route_mode="balanced")
+    mw._classifier = _SlowClassifier("deny")
+    # Short benign-looking text used to qualify for block-softening; a
+    # fail-closed timeout BLOCK must not be downgraded by that heuristic.
+    ctx = CallContext(tool_name="web_fetch", args={"query": "fetch this page"})
+    decision = mw.pre_dispatch(ctx)
+    assert ctx.extras["scabbard_route_counts"]["scanned"] >= 1, "precondition: arg must be routed to Scabbard"
+    assert decision == DispatchDecision.DENY
+
+
+def test_a6_fast_cpu_profile_defaults_to_escalate_on_timeout():
+    from hermes_katana.middleware.integration import _profile_defaults
+
+    try:
+        cfg = _profile_defaults("fast_cpu")["scabbard.config"]
+    except Exception:  # noqa: BLE001 — v15 MiniLM artifact not installed locally
+        pytest.skip("fast_cpu profile artifacts not present in this checkout")
+    assert cfg.classifier_timeout_decision == "escalate"
+    assert cfg.classifier_timeout_seconds > 0

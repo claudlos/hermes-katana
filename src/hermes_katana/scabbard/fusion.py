@@ -595,14 +595,21 @@ class ClassificationResult:
     top_category: str
     confidence: float
     feature_importance: Optional[dict[str, float]] = None
+    # Set when this result was produced by a weaker path than the deployment
+    # configured (trained classifier missing/raised, or classify timed out).
+    # Consumers can fail closed on it instead of trusting a silent downgrade.
+    degraded: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "scores": self.scores,
             "decision": self.decision.value,
             "top_category": self.top_category,
             "confidence": self.confidence,
         }
+        if self.degraded:
+            result["degraded"] = self.degraded
+        return result
 
     def to_risk_report(self, source: str = "", content_type: str = "") -> dict[str, Any]:
         """Format as a risk report for the LLM judge (Stage 4)."""

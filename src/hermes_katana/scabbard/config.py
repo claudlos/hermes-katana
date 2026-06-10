@@ -36,6 +36,7 @@ factories auto-discover local centroid files for research runs.
 from __future__ import annotations
 
 import importlib.util
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +52,8 @@ from hermes_katana.artifacts import (
     resolve_v17_minilm,
     v17_minilm_spec,
 )
+
+logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------
 # Default model paths (relative to project root)
@@ -174,6 +177,12 @@ def _experimental_centroids_enabled() -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _require_trained_scabbard() -> bool:
+    """Return whether the deployment refuses to run on the rule-based fallback."""
+    value = os.environ.get("HERMES_KATANA_REQUIRE_TRAINED_SCABBARD", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _default_centroid_path(*, use_deberta_embedder: bool = False) -> Optional[str]:
     """Pick a centroid artifact only when experimental auto-discovery is enabled."""
     if not _experimental_centroids_enabled():
@@ -228,11 +237,15 @@ class ScabbardConfig:
     # or a date-stamped tag (e.g., "katana_v11-20260507").
     model_version: str = "katana_v11-default"
     # Per-call timeout for the classifier in seconds. 0 disables. When the
-    # classifier exceeds this, the middleware falls back to ``timeout_decision``
-    # (default ALLOW — fail-open in production where latency budgets matter
-    # more than catching every attack; switch to DENY for fail-closed).
+    # classifier exceeds this, the middleware falls back to
+    # ``classifier_timeout_decision``:
+    #   "deny"     — BLOCK (fail closed)
+    #   "escalate" — FLAG, routed through the escalation policy (default for
+    #                enforcement profiles that enable the timeout)
+    #   "allow"    — ALLOW (fail open; the result is still stamped degraded so
+    #                the timeout is visible in extras/audit)
     classifier_timeout_seconds: float = 0.0
-    classifier_timeout_decision: str = "allow"  # "allow" | "deny"
+    classifier_timeout_decision: str = "allow"  # "allow" | "deny" | "escalate"
 
     # Shadow classifier: when set, runs a second KatanaV11Classifier alongside
     # the primary on every call. Logs disagreements to
@@ -313,6 +326,9 @@ class ScabbardConfig:
             raise ValueError("block_threshold must be greater than or equal to allow_threshold")
         if self.judge_timeout <= 0.0:
             raise ValueError("judge_timeout must be greater than 0.0")
+        if self.classifier_timeout_decision not in ("allow", "deny", "escalate"):
+            # An unrecognized value must not silently fail open at timeout time.
+            raise ValueError("classifier_timeout_decision must be one of: allow, deny, escalate")
 
     @classmethod
     def minimal(cls) -> "ScabbardConfig":
@@ -718,12 +734,32 @@ class ScabbardConfig:
 
     @classmethod
     def runtime_default(cls) -> "ScabbardConfig":
-        """Return the safest default config for the current runtime state."""
+        """Return the safest default config for the current runtime state.
+
+        When no trained artifacts are present this degrades to the rule-based
+        ``minimal`` profile, which does NOT reliably block prompt injections.
+        That degradation is logged at WARNING, and deployments can refuse it
+        entirely by setting ``HERMES_KATANA_REQUIRE_TRAINED_SCABBARD=1``
+        (fail closed: raises instead of silently weakening enforcement).
+        """
         profile = cls.default_runtime_profile()
         if profile == "production":
             return cls.production()
         if profile == "standard":
             return cls.standard()
+        if _require_trained_scabbard():
+            raise RuntimeError(
+                "HERMES_KATANA_REQUIRE_TRAINED_SCABBARD is set but no trained Scabbard "
+                "artifacts were found; refusing to fall back to the rule-based 'minimal' "
+                "profile. Run `katana artifacts setup` to install detection models, or "
+                "unset the variable to accept degraded rule-based enforcement."
+            )
+        logger.warning(
+            "No trained Scabbard artifacts found; falling back to the rule-based "
+            "'minimal' profile. This fallback does NOT reliably block prompt "
+            "injections. Run `katana artifacts setup` to install detection models, "
+            "or set HERMES_KATANA_REQUIRE_TRAINED_SCABBARD=1 to fail closed instead."
+        )
         return cls.minimal()
 
     @classmethod
