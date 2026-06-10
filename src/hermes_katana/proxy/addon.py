@@ -179,6 +179,69 @@ class KatanaAddon:
         host_lower = host.lower()
         return any(host_lower == d or host_lower.endswith(f".{d}") for d in self.config.allowed_domains)
 
+    def _is_explicitly_allowed(self, host: str) -> bool:
+        """Whether *host* appears in the configured allowlist (operator intent)."""
+        host_lower = host.lower()
+        return any(
+            host_lower == d or host_lower.endswith(f".{d}") for d in getattr(self.config, "allowed_domains", [])
+        )
+
+    @staticmethod
+    def _is_private_destination(host: str) -> bool:
+        """Best-effort check for SSRF-style destinations (audit finding C4).
+
+        Catches IP-literal loopback/RFC1918/link-local/reserved targets and
+        well-known metadata/localhost hostnames. Hostnames that *resolve* to
+        private addresses (DNS rebinding) are out of scope here — that needs
+        connect-time enforcement — but the common localhost/metadata SSRF
+        shapes are blocked by default.
+        """
+        candidate = (host or "").strip().lower().rstrip(".")
+        if not candidate:
+            return False
+        if candidate.startswith("[") and candidate.endswith("]"):
+            candidate = candidate[1:-1]
+        try:
+            import ipaddress
+
+            ip = ipaddress.ip_address(candidate)
+            return bool(
+                ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_unspecified
+            )
+        except ValueError:
+            pass
+        if candidate in {
+            "localhost",
+            "metadata",
+            "metadata.google.internal",
+            "instance-data",
+            "instance-data.ec2.internal",
+        }:
+            return True
+        return candidate.endswith((".localhost", ".internal"))
+
+    @staticmethod
+    def _get_scannable_content(message: Any) -> tuple[Optional[bytes], bool]:
+        """Fetch a message body for scanning.
+
+        Returns ``(content, unavailable)``. ``unavailable=True`` means the
+        body exists but is being streamed past the buffering cap
+        (``stream_large_bodies``) and therefore cannot be scanned — chunked
+        transfers carry no Content-Length, so the pre-buffer header gates
+        never fire for them (audit finding C1). Callers must fail closed on
+        it in strict/max instead of treating it like an absent body.
+        """
+        if getattr(message, "stream", False):
+            return None, True
+        try:
+            return message.get_content(), False
+        except AttributeError:
+            return None, False
+        except ValueError:
+            # mitmproxy raises ValueError when content is unavailable for a
+            # streamed message.
+            return None, True
+
     def _body_too_large(self, body: Optional[bytes]) -> bool:
         """Check if a body exceeds the scan size limit."""
         if body is None:
@@ -607,6 +670,31 @@ class KatanaAddon:
             self._increment_stat("requests_ignored")
             return
 
+        # Private/SSRF destination gate (audit finding C4): with the default
+        # empty allowlist, requests to loopback/RFC1918/link-local/metadata
+        # would otherwise be forwarded — with credentials injected. Explicit
+        # allowed_domains entries and the allow_private_destinations opt-out
+        # express operator intent.
+        if (
+            not getattr(self.config, "allow_private_destinations", False)
+            and self._is_private_destination(host)
+            and not self._is_explicitly_allowed(host)
+        ):
+            self._increment_stat("requests_blocked_private_destination")
+            logger.warning("Blocked request to private/SSRF destination: %s", host)
+            flow.response = _make_block_response(
+                403,
+                f"Private/internal destination blocked: {host}. "
+                "Set allow_private_destinations=true or add the host to allowed_domains to permit.",
+            )
+            self._log_audit(
+                "POLICY_DECISION",
+                f"private_destination_block:{host}",
+                "deny",
+                f"Destination {host} is loopback/private/link-local/metadata",
+            )
+            return
+
         # Domain allowlist check
         if not self._is_allowed_domain(host):
             self._increment_stat("requests_blocked_domain")
@@ -768,7 +856,31 @@ class KatanaAddon:
             return
 
         # Request body scanning (GAP 3.5 — scan prefix of oversized bodies)
-        body = flow.request.get_content()
+        body, body_unavailable = self._get_scannable_content(flow.request)
+        if body_unavailable:
+            # Chunked/oversized body streamed past the buffering cap: there
+            # is a body, we just cannot see it. Same trust decision as an
+            # oversized declared body (audit finding C1).
+            if self._fail_closed_active():
+                self._increment_stat("requests_blocked_streamed")
+                flow.response = _make_block_response(
+                    413,
+                    "Request body is streamed (chunked/oversized) and cannot be scanned.",
+                )
+                self._log_audit(
+                    "SCAN_RESULT",
+                    f"request_scan:{host}",
+                    "deny",
+                    "Streamed request body (no Content-Length within cap); unscannable, blocked",
+                )
+                return
+            self._increment_stat("requests_allowed_streamed")
+            self._log_audit(
+                "SCAN_RESULT",
+                f"request_scan:{host}",
+                "allow",
+                "Streamed request body forwarded unscanned (permissive mode)",
+            )
         if body:
             scan_body = body
             oversized = self._body_too_large(body)
@@ -898,10 +1010,37 @@ class KatanaAddon:
         scanned = False
         oversized_response = False  # tracked for Codex audit #2: differentiate
         # X-Katana-Scanned: true vs partial.
-        try:
-            body = flow.response.get_content()
-        except AttributeError:
-            body = None
+        body, body_unavailable = self._get_scannable_content(flow.response)
+        if body_unavailable:
+            # Response is streaming past the buffering cap (no Content-Length
+            # within limits) and cannot be scanned (audit finding C1).
+            if self._fail_closed_active():
+                self._increment_stat("responses_blocked_streamed")
+                try:
+                    flow.response.stream = False
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    flow.response.set_content(
+                        b"[HermesKatana] Response is streamed (chunked/oversized) and cannot be scanned; blocked."
+                    )
+                    flow.response.status_code = 502
+                except AttributeError:
+                    flow.response = _make_block_response(502, "Streamed response cannot be scanned.")
+                self._log_audit(
+                    "SCAN_RESULT",
+                    f"response_scan:{host}",
+                    "deny",
+                    "Streamed response body (no Content-Length within cap); unscannable, blocked",
+                )
+                return
+            self._increment_stat("responses_allowed_streamed")
+            self._log_audit(
+                "SCAN_RESULT",
+                f"response_scan:{host}",
+                "allow",
+                "Streamed response body forwarded unscanned (permissive mode)",
+            )
 
         # Scan response headers (GAP 3.2)
         try:

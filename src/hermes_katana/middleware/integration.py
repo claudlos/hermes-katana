@@ -790,6 +790,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
         check_unicode: bool = True,
         check_content: bool = True,
         enforce_output_findings: bool = False,
+        redact_output_secrets: bool = True,
         route_aware: bool = True,
         enabled: bool = True,
     ) -> None:
@@ -800,6 +801,11 @@ class KatanaScanMiddleware(KatanaMiddleware):
         ``ctx.extras['output_redacted']=True`` whenever a finding fires. Default
         is False to preserve backward compatibility; production deployments
         that want fail-closed output scanning should opt in.
+
+        Audit finding C3 (MED, 2026-06-09): secret-class findings are the
+        exception — a credential in tool output is exfiltration in progress,
+        so they redact by default (``redact_output_secrets=True``) even when
+        general output enforcement is off.
         """
         super().__init__(name="katana.scan", enabled=enabled, priority=80)
         self._vault_values = vault_values or set()
@@ -810,6 +816,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
         self._check_unicode = check_unicode
         self._check_content = check_content
         self._enforce_output_findings = enforce_output_findings
+        self._redact_output_secrets = redact_output_secrets
         self._route_aware = route_aware
 
     @staticmethod
@@ -975,13 +982,18 @@ class KatanaScanMiddleware(KatanaMiddleware):
                     )
                     # Codex audit #4: enforce — replace output with a marker
                     # rather than letting downstream consumers see flagged
-                    # content. Opt-in via enforce_output_findings.
-                    if self._enforce_output_findings:
+                    # content. Opt-in via enforce_output_findings — except
+                    # secret-class findings, which redact by default (audit
+                    # finding C3: log-only secret egress is exfiltration).
+                    secret_leak = bool(getattr(result, "secret_findings", None)) and self._redact_output_secrets
+                    if self._enforce_output_findings or secret_leak:
                         ctx.tool_output = (
                             f"[HermesKatana] Tool output redacted by post-dispatch scanner: {result.summary}"
                         )
                         ctx.extras["output_redacted"] = True
                         ctx.extras["output_redacted_reason"] = result.summary
+                        if secret_leak:
+                            ctx.extras["output_secret_redacted"] = True
         except Exception:
             logger.debug("Post-dispatch scan failed for %s", ctx.tool_name, exc_info=True)
 
@@ -1770,6 +1782,7 @@ def create_default_chain(
         check_unicode=cfg.get("scan.check_unicode", True),
         check_content=cfg.get("scan.check_content", True),
         enforce_output_findings=cfg.get("scan.enforce_output_findings", False),
+        redact_output_secrets=cfg.get("scan.redact_output_secrets", True),
         route_aware=cfg.get("scan.route_aware", True),
         enabled=cfg.get("scan.enabled", True),
     )

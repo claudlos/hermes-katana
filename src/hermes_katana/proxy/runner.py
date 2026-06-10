@@ -451,6 +451,16 @@ class KatanaProxy:
             f"ssl_insecure={'true' if not self.config.tls_verify else 'false'}",
         ]
 
+        # Cap mitmproxy's in-memory buffering (audit finding C1): chunked
+        # transfers carry no Content-Length, so the addon's pre-buffer header
+        # gates never fire for them and mitmproxy would buffer the whole body.
+        # Bodies above this cap are streamed instead; the addon detects the
+        # streamed (unscannable) body and fails closed in strict/max.
+        req_limit = getattr(self.config, "max_request_body_size", 0) or 0
+        resp_limit = getattr(self.config, "max_response_body_size", 0) or 0
+        if req_limit > 0 and resp_limit > 0:
+            cmd.extend(["--set", f"stream_large_bodies={max(req_limit, resp_limit)}"])
+
         cmd.extend(["-s", str(addon_script)])
 
         # Add ignore hosts
