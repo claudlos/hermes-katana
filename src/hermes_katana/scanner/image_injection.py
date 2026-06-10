@@ -109,6 +109,9 @@ _LARGE_METADATA_RATIO = 0.3
 # Absolute size above which any single metadata field is suspicious (bytes)
 _METADATA_SIZE_WARN = 64 * 1024  # 64 KB
 
+# Hard ceiling on decompressed text-chunk output (zlib-bomb guard, D3)
+_MAX_DECOMPRESSED_TEXT = 1024 * 1024  # 1 MB
+
 # Maximum content length stored in findings
 _MAX_CONTENT_LEN = 500
 
@@ -311,10 +314,15 @@ def _scan_png(data: bytes) -> list[ImageInjectionFinding]:
             if null_pos >= 0:
                 rest = chunk_data[null_pos + 1 :]
                 if rest and rest[0] == 0:
-                    # Compression method 0 = zlib
+                    # Compression method 0 = zlib. Bound the output: a tiny
+                    # zTXt chunk can decompress to gigabytes (zlib bomb,
+                    # audit finding D3); 1 MB of metadata text is plenty to
+                    # scan and to trigger the large-metadata finding.
                     compressed = rest[1:]
                     try:
-                        text_payload = zlib.decompress(compressed).decode("latin-1", errors="ignore")
+                        decompressor = zlib.decompressobj()
+                        decompressed = decompressor.decompress(compressed, _MAX_DECOMPRESSED_TEXT)
+                        text_payload = decompressed.decode("latin-1", errors="ignore")
                     except Exception:
                         # Fall back: try raw
                         text_payload = compressed.decode("latin-1", errors="ignore")

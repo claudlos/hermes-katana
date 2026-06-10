@@ -472,7 +472,9 @@ def scan_base64_image(
             from PIL import Image  # type: ignore
             from io import BytesIO
 
-            img = Image.open(BytesIO(decoded_bytes), encoding="utf-8")
+            # No `encoding` kwarg: Image.open does not accept one, and the
+            # TypeError was silently caught — disabling OCR entirely (D5).
+            img = Image.open(BytesIO(decoded_bytes))
             ocr_text = pytesseract.image_to_string(img)
             if ocr_text and ocr_text.strip():
                 findings.extend(
@@ -1332,7 +1334,9 @@ def scan_bytes_multimodal(
         from PIL import Image
         from PIL.ExifTags import TAGS
 
-        img = Image.open(BytesIO(data), encoding="utf-8")
+        # No `encoding` kwarg: Image.open does not accept one, and the
+        # TypeError was silently caught — disabling the EXIF scan (D5).
+        img = Image.open(BytesIO(data))
         # EXIF
         exif = img._getexif() if hasattr(img, "_getexif") and img._getexif() else {}
         exif_dict = {}

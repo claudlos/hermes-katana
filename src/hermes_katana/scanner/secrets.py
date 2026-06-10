@@ -313,10 +313,13 @@ _sp(
     re.IGNORECASE,
 )
 
-# Generic password in assignment
+# Generic password in assignment.
+# Audit finding D4: a duplicated quote class after the placeholder lookahead
+# required TWO consecutive opening quotes, so the pattern matched no real
+# assignment. One opening quote, the lookahead, then the value.
 _sp(
     "password_assignment",
-    r"(?:password|passwd|pwd|pass)\s*[=:]\s*['\"](?!placeholder|test(?:ing)?(?:pass|password|pwd|\d+)|password\d*|changeme|example|dummy|sample|foobar|P[@a]ss(?:w[o0]rd)?[!1]?|default|secret123|abc(?:def)?123|admin123|xxx+|12345678+|\*{3,})['\"]([^'\"\s]{8,})['\"]",
+    r"(?:password|passwd|pwd|pass)\s*[=:]\s*['\"](?!placeholder|test(?:ing)?(?:pass|password|pwd|\d+)|password\d*|changeme|example|dummy|sample|foobar|P[@a]ss(?:w[o0]rd)?[!1]?|default|secret123|abc(?:def)?123|admin123|xxx+|12345678+|\*{3,})([^'\"\s]{8,})['\"]",
     SecretCategory.PASSWORD,
     SecretSeverity.HIGH,
     "Plaintext password assignment.",

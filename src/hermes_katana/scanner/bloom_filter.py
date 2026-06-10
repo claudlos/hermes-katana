@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 import struct
@@ -26,6 +27,8 @@ from typing import IO, Iterable, Sequence
 from bitarray import bitarray
 
 from hermes_katana.scanner.injection import InjectionCategory, InjectionFinding
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "BloomFilter",
@@ -333,11 +336,26 @@ def _ngrams(words: Sequence[str], sizes: tuple[int, ...] = _NGRAM_SIZES) -> Iter
 
 _CORPUS_DIR = Path(__file__).resolve().parents[3] / "training" / "scanner_data"
 
+_corpus_warned = False
+
 
 def _load_corpus_phrases(path: str) -> list[str]:
-    """Load phrases from an extracted corpus file."""
+    """Load phrases from an OPTIONAL extracted 145k-corpus file.
+
+    The corpus is not shipped in the public checkout; when absent the bloom
+    filter / phrase set fall back to the bundled seeds (warned once, D1).
+    """
+    global _corpus_warned  # noqa: PLW0603
     fp = _CORPUS_DIR / path
     if not fp.exists():
+        if not _corpus_warned:
+            _corpus_warned = True
+            logger.warning(
+                "Optional 145k-corpus phrase file %s not found under %s; the "
+                "bloom phrase scanner is running on the bundled seed set only.",
+                path,
+                _CORPUS_DIR,
+            )
         return []
     return [line.strip() for line in fp.read_text(encoding="utf-8").splitlines() if line.strip()]
 

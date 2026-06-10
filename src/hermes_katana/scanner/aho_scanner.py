@@ -17,12 +17,17 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import ahocorasick
+
+logger = logging.getLogger(__name__)
+
+_corpus_warned = False
 
 # ---------------------------------------------------------------------------
 # Data paths
@@ -141,7 +146,9 @@ def _load_phrases() -> list[tuple[str, str]]:
         except Exception:
             pass
 
-    # 145k derived corpus: aho_patterns.txt
+    # OPTIONAL 145k-derived corpus: aho_patterns.txt (not shipped in the
+    # public checkout; absence means the curated phrase set above is the
+    # whole pattern inventory — warned once, audit finding D1).
     _CORPUS_DIR = Path(__file__).resolve().parents[3] / "training" / "scanner_data"
     _AHO_CORPUS = _CORPUS_DIR / "aho_patterns.txt"
     if _AHO_CORPUS.exists():
@@ -152,6 +159,15 @@ def _load_phrases() -> list[tuple[str, str]]:
                     add(line, "injection_ngram")
         except Exception:
             pass
+    else:
+        global _corpus_warned  # noqa: PLW0603
+        if not _corpus_warned:
+            _corpus_warned = True
+            logger.warning(
+                "Optional 145k-corpus pattern file %s not found; the Aho-Corasick "
+                "scanner is running on the bundled curated phrase set only.",
+                _AHO_CORPUS,
+            )
 
     return pairs
 
