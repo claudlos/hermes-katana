@@ -474,6 +474,90 @@ def test_b5_env_master_key_rereadable_but_scrubbed(monkeypatch):
     assert "HERMES_KATANA_VAULT_KEY" not in os.environ
 
 
+# --- B6: vault HMAC hardening (HKDF subkey, counter binding, AAD) ----------------
+
+
+def _patched_vault(tmp_path, monkeypatch):
+    import hermes_katana.vault.store as store
+
+    master = b"v" * 32
+    monkeypatch.setattr(store, "_get_master_key", lambda: master)
+    monkeypatch.setattr(store, "_set_master_key", lambda key: None)
+    return store.Vault(path=tmp_path / "vault.json"), store
+
+
+def test_b6_v3_format_counter_and_hkdf(tmp_path, monkeypatch):
+    import json as json_mod
+
+    vault, store = _patched_vault(tmp_path, monkeypatch)
+    vault.set("API_KEY", "secret-1")
+    vault.set("OTHER", "secret-2")
+    data = json_mod.loads((tmp_path / "vault.json").read_text())
+    assert data["version"] >= 3
+    assert data["counter"] == 2  # one per set()
+    assert vault.write_counter == 2
+    # HMAC binds the counter: editing it invalidates integrity.
+    data["counter"] = 1
+    (tmp_path / "vault.json").write_text(json_mod.dumps(data))
+    assert vault.verify_integrity() is False
+    with pytest.raises(store.VaultIntegrityError):
+        vault.get("API_KEY")
+
+
+def test_b6_aad_blocks_entry_swapping(tmp_path, monkeypatch):
+    import json as json_mod
+
+    vault, store = _patched_vault(tmp_path, monkeypatch)
+    vault.set("PROD_KEY", "prod-secret")
+    vault.set("DEV_KEY", "dev-secret")
+    data = json_mod.loads((tmp_path / "vault.json").read_text())
+    # Attacker swaps the two ciphertexts and re-uses the (unknown-key) HMAC?
+    # They can't forge the HMAC; but even a hypothetical MAC bypass leaves the
+    # per-entry AAD: simulate by rewriting via the vault's own writer.
+    entries = data["entries"]
+    entries["PROD_KEY"], entries["DEV_KEY"] = entries["DEV_KEY"], entries["PROD_KEY"]
+    vault._write_vault(entries)  # legitimate MAC over swapped entries
+    with pytest.raises(store.VaultError):
+        vault.get("PROD_KEY")
+    with pytest.raises(store.VaultError):
+        vault.get("DEV_KEY")
+
+
+def test_b6_legacy_v2_vault_still_reads_and_upgrades(tmp_path, monkeypatch):
+    import json as json_mod
+
+    vault, store = _patched_vault(tmp_path, monkeypatch)
+    master = b"v" * 32
+    # Hand-craft a legacy v2 vault: no-AAD blob, legacy HMAC, no counter.
+    legacy_blob = store._encrypt_value("old-secret", master)
+    entries = {"LEGACY": legacy_blob}
+    legacy = {
+        "version": 2,
+        "entries": entries,
+        "hmac": store._compute_hmac(entries, master),
+    }
+    (tmp_path / "vault.json").write_text(json_mod.dumps(legacy))
+    assert vault.verify_integrity() is True
+    assert vault.get("LEGACY") == "old-secret"
+    # Any write upgrades the file to v3 with a counter.
+    vault.set("NEW", "new-secret")
+    data = json_mod.loads((tmp_path / "vault.json").read_text())
+    assert data["version"] >= 3 and isinstance(data["counter"], int)
+    assert vault.get("LEGACY") == "old-secret"
+    assert vault.get("NEW") == "new-secret"
+
+
+def test_b6_rotation_roundtrip_with_aad(tmp_path, monkeypatch):
+    vault, store = _patched_vault(tmp_path, monkeypatch)
+    vault.set("API_KEY", "secret-1")
+
+    stored = {}
+    monkeypatch.setattr(store, "_set_master_key", lambda key: stored.update(k=key))
+    vault.rotate_key()
+    assert vault.get("API_KEY") == "secret-1"
+    assert vault.verify_integrity() is True
+
+
 # --- B2/B4: secret-bearing files are owner-restricted ----------------------------
 
 

@@ -47,8 +47,16 @@ __all__ = [
     "default_vault_path",
 ]
 
-# Vault file format version
-_VAULT_VERSION = 2
+# Vault file format version.
+# v3 (audit hardening B6, 2026-06-09): HKDF-derived HMAC subkey, a write
+# counter bound into the HMAC message, and per-entry AES-GCM AAD (the key
+# name) on newly written values. v2 files verify via the legacy HMAC and
+# upgrade in place on the next write; legacy (no-AAD) entry blobs remain
+# decryptable until rewritten.
+_VAULT_VERSION = 3
+
+# Magic prefix inside the base64 blob marking an AAD-bound (v3) entry.
+_AAD_MAGIC = b"HKV3"
 
 # Keyring service/account names
 _KEYRING_SERVICE = "hermes-katana-vault"
@@ -192,7 +200,7 @@ class SecureBytes:
 # ---------------------------------------------------------------------------
 
 
-def _encrypt_value(plaintext: str, key: bytes) -> str:
+def _encrypt_value(plaintext: str, key: bytes, *, aad: Optional[str] = None) -> str:
     """Encrypt a plaintext string with AES-256-GCM.
 
     Returns a base64-encoded string: nonce || ciphertext || tag.
@@ -200,6 +208,10 @@ def _encrypt_value(plaintext: str, key: bytes) -> str:
     Args:
         plaintext: The value to encrypt.
         key: 32-byte AES-256 key.
+        aad: Optional associated data bound into the GCM tag (the vault key
+            name). Binding the name prevents an attacker who can edit the
+            vault file from swapping ciphertexts between entries (audit
+            hardening B6). When set, the blob carries the HKV3 magic prefix.
 
     Returns:
         Base64-encoded encrypted blob.
@@ -211,24 +223,29 @@ def _encrypt_value(plaintext: str, key: bytes) -> str:
 
     nonce = secrets.token_bytes(_NONCE_SIZE)
     aesgcm = AESGCM(key)
-    ct = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
+    ct = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), aad.encode("utf-8") if aad else None)
     # ct includes the tag appended by AESGCM
-    blob = nonce + ct
+    blob = (_AAD_MAGIC + nonce + ct) if aad else (nonce + ct)
     return base64.b64encode(blob).decode("ascii")
 
 
-def _decrypt_value(encrypted: str, key: bytes) -> str:
+def _decrypt_value(encrypted: str, key: bytes, *, aad: Optional[str] = None) -> str:
     """Decrypt an AES-256-GCM encrypted value.
 
     Args:
-        encrypted: Base64-encoded encrypted blob (nonce || ciphertext || tag).
+        encrypted: Base64-encoded encrypted blob. v3 blobs are
+            ``HKV3 || nonce || ciphertext || tag`` and authenticate *aad*;
+            legacy blobs are ``nonce || ciphertext || tag`` with no AAD and
+            remain decryptable regardless of *aad* (pre-v3 compatibility).
         key: 32-byte AES-256 key.
+        aad: Associated data the v3 blob was bound to (the vault key name).
 
     Returns:
         Decrypted plaintext string.
 
     Raises:
-        VaultError: On decryption failure (wrong key, tampered data).
+        VaultError: On decryption failure (wrong key, tampered data, or an
+            entry moved to a different key name).
     """
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -240,6 +257,11 @@ def _decrypt_value(encrypted: str, key: bytes) -> str:
     except Exception:
         raise VaultError("Invalid encrypted value: base64 decode failed")
 
+    associated: Optional[bytes] = None
+    if blob.startswith(_AAD_MAGIC):
+        blob = blob[len(_AAD_MAGIC) :]
+        associated = aad.encode("utf-8") if aad else b""
+
     if len(blob) < _NONCE_SIZE + _TAG_SIZE:
         raise VaultError("Invalid encrypted value: too short")
 
@@ -248,13 +270,29 @@ def _decrypt_value(encrypted: str, key: bytes) -> str:
 
     try:
         aesgcm = AESGCM(key)
-        plaintext = aesgcm.decrypt(nonce, ct, None)
+        plaintext = aesgcm.decrypt(nonce, ct, associated)
         return plaintext.decode("utf-8")
     except Exception:
-        raise VaultError("Decryption failed: wrong key or tampered data")
+        raise VaultError("Decryption failed: wrong key, tampered data, or relocated entry")
 
 
-def _compute_hmac(data: dict[str, str], key: bytes) -> str:
+def _derive_hmac_key(master_key: bytes) -> bytes:
+    """Derive the v3 vault HMAC subkey from the master key via HKDF."""
+    try:
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    except ImportError:
+        raise VaultError("cryptography package required: pip install cryptography")
+
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"hermes-katana-vault",
+        info=b"vault-hmac:v3",
+    ).derive(master_key)
+
+
+def _compute_hmac(data: dict[str, str], key: bytes, *, counter: Optional[int] = None) -> str:
     """Compute HMAC-SHA256 over vault entries for integrity checking.
 
     The HMAC is computed over sorted key-value pairs to ensure
@@ -263,13 +301,28 @@ def _compute_hmac(data: dict[str, str], key: bytes) -> str:
     Args:
         data: The encrypted vault entries.
         key: The master key (used to derive HMAC key).
+        counter: v3 write counter. When given, the subkey is HKDF-derived
+            and the counter is bound into the authenticated message, so an
+            attacker cannot tamper with the counter or transplant an HMAC
+            between writes (audit hardening B6). When None, the legacy
+            (v<=2) construction is used for verifying old vault files.
 
     Returns:
         Hex-encoded HMAC digest.
     """
-    # Derive a separate HMAC key from the master key
-    hmac_key = hashlib.sha256(b"hmac:" + key).digest()
-    msg = json.dumps(sorted(data.items()), sort_keys=True).encode()
+    if counter is None:
+        # Legacy (v<=2) construction — verification of existing files only.
+        hmac_key = hashlib.sha256(b"hmac:" + key).digest()
+        msg = json.dumps(sorted(data.items()), sort_keys=True).encode()
+        return hmac.new(hmac_key, msg, hashlib.sha256).hexdigest()
+
+    hmac_key = _derive_hmac_key(key)
+    # The literal 3 (not _VAULT_VERSION) so v3 files stay verifiable after
+    # any future format bump.
+    msg = json.dumps(
+        {"version": 3, "counter": counter, "entries": sorted(data.items())},
+        sort_keys=True,
+    ).encode()
     return hmac.new(hmac_key, msg, hashlib.sha256).hexdigest()
 
 
@@ -536,19 +589,33 @@ class Vault:
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise VaultError(f"Corrupt vault file: {exc}")
 
+    def _next_write_counter(self) -> int:
+        """Return the successor of the current vault write counter."""
+        try:
+            current = self._read_vault().get("counter")
+        except VaultError:
+            current = None
+        if not isinstance(current, int) or current < 0:
+            current = 0
+        return current + 1
+
     def _write_vault(self, entries: dict[str, str]) -> None:
         """Atomically write the vault file.
 
-        Uses temp file + rename pattern to prevent partial writes.
+        Uses temp file + rename pattern to prevent partial writes. Every
+        write bumps the authenticated counter, so external monitoring can
+        detect a vault file rolled back to an earlier (validly MAC'd) state.
 
         Args:
             entries: The encrypted entries dict.
         """
         key = self._get_key()
-        hmac_digest = _compute_hmac(entries, key)
+        counter = self._next_write_counter()
+        hmac_digest = _compute_hmac(entries, key, counter=counter)
 
         vault_data = {
             "version": _VAULT_VERSION,
+            "counter": counter,
             "entries": entries,
             "hmac": hmac_digest,
         }
@@ -584,25 +651,41 @@ class Vault:
             entries = vault.get("entries", {})
             if not isinstance(entries, dict):
                 raise VaultError("Corrupt vault file: entries must be a dictionary.")
-            stored_hmac = vault.get("hmac", "")
 
             # Verify HMAC integrity before returning any data
-            if entries:
-                if not stored_hmac:
-                    raise VaultIntegrityError(
-                        "Vault integrity check failed: HMAC missing on non-empty vault. "
-                        "The vault file may have been tampered with."
-                    )
-                expected_hmac = _compute_hmac(entries, master_key)
-                if not hmac.compare_digest(stored_hmac, expected_hmac):
-                    raise VaultIntegrityError(
-                        "Vault integrity check failed: HMAC mismatch. The vault file may have been tampered with."
-                    )
+            failure = self._integrity_failure(vault, master_key)
+            if failure:
+                raise VaultIntegrityError(f"Vault integrity check failed: {failure}")
 
             if key not in entries:
                 raise VaultKeyError(f"Key not found: {key}")
 
-            return _decrypt_value(entries[key], master_key)
+            return _decrypt_value(entries[key], master_key, aad=key)
+
+    @staticmethod
+    def _integrity_failure(vault: dict[str, Any], master_key: bytes) -> Optional[str]:
+        """Return a failure description for the vault HMAC, or None if intact.
+
+        v3 files (counter present) verify with the HKDF subkey and the
+        counter bound into the message; older files verify with the legacy
+        construction and upgrade on their next write.
+        """
+        entries = vault.get("entries", {})
+        stored_hmac = vault.get("hmac", "")
+        if not entries:
+            return None
+        if not stored_hmac:
+            return "HMAC missing on non-empty vault. The vault file may have been tampered with."
+
+        version = vault.get("version")
+        counter = vault.get("counter")
+        if isinstance(version, int) and version >= 3 and isinstance(counter, int):
+            expected = _compute_hmac(entries, master_key, counter=counter)
+        else:
+            expected = _compute_hmac(entries, master_key)
+        if not hmac.compare_digest(stored_hmac, expected):
+            return "HMAC mismatch. The vault file may have been tampered with."
+        return None
 
     def set(self, key: str, value: str) -> None:
         """Store an encrypted secret.
@@ -622,7 +705,7 @@ class Vault:
             entries = vault.get("entries", {})
             if not isinstance(entries, dict):
                 raise VaultError("Corrupt vault file: entries must be a dictionary.")
-            entries[key] = _encrypt_value(value, master_key)
+            entries[key] = _encrypt_value(value, master_key, aad=key)
             self._write_vault(entries)
             logger.debug("Stored key: %s", key)
 
@@ -687,7 +770,7 @@ class Vault:
             result: dict[str, str] = {}
             for k, encrypted in entries.items():
                 try:
-                    result[k] = _decrypt_value(encrypted, master_key)
+                    result[k] = _decrypt_value(encrypted, master_key, aad=k)
                 except VaultError:
                     logger.warning("Failed to decrypt key: %s", k)
             return result
@@ -774,8 +857,12 @@ class Vault:
 
                 journal_data = {
                     "status": "in_progress",
-                    "old_key_enc": _encrypt_value(base64.b64encode(old_key).decode("ascii"), new_key),
-                    "new_key_enc": _encrypt_value(base64.b64encode(new_key).decode("ascii"), old_key),
+                    "old_key_enc": _encrypt_value(
+                        base64.b64encode(old_key).decode("ascii"), new_key, aad="rotation-journal:old_key"
+                    ),
+                    "new_key_enc": _encrypt_value(
+                        base64.b64encode(new_key).decode("ascii"), old_key, aad="rotation-journal:new_key"
+                    ),
                     "timestamp": _time.time(),
                 }
                 atomic_write_text(journal_path, json.dumps(journal_data), mode=0o600)
@@ -789,14 +876,14 @@ class Vault:
 
             for k, encrypted in entries.items():
                 try:
-                    decrypted[k] = _decrypt_value(encrypted, old_key)
+                    decrypted[k] = _decrypt_value(encrypted, old_key, aad=k)
                 except VaultError as exc:
                     raise VaultError(f"Key rotation failed: could not decrypt '{k}': {exc}")
 
             # Re-encrypt all values with new key
             new_entries: dict[str, str] = {}
             for k, plaintext in decrypted.items():
-                new_entries[k] = _encrypt_value(plaintext, new_key)
+                new_entries[k] = _encrypt_value(plaintext, new_key, aad=k)
 
             # Store the new key in keyring first (so we can recover)
             _set_master_key(new_key)
@@ -849,7 +936,7 @@ class Vault:
             old_key: bytes | None = None
             try:
                 # If current_key is old_key, we can decrypt new_key_enc
-                new_key_b64 = _decrypt_value(journal["new_key_enc"], current_key)
+                new_key_b64 = _decrypt_value(journal["new_key_enc"], current_key, aad="rotation-journal:new_key")
                 new_key = base64.b64decode(new_key_b64)
                 old_key = current_key
             except (VaultError, KeyError):
@@ -858,7 +945,7 @@ class Vault:
             if new_key is None:
                 try:
                     # If current_key is new_key, we can decrypt old_key_enc
-                    old_key_b64 = _decrypt_value(journal["old_key_enc"], current_key)
+                    old_key_b64 = _decrypt_value(journal["old_key_enc"], current_key, aad="rotation-journal:old_key")
                     old_key = base64.b64decode(old_key_b64)
                     new_key = current_key
                 except (VaultError, KeyError):
@@ -873,8 +960,8 @@ class Vault:
             if entries:
                 # Validate ALL entries, not just the first
                 try:
-                    for encrypted in entries.values():
-                        _decrypt_value(encrypted, new_key)
+                    for k, encrypted in entries.items():
+                        _decrypt_value(encrypted, new_key, aad=k)
                     _set_master_key(new_key)
                     self._master_key = SecureBytes(new_key)
                     journal_path.unlink()
@@ -884,8 +971,8 @@ class Vault:
                     pass
 
                 try:
-                    for encrypted in entries.values():
-                        _decrypt_value(encrypted, old_key)
+                    for k, encrypted in entries.items():
+                        _decrypt_value(encrypted, old_key, aad=k)
                     _set_master_key(old_key)
                     self._master_key = SecureBytes(old_key)
                     journal_path.unlink()
@@ -920,8 +1007,22 @@ class Vault:
                 # No HMAC stored (legacy vault or empty vault)
                 return len(entries) == 0
 
-            expected_hmac = _compute_hmac(entries, key)
-            return hmac.compare_digest(stored_hmac, expected_hmac)
+            return self._integrity_failure(vault, key) is None
+
+    @property
+    def write_counter(self) -> int:
+        """Authenticated vault write counter (0 for pre-v3/empty vaults).
+
+        Each successful write increments it, and the value is bound into the
+        vault HMAC. External monitoring can record the last seen value and
+        flag a decrease, which indicates the vault file was rolled back to
+        an earlier (validly MAC'd) state.
+        """
+        try:
+            counter = self._read_vault().get("counter")
+        except VaultError:
+            return 0
+        return counter if isinstance(counter, int) and counter >= 0 else 0
 
     def __contains__(self, key: str) -> bool:
         """Check if a key exists in the vault."""
