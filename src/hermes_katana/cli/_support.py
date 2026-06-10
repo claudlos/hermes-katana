@@ -272,7 +272,13 @@ def _collect_eval_status(
     if not semantic.get("full_backend_ready", False):
         warnings.append(f"semantic backend degraded: {semantic.get('reason', 'unknown reason')}")
         warnings.extend(semantic.get("missing", []))
-    if not artifact_manifest["ready"]:
+    if not artifact_manifest.get("manifest_present", True):
+        # No manifest ships with this checkout/install; that is a normal state
+        # for a source/dev tree and is surfaced as a warning, not a blocker
+        # (audit finding F1 — the old repo-relative-only path made this a hard
+        # failure on every pip install).
+        warnings.append(f"no runtime artifact manifest at {artifact_manifest['manifest_path']}")
+    elif not artifact_manifest["ready"]:
         blockers.extend(artifact_manifest["missing"])
         blockers.extend(artifact_manifest["mismatched"])
         blockers.extend(artifact_manifest["empty"])

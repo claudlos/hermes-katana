@@ -49,6 +49,27 @@ def is_confirmed_attack(row: dict[str, Any]) -> bool:
     return tier.startswith("confirmed_") or tier in GOLD_TIERS
 
 
+# Per-model success metadata in proving_ground tells an attacker which models
+# each payload already defeated (attacker > defender asymmetry). Strip it on
+# build so published rows carry only the prompt + labels (audit finding F3,
+# matching the v1 release policy).
+_PG_STRIP_PREFIXES = ("effective_",)
+_PG_STRIP_KEYS = {"agreement_class"}
+
+
+def scrub_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Return *row* with attacker-advantage metadata removed from proving_ground."""
+    pg = row.get("proving_ground")
+    if isinstance(pg, dict):
+        row = dict(row)
+        row["proving_ground"] = {
+            k: v
+            for k, v in pg.items()
+            if k not in _PG_STRIP_KEYS and not any(k.startswith(p) for p in _PG_STRIP_PREFIXES)
+        }
+    return row
+
+
 def write_leaderboard(path: Path, summary: dict[str, Any]) -> None:
     strict = summary["strict"]
     stress = summary["all_gold_stress"]
@@ -111,8 +132,8 @@ def main() -> int:
     confirmed_test = [r for r in test_rows if r.get("is_attack") and is_confirmed_attack(r)]
     gold_test = [r for r in gold_rows if str(r.get("split")) == "test"]
 
-    strict = clean_test + confirmed_test + gold_test
-    stress = clean_test + gold_rows
+    strict = [scrub_row(r) for r in (clean_test + confirmed_test + gold_test)]
+    stress = [scrub_row(r) for r in (clean_test + gold_rows)]
 
     args.out.mkdir(parents=True, exist_ok=True)
     write_jsonl(args.out / "test.jsonl", strict)

@@ -880,6 +880,111 @@ def test_d1_corpus_absence_warns_once(caplog):
     assert len(warnings) == 1  # once, not per call
 
 
+# --- F1: runtime artifact manifest resolves in-package / degrades gracefully -----
+
+
+def test_f1_absent_manifest_is_not_a_blocker(tmp_path):
+    from hermes_katana.runtime_artifacts import verify_runtime_artifact_manifest
+
+    result = verify_runtime_artifact_manifest(tmp_path / "does_not_exist.json")
+    assert result["manifest_present"] is False
+    assert result["ready"] is False
+    assert result["missing"] == [] and result["errors"] == []
+
+
+def test_f1_manifest_path_prefers_in_package(monkeypatch, tmp_path):
+    import hermes_katana.runtime_artifacts as ra
+
+    pkg_manifest = tmp_path / "pkg" / "runtime_artifact_manifest.json"
+    pkg_manifest.parent.mkdir(parents=True)
+    pkg_manifest.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(ra, "_PACKAGE_MANIFEST", pkg_manifest)
+    assert ra.runtime_artifact_manifest_path() == pkg_manifest
+
+
+def test_f1_eval_status_warns_not_blocks_on_absent_manifest():
+    from hermes_katana.cli._support import _collect_eval_status
+
+    deberta = {"ready": True, "dependencies_ready": True, "cpu_inference_ready": True, "error": None}
+    scabbard = {"standard_profile_ready": True, "missing": [], "missing_dependencies": []}
+    semantic = {"full_backend_ready": True}
+    absent = {"manifest_present": False, "manifest_path": "/nope/manifest.json", "ready": False,
+              "missing": [], "mismatched": [], "empty": [], "errors": []}
+    status = _collect_eval_status(deberta, scabbard, semantic, absent)
+    assert status["blockers"] == []
+    assert any("no runtime artifact manifest" in w for w in status["warnings"])
+
+
+# --- F2: operator email redacted from published benchmark payloads ---------------
+
+
+def test_f2_no_operator_email_in_benchmarks():
+    import pathlib
+
+    bench = pathlib.Path("evals/benchmarks/confirmed_only_v2")
+    for name in ("test.jsonl", "all_gold_stress.jsonl"):
+        text = (bench / name).read_text(encoding="utf-8")
+        assert "account-holder@example.com" not in text
+
+
+# --- F3: per-model success metadata stripped from published rows -----------------
+
+
+def test_f3_no_effective_metadata_in_benchmarks():
+    import json
+    import pathlib
+
+    bench = pathlib.Path("evals/benchmarks/confirmed_only_v2")
+    for name in ("test.jsonl", "all_gold_stress.jsonl"):
+        for line in (bench / name).read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            pg = json.loads(line).get("proving_ground")
+            if isinstance(pg, dict):
+                assert not any(k.startswith("effective_") for k in pg)
+                assert "agreement_class" not in pg
+
+
+def test_f3_build_scrub_strips_attacker_advantage_fields():
+    import importlib.util
+    import pathlib
+
+    spec = importlib.util.spec_from_file_location(
+        "_cov2_build", pathlib.Path("evals/benchmarks/confirmed_only_v2/build.py")
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    row = {
+        "text": "x",
+        "proving_ground": {"task": "t", "effective_agents": 3, "effective_rows": 9, "agreement_class": "split"},
+    }
+    scrubbed = mod.scrub_row(row)
+    assert scrubbed["proving_ground"] == {"task": "t"}
+
+
+# --- F2/F4: prepublish scrubber catches operator identifiers ---------------------
+
+
+def test_f4_prepublish_scrubber_flags_email_and_homepath(tmp_path):
+    import importlib.util
+    import pathlib
+
+    spec = importlib.util.spec_from_file_location(
+        "_prepublish_scrub", pathlib.Path("tools/prepublish_scrub.py")
+    )
+    scrub = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scrub)
+
+    bad = tmp_path / "leak.txt"
+    bad.write_text("contact account-holder@example.com or see /home/user/secrets\n", encoding="utf-8")
+    hits = scrub.scan_file(bad)
+    assert len(hits) >= 2
+
+    ok = tmp_path / "clean.txt"
+    ok.write_text("contact account-holder@example.com or see /home/user/data\n", encoding="utf-8")
+    assert scrub.scan_file(ok) == []
+
+
 # --- B2/B4: secret-bearing files are owner-restricted ----------------------------
 
 

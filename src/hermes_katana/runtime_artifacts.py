@@ -13,12 +13,25 @@ from hermes_katana.installer.compat_snapshots import (
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_MANIFEST = _REPO_ROOT / "training" / "runtime_artifact_manifest.json"
+# Source-checkout location (the manifest is generated at training time).
+_REPO_MANIFEST = _REPO_ROOT / "training" / "runtime_artifact_manifest.json"
+# In-package location: a wheel cannot ship files from training/, so a packaged
+# manifest must live under the importable package (audit finding F1, where the
+# old repo-relative-only path made verification fail unconditionally once
+# installed). Ship it as hermes_katana/data/runtime_artifact_manifest.json.
+_PACKAGE_MANIFEST = Path(__file__).resolve().parent / "data" / "runtime_artifact_manifest.json"
 
 
 def runtime_artifact_manifest_path() -> Path:
-    """Return the canonical runtime artifact manifest path."""
-    return _DEFAULT_MANIFEST
+    """Return the manifest path to use, preferring an in-package copy.
+
+    Resolution: the in-package manifest (works when pip-installed) if present,
+    otherwise the source-checkout ``training/`` path. The returned path may not
+    exist — callers handle the absent case explicitly.
+    """
+    if _PACKAGE_MANIFEST.exists():
+        return _PACKAGE_MANIFEST
+    return _REPO_MANIFEST
 
 
 def _safe_manifest_path(rel_path: str) -> bool:
@@ -44,15 +57,25 @@ def verify_runtime_artifact_manifest(
     manifest_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Verify the runtime artifact manifest against the local checkout."""
-    repo_root = _REPO_ROOT.resolve()
-    manifest_file = Path(manifest_path or _DEFAULT_MANIFEST).expanduser().resolve()
+    manifest_file = Path(manifest_path or runtime_artifact_manifest_path()).expanduser().resolve()
+    # Artifact paths in the manifest are relative to whichever root the
+    # manifest lives under (package data dir when installed, repo root in a
+    # source checkout).
+    repo_root = manifest_file.parent.resolve()
+    if manifest_file == _REPO_MANIFEST.resolve():
+        repo_root = _REPO_ROOT.resolve()
     if not manifest_file.exists():
+        # No manifest shipped: this checkout/install simply does not pin a
+        # hermetic artifact set. Distinct from a present-but-failing manifest
+        # so diagnostics don't report a benign default as corruption
+        # (audit finding F1).
         return {
             "ready": False,
+            "manifest_present": False,
             "manifest_path": str(manifest_file),
             "verified": 0,
             "total": 0,
-            "missing": [f"runtime artifact manifest missing at {manifest_file}"],
+            "missing": [],
             "mismatched": [],
             "empty": [],
             "errors": [],
@@ -63,6 +86,7 @@ def verify_runtime_artifact_manifest(
     except (OSError, json.JSONDecodeError) as exc:
         return {
             "ready": False,
+            "manifest_present": True,
             "manifest_path": str(manifest_file),
             "verified": 0,
             "total": 0,
@@ -76,6 +100,7 @@ def verify_runtime_artifact_manifest(
     if not isinstance(artifacts, dict):
         return {
             "ready": False,
+            "manifest_present": True,
             "manifest_path": str(manifest_file),
             "verified": 0,
             "total": 0,
@@ -142,6 +167,7 @@ def verify_runtime_artifact_manifest(
 
     return {
         "ready": not missing and not mismatched and not empty and not errors,
+        "manifest_present": True,
         "manifest_path": str(manifest_file),
         "verified": verified,
         "total": len(artifacts),
