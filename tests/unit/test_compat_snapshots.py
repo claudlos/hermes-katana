@@ -218,7 +218,7 @@ class TestCompatSnapshots:
 
 
 _CURRENT_SNAPSHOT_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "hermes_compat" / "hermes-current-snapshot"
-_EXPECTED_HERMES_COMMIT = "77a1650c78a4cb1813d8a81fa1da40a15b6a3ec5"
+_EXPECTED_HERMES_COMMIT = "57775e9e161087dbe55e096c038f512233c03381"
 _EXPECTED_FILES = [
     "model_tools.py",
     "tools/registry.py",
@@ -317,3 +317,35 @@ class TestHermesResultHookContract:
             "transform_tool_result must be invoked after post_tool_call so the "
             "plugin can replace output the observational post hook prepared."
         )
+
+
+class TestCurrentHermesSnapshotReviewFixes:
+    """Guard local fixes applied to the refreshed current snapshot fixture."""
+
+    def test_tool_bridge_preserves_tracing_fields(self):
+        src = (_CURRENT_SNAPSHOT_DIR / "model_tools.py").read_text(encoding="utf-8")
+
+        assert "turn_id=turn_id" in src
+        assert "api_request_id=api_request_id" in src
+
+    def test_docker_reuse_uses_hash_labels_and_preserves_empty_env_overrides(self):
+        src = (_CURRENT_SNAPSHOT_DIR / "tools" / "environments" / "docker.py").read_text(encoding="utf-8")
+
+        assert "def _stable_label_hash" in src
+        assert "hermes-task-id-hash" in src
+        assert "hermes-profile-hash" in src
+        assert "if value is None:" in src
+        assert "if value is not None:" in src
+
+    def test_terminal_cwd_overrides_are_session_scoped(self):
+        src = (_CURRENT_SNAPSHOT_DIR / "tools" / "terminal_tool.py").read_text(encoding="utf-8")
+
+        assert "_session_cwd_overrides" in src
+        assert "_session_cwd_overrides[task_id] = new_cwd" in src
+        assert "_session_cwd_overrides.get(task_id)" in src
+
+    def test_gateway_runtime_fallback_does_not_log_provider_bundle_values(self):
+        src = (_CURRENT_SNAPSHOT_DIR / "gateway" / "run.py").read_text(encoding="utf-8")
+
+        assert "defaulting to %s for provider %s" not in src
+        assert 'model, runtime_kwargs["provider"]' not in src

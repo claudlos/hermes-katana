@@ -53,6 +53,81 @@ class TestBalancedUnknownToolDefault:
         result = engine.evaluate("totally_unknown_tool_xyz", {"data": "hello"}, {})
         assert result.action == PolicyResult.ESCALATE
 
+    def test_engine_allows_known_clean_hermes_tools(self):
+        """Known clean Hermes primitives should not fall through to the unknown-tool catchall."""
+        from hermes_katana.policy.engine import PolicyEngine
+        from hermes_katana.policy.models import PolicyResult
+
+        engine = PolicyEngine.with_defaults("balanced")
+        cases = [
+            ("skill_view", {"name": "hermes-agent"}),
+            ("skills_list", {}),
+            ("write_file", {"path": "notes.txt", "content": "safe clean content"}),
+            ("patch", {"path": "notes.txt", "old_string": "a", "new_string": "b"}),
+            ("execute_code", {"code": "print('hello')"}),
+            ("todo", {"todos": []}),
+            ("process", {"action": "poll", "session_id": "abc"}),
+            ("session_search", {"query": "katana"}),
+            ("web_search", {"query": "Hermes Agent docs"}),
+            ("web_extract", {"urls": ["https://example.com"]}),
+        ]
+
+        for tool_name, args in cases:
+            result = engine.evaluate(tool_name, args, {})
+            assert result.action == PolicyResult.ALLOW, (tool_name, result)
+            assert result.matched_policy is not None
+            assert result.matched_policy.name != "balanced_catchall_clean"
+
+    def test_engine_still_escalates_tainted_file_mutation_tools(self):
+        from hermes_katana.policy.engine import PolicyEngine
+        from hermes_katana.policy.models import PolicyResult
+
+        engine = PolicyEngine.with_defaults("balanced")
+        for tool_name, args, taint_ctx in [
+            (
+                "write_file",
+                {"path": "notes.txt", "content": "web text"},
+                {"tainted_fields": {"content": {"is_tainted": True, "source": "web", "labels": [], "level": 5}}},
+            ),
+            (
+                "patch",
+                {"path": "notes.txt", "old_string": "a", "new_string": "web text"},
+                {"tainted_fields": {"new_string": {"is_tainted": True, "source": "web", "labels": [], "level": 5}}},
+            ),
+            (
+                "execute_code",
+                {"code": "print('web text')"},
+                {"tainted_fields": {"code": {"is_tainted": True, "source": "web", "labels": [], "level": 5}}},
+            ),
+        ]:
+            result = engine.evaluate(tool_name, args, taint_ctx)
+            assert result.action == PolicyResult.ESCALATE, (tool_name, result)
+
+    def test_engine_denies_high_taint_execute_code(self):
+        from hermes_katana.policy.engine import PolicyEngine
+        from hermes_katana.policy.models import PolicyResult
+
+        engine = PolicyEngine.with_defaults("balanced")
+        taint_ctx = {"tainted_fields": {"code": {"is_tainted": True, "source": "web", "labels": [], "level": 9}}}
+        result = engine.evaluate("execute_code", {"code": "print('web text')"}, taint_ctx)
+
+        assert result.action == PolicyResult.DENY
+
+    def test_engine_escalates_tainted_process_mutations_and_logs_reads(self):
+        from hermes_katana.policy.engine import PolicyEngine
+        from hermes_katana.policy.models import PolicyResult
+
+        engine = PolicyEngine.with_defaults("balanced")
+        taint_ctx = {"tainted_fields": {"data": {"is_tainted": True, "source": "web", "labels": [], "level": 5}}}
+
+        for action in ["kill", "write", "submit", "close"]:
+            result = engine.evaluate("process", {"action": action, "session_id": "abc", "data": "web text"}, taint_ctx)
+            assert result.action == PolicyResult.ESCALATE, (action, result)
+
+        for action in ["list", "poll", "log", "wait"]:
+            result = engine.evaluate("process", {"action": action, "session_id": "abc", "data": "web text"}, taint_ctx)
+            assert result.action == PolicyResult.LOG_ONLY, (action, result)
+
 
 # ---------------------------------------------------------------------------
 # GAP 4.1 — Middleware bypass detection
