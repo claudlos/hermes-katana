@@ -1060,9 +1060,16 @@ def test_e6_codeql_workflow_produces_required_contexts():
 
 
 def test_e7_runtime_deps_have_upper_bounds():
-    import tomllib
+    try:
+        import tomllib  # Python 3.11+
+    except ModuleNotFoundError:  # Python 3.10
+        try:
+            import tomli as tomllib
+        except ModuleNotFoundError:
+            pytest.skip("no TOML parser available (tomllib<3.11, tomli not installed)")
 
-    data = tomllib.load(open("pyproject.toml", "rb"))
+    with open("pyproject.toml", "rb") as fh:
+        data = tomllib.load(fh)
     for dep in data["project"]["dependencies"]:
         assert "<" in dep, f"runtime dependency lacks an upper bound: {dep}"
 
