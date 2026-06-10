@@ -1465,14 +1465,30 @@ def scan_with_context(
         security_level=security_level,
     )
 
-    # Boost injection score with ensemble classifier
+    # Boost injection score with ensemble classifier.
+    #
+    # The ensemble must never DEMOTE a confirmed, above-threshold injection
+    # finding below the block threshold. The combined_score() function blends
+    # regex+ML in log-odds space and can pull a high regex score down when the
+    # ML disagrees — fine for soft heuristics (its FP-reduction role), but a
+    # fail-open hole when there is a concrete finding: with the feature-only
+    # fallback (sklearn absent) a weak hand-crafted score could flip BLOCK->ALLOW.
+    # So when a concrete injection finding already scores >= the actionable
+    # threshold, the ensemble is strictly boost-only (max), never subtractive.
     if ensemble is not None and check_injection:
         try:
-            from hermes_katana.scanner.ensemble import combined_score
+            from hermes_katana.scanner.ensemble import ACTIONABLE_THRESHOLD, combined_score
 
             ml_score = ensemble.predict(text)
             if result.risk_score > 0 or ml_score > 0.3:
-                result.risk_score = combined_score(result.risk_score, ml_score)
+                combined = combined_score(result.risk_score, ml_score)
+                if result.injection_findings and result.risk_score >= ACTIONABLE_THRESHOLD:
+                    # Confirmed actionable finding: boost-only, never demote.
+                    result.risk_score = max(result.risk_score, combined)
+                else:
+                    # Soft/heuristic score with no actionable finding: the
+                    # ensemble may adjust in either direction.
+                    result.risk_score = combined
                 result.metadata["ensemble_score"] = ml_score
         except Exception as exc:
             record_scanner_failure(result, "ensemble", exc)

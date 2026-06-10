@@ -561,13 +561,21 @@ def combined_score(
 ) -> float:
     """Combine regex and ensemble scores using Bayesian-inspired combination.
 
-    Uses both signals to produce a posterior-like score:
-    - If regex says 0.9 but ensemble says 0.1 -> combined ~0.4 (NOT actionable)
+    Uses both signals to produce a posterior-like score (default weights
+    regex=0.6, ml=0.4):
+    - If regex says 0.9 but ensemble says 0.1 -> combined ~0.61 (below the 0.7
+      actionable threshold, i.e. NOT actionable on its own)
     - If both say high -> combined stays high
     - If both say low -> combined stays low
 
-    This is the KEY mechanism to reduce false positives: a high regex score
-    alone is not enough if the ensemble classifier thinks it's benign.
+    This is a false-positive-reduction mechanism: a high regex score alone is
+    not enough if the ensemble classifier thinks it's benign.
+
+    NOTE: callers must NOT use this to demote a *confirmed* finding — a concrete
+    injection finding that already exceeds the actionable threshold should be
+    combined boost-only (``max(original, combined)``); see
+    ``scan_with_context``. Otherwise the feature-only fallback can flip
+    BLOCK->ALLOW when sklearn is absent.
 
     Args:
         regex_score: Score from the regex-based scanner (0-1).
