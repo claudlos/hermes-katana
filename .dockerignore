@@ -1,0 +1,28 @@
+# Effective build-context ignore file.
+#
+# The proving-ground image is built with the repository root as the build
+# context (docker build -f docker/proving-ground/Dockerfile . — see
+# .github/workflows/security.yml). Docker only honors the .dockerignore at the
+# context root, so these rules — mirrored from docker/proving-ground/.dockerignore
+# — are the ones that actually take effect. Keep the two in sync.
+#
+# Never send secrets/runtime data to the Docker build context.
+.env
+.env.*
+auth.json
+*.db
+*.sqlite
+*.sqlite3
+*.log
+results/
+sessions/
+batch/
+shards/
+synthdata/incoming/
+synthdata/checkpoints/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.git/
