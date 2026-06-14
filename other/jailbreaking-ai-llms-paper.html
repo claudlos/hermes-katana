@@ -1,0 +1,1227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A public-safe technical overview of LLM jailbreaks, prompt injection, agentic risk, and practical defenses: how the attacks work and how to defend against them.">
+  <meta name="author" content="Independent security researcher">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#05080a">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Jailbreaking AI Systems: How Prompt Attacks Work and How to Defend Against Them">
+  <meta property="og:description" content="A public-safe overview of jailbreaks, prompt injection, agentic risk, and practical defenses for LLM applications.">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>Jailbreaking AI Systems: How Prompt Attacks Work and How to Defend Against Them</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      /* Cyber-terminal noir palette */
+      --bg: #05080a;
+      --bg-2: #070d11;
+      --panel: #0a1318;
+      --panel-2: #0c171d;
+      --ink: #d6e7e6;
+      --ink-bright: #f1fbfa;
+      --muted: #7f95a0;
+      --faint: #586a74;
+      --line: #16242c;
+      --line-bright: #1e3540;
+      /* neon accents */
+      --teal: #2ff2d6;
+      --teal-dim: #1ba893;
+      --teal-deep: #0b6f63;
+      --amber: #ffb347;
+      --amber-dim: #c77f2e;
+      --magenta: #ff5d8f;
+      --code-bg: #060c0f;
+      --glow-teal: 0 0 0.6em rgba(47, 242, 214, 0.55);
+      --glow-amber: 0 0 0.6em rgba(255, 179, 71, 0.5);
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      --sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    @media (prefers-reduced-motion: no-preference) {
+      html { scroll-behavior: smooth; }
+    }
+
+    html { -webkit-text-size-adjust: 100%; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 17px;
+      line-height: 1.68;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background: grid + glow + scanlines */
+    .bg-fx {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(1200px 700px at 80% -8%, rgba(47, 242, 214, 0.10), transparent 60%),
+        radial-gradient(900px 600px at 8% 8%, rgba(255, 93, 143, 0.06), transparent 55%),
+        radial-gradient(1000px 800px at 50% 120%, rgba(255, 179, 71, 0.05), transparent 60%),
+        var(--bg);
+    }
+    .bg-fx::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(to right, rgba(47, 242, 214, 0.045) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(47, 242, 214, 0.045) 1px, transparent 1px);
+      background-size: 46px 46px;
+      mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 85%);
+      -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 85%);
+    }
+    .bg-fx::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0px,
+        rgba(0, 0, 0, 0) 2px,
+        rgba(0, 0, 0, 0.18) 3px,
+        rgba(0, 0, 0, 0) 4px
+      );
+      opacity: 0.35;
+    }
+
+    .wrap {
+      width: min(1180px, calc(100% - 44px));
+      margin: 0 auto;
+    }
+
+    /* ---------- HEADER / HERO ---------- */
+    header {
+      position: relative;
+      padding: 0 0 56px;
+      border-bottom: 1px solid var(--line-bright);
+      background:
+        linear-gradient(180deg, rgba(47,242,214,0.05), transparent 220px);
+      overflow: hidden;
+    }
+    .topbar {
+      border-bottom: 1px solid var(--line);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      color: var(--faint);
+      background: rgba(5, 12, 15, 0.6);
+    }
+    .topbar .wrap {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 0;
+      flex-wrap: wrap;
+    }
+    .topbar .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--teal);
+      box-shadow: var(--glow-teal);
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .topbar .dot { animation: pulse 2.4s ease-in-out infinite; }
+      @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+    }
+    .topbar .status { color: var(--teal-dim); }
+
+    .hero {
+      padding-top: 60px;
+    }
+    .kicker {
+      margin: 0 0 22px;
+      color: var(--teal);
+      font-family: var(--mono);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 0.76rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .kicker::before {
+      content: "//";
+      color: var(--amber);
+    }
+    .kicker .blink { color: var(--teal); }
+    @media (prefers-reduced-motion: no-preference) {
+      .kicker .blink { animation: blink 1.1s steps(1) infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 16ch;
+      font-family: var(--sans);
+      font-weight: 700;
+      font-size: clamp(2.3rem, 6.4vw, 4.6rem);
+      line-height: 1.02;
+      letter-spacing: -0.02em;
+      color: var(--ink-bright);
+      text-shadow: 0 0 38px rgba(47, 242, 214, 0.18);
+    }
+    h1 .accent {
+      color: var(--teal);
+      text-shadow: var(--glow-teal);
+    }
+
+    .subtitle {
+      max-width: 70ch;
+      margin: 26px 0 0;
+      color: var(--ink);
+      font-size: 1.16rem;
+      line-height: 1.6;
+    }
+
+    .byline {
+      margin: 26px 0 6px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.92rem;
+      letter-spacing: 0.02em;
+    }
+    .byline .v { color: var(--amber); }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 26px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 5px 14px;
+      border: 1px solid var(--line-bright);
+      border-radius: 4px;
+      color: var(--ink);
+      background: rgba(47, 242, 214, 0.04);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      letter-spacing: 0.02em;
+    }
+    .pill::before {
+      content: "▸";
+      color: var(--teal);
+      margin-right: 8px;
+      font-size: 0.7rem;
+    }
+
+    main { padding: 40px 0 90px; }
+
+    /* ---------- TABLE OF CONTENTS ---------- */
+    nav.toc {
+      background:
+        linear-gradient(180deg, rgba(47,242,214,0.04), transparent),
+        var(--panel);
+      border: 1px solid var(--line-bright);
+      border-radius: 10px;
+      padding: 26px 28px 30px;
+      margin: 0 auto 46px;
+      position: relative;
+    }
+    nav.toc::before {
+      content: "~/contents";
+      position: absolute;
+      top: -11px;
+      left: 22px;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      color: var(--teal);
+      background: var(--bg);
+      padding: 2px 10px;
+      border: 1px solid var(--line-bright);
+      border-radius: 4px;
+    }
+    nav.toc h2 {
+      margin: 4px 0 16px;
+      font-family: var(--mono);
+      font-size: 1.04rem;
+      letter-spacing: 0.04em;
+      color: var(--ink-bright);
+      text-transform: lowercase;
+    }
+    nav.toc ol {
+      list-style: none;
+      counter-reset: toc;
+      columns: 2;
+      column-gap: 48px;
+      padding-left: 0;
+      margin: 0;
+    }
+    nav.toc li {
+      break-inside: avoid;
+      counter-increment: toc;
+      margin: 0;
+      border-bottom: 1px dashed var(--line);
+    }
+    nav.toc li a {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding: 9px 6px;
+      font-family: var(--mono);
+      font-size: 0.92rem;
+      color: var(--ink);
+      text-decoration: none;
+      transition: color 0.15s, background 0.15s, padding-left 0.15s;
+    }
+    nav.toc li a::before {
+      content: counter(toc, decimal-leading-zero);
+      color: var(--teal-dim);
+      font-weight: 700;
+      font-size: 0.82rem;
+      min-width: 2.2ch;
+    }
+    nav.toc li a:hover,
+    nav.toc li a:focus-visible {
+      color: var(--teal);
+      background: rgba(47, 242, 214, 0.06);
+      padding-left: 12px;
+      outline: none;
+    }
+    nav.toc li a:hover::before,
+    nav.toc li a:focus-visible::before { color: var(--teal); }
+
+    /* ---------- SECTIONS ---------- */
+    main { counter-reset: sec; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin: 0 auto 26px;
+      padding: 36px 38px 38px;
+      counter-increment: sec;
+      position: relative;
+      overflow: hidden;
+    }
+    section::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: linear-gradient(180deg, var(--teal), transparent 70%);
+      opacity: 0.7;
+    }
+
+    h2 {
+      margin: 0 0 22px;
+      font-family: var(--sans);
+      font-weight: 700;
+      font-size: clamp(1.55rem, 3vw, 2.15rem);
+      line-height: 1.14;
+      letter-spacing: -0.01em;
+      color: var(--ink-bright);
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    h2::before {
+      content: counter(sec, decimal-leading-zero) " /";
+      font-family: var(--mono);
+      font-weight: 800;
+      font-size: 0.96rem;
+      color: var(--teal);
+      letter-spacing: 0.06em;
+      text-shadow: var(--glow-teal);
+      transform: translateY(-0.18em);
+    }
+    /* references section: no leading rail flourish difference needed */
+
+    h3 {
+      margin: 34px 0 12px;
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 1.1rem;
+      letter-spacing: 0.01em;
+      color: var(--teal);
+    }
+    h3::before {
+      content: "> ";
+      color: var(--amber);
+    }
+
+    p { margin: 0 0 16px; }
+    strong { color: var(--ink-bright); }
+    em { color: var(--amber); font-style: italic; }
+
+    ul, ol { margin-top: 0; padding-left: 24px; }
+    li { margin: 8px 0; }
+    ul li::marker { color: var(--teal-dim); }
+    ol li::marker { color: var(--teal-dim); font-family: var(--mono); }
+
+    a {
+      color: var(--teal);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(47, 242, 214, 0.35);
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    a:hover, a:focus-visible {
+      color: var(--ink-bright);
+      border-color: var(--teal);
+      background: rgba(47, 242, 214, 0.08);
+      outline: none;
+    }
+    sup a {
+      border-bottom: none;
+      font-weight: 700;
+      font-family: var(--mono);
+      font-size: 0.72em;
+      padding: 0 0.15em;
+      color: var(--amber);
+    }
+    sup a:hover { background: rgba(255, 179, 71, 0.14); color: var(--amber); }
+
+    /* ---------- NOTES / WARNINGS ---------- */
+    .note {
+      border: 1px solid var(--teal-deep);
+      border-left: 4px solid var(--teal);
+      background: rgba(47, 242, 214, 0.05);
+      padding: 16px 20px;
+      border-radius: 6px;
+      margin: 22px 0;
+      position: relative;
+    }
+    .note::after {
+      content: "INFO";
+      position: absolute;
+      top: 10px; right: 14px;
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.14em;
+      color: var(--teal-dim);
+    }
+    .note.warning {
+      border-color: var(--amber-dim);
+      border-left-color: var(--amber);
+      background: rgba(255, 179, 71, 0.06);
+    }
+    .note.warning::after { content: "! WARNING"; color: var(--amber); }
+    .note strong { color: var(--ink-bright); }
+
+    /* ---------- TAKEAWAYS ---------- */
+    .takeaways {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 22px;
+      counter-reset: tk;
+    }
+    .takeaway {
+      border: 1px solid var(--line-bright);
+      border-radius: 8px;
+      padding: 20px 20px 22px;
+      background:
+        linear-gradient(180deg, rgba(47,242,214,0.05), transparent 60%),
+        var(--panel-2);
+      position: relative;
+      transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+    }
+    .takeaway:hover {
+      transform: translateY(-3px);
+      border-color: var(--teal-deep);
+      box-shadow: 0 10px 30px -16px rgba(47, 242, 214, 0.5);
+    }
+    .takeaway strong {
+      display: block;
+      color: var(--teal);
+      margin-bottom: 8px;
+      font-family: var(--sans);
+      font-weight: 600;
+    }
+
+    /* ---------- GRID / MINI CARDS ---------- */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .mini {
+      border: 1px solid var(--line-bright);
+      border-radius: 8px;
+      padding: 20px;
+      background: var(--panel-2);
+      transition: border-color 0.18s, box-shadow 0.18s;
+    }
+    .mini:hover {
+      border-color: var(--teal-deep);
+      box-shadow: 0 8px 26px -18px rgba(47, 242, 214, 0.55);
+    }
+    .mini h3 { margin-top: 0; }
+    .mini h3::before { content: "# "; color: var(--amber); }
+
+    /* ---------- TABLES ---------- */
+    .table-scroll {
+      overflow-x: auto;
+      border: 1px solid var(--line-bright);
+      border-radius: 8px;
+      margin: 22px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      min-width: 640px;
+    }
+    caption {
+      caption-side: top;
+      text-align: left;
+      padding: 14px 16px 12px;
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 0.8rem;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+      padding: 13px 14px;
+    }
+    th:last-child, td:last-child { border-right: none; }
+    th {
+      background: var(--panel-2);
+      color: var(--teal);
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.82rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      position: sticky;
+      top: 0;
+    }
+    tbody tr { transition: background 0.12s; }
+    tbody tr:hover { background: rgba(47, 242, 214, 0.04); }
+    tbody td:first-child {
+      color: var(--ink-bright);
+      font-weight: 600;
+    }
+
+    /* ---------- CODE ---------- */
+    code, pre { font-family: var(--mono); }
+    code {
+      color: var(--teal);
+      background: rgba(47, 242, 214, 0.08);
+      border: 1px solid var(--line-bright);
+      border-radius: 4px;
+      padding: 0.08em 0.4em;
+      font-size: 0.9em;
+    }
+    pre {
+      overflow-x: auto;
+      padding: 0;
+      border-radius: 8px;
+      background: var(--code-bg);
+      border: 1px solid var(--line-bright);
+      color: #b7d8d3;
+      line-height: 1.6;
+      font-size: 0.88rem;
+      margin: 18px 0;
+      position: relative;
+    }
+    pre::before {
+      content: "● ● ●";
+      display: block;
+      padding: 10px 16px 8px;
+      color: var(--faint);
+      font-size: 0.6rem;
+      letter-spacing: 0.3em;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 8px 8px 0 0;
+    }
+    pre code {
+      display: block;
+      background: none;
+      border: none;
+      color: inherit;
+      padding: 16px;
+      font-size: 1em;
+    }
+
+    /* ---------- DIAGRAM NODES ---------- */
+    .diagram {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      margin: 26px 0;
+    }
+    .node {
+      border: 1px solid var(--line-bright);
+      background:
+        linear-gradient(180deg, rgba(47,242,214,0.04), transparent 70%),
+        var(--panel-2);
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 124px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      position: relative;
+      transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+    }
+    .node:hover {
+      transform: translateY(-3px);
+      border-color: var(--teal);
+      box-shadow: 0 10px 30px -16px rgba(47, 242, 214, 0.6);
+    }
+    .node strong {
+      display: block;
+      color: var(--teal);
+      margin-bottom: 8px;
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.92rem;
+    }
+    .node strong::before { content: "› "; color: var(--amber); }
+
+    /* ---------- REFERENCES ---------- */
+    .refs { padding-left: 0; list-style: none; counter-reset: ref; }
+    .refs li {
+      counter-increment: ref;
+      margin-bottom: 14px;
+      padding-left: 44px;
+      position: relative;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .refs li::before {
+      content: "[" counter(ref) "]";
+      position: absolute;
+      left: 0;
+      top: 0;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--teal-dim);
+    }
+    .refs li:target {
+      color: var(--ink);
+      background: rgba(47, 242, 214, 0.06);
+      border-radius: 4px;
+    }
+    .refs li:target::before { color: var(--teal); }
+
+    .small { color: var(--faint); font-size: 0.9rem; }
+
+    /* ---------- FOOTER ---------- */
+    footer {
+      color: var(--muted);
+      padding: 40px 0 70px;
+      text-align: center;
+      border-top: 1px solid var(--line-bright);
+      background: linear-gradient(180deg, transparent, rgba(47,242,214,0.03));
+    }
+    footer p { margin: 6px 0; }
+    footer .sig {
+      font-family: var(--mono);
+      color: var(--teal-dim);
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
+    }
+
+    /* ---------- SKIP LINK ---------- */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: var(--teal);
+      color: #05080a;
+      font-family: var(--mono);
+      font-weight: 700;
+      padding: 10px 16px;
+      border-radius: 0 0 6px 0;
+      z-index: 100;
+    }
+    .skip-link:focus { left: 0; }
+
+    ::selection { background: rgba(47, 242, 214, 0.3); color: var(--ink-bright); }
+
+    /* ---------- RESPONSIVE ---------- */
+    @media (max-width: 900px) {
+      nav.toc ol { columns: 1; }
+      .grid, .takeaways, .diagram { grid-template-columns: 1fr; }
+      section { padding: 26px 22px 28px; }
+      .hero { padding-top: 44px; }
+    }
+
+    /* ---------- PRINT ---------- */
+    @media print {
+      :root { color-scheme: light; }
+      body { background: #fff; color: #000; font-size: 12pt; }
+      .bg-fx, .topbar { display: none; }
+      header {
+        color: #000; background: #fff;
+        border-bottom: 2px solid #000; padding: 24px 0;
+      }
+      h1, h2, h3, strong, .node strong, .takeaway strong { color: #000; text-shadow: none; }
+      h1 .accent { color: #000; }
+      .kicker { color: #000; }
+      .pill { color: #000; border-color: #888; background: none; }
+      nav.toc, section { border: 0; padding: 0; break-inside: avoid; background: #fff; }
+      section::before, nav.toc::before { display: none; }
+      h2::before, h3::before { color: #000; }
+      a { color: #000; border: none; }
+      sup a { color: #000; }
+      .note, .takeaway, .mini, .node, table, th, td { background: #fff !important; color: #000; border-color: #888; }
+      th { color: #000; }
+      .refs a[href]::after {
+        content: " (" attr(href) ")";
+        font-size: 0.85em; color: #333; word-break: break-all;
+      }
+      pre { background: #fff; color: #000; border: 1px solid #888; }
+      pre::before { display: none; }
+      pre code { color: #000; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-fx" aria-hidden="true"></div>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header>
+    <div class="topbar">
+      <div class="wrap">
+        <span><span class="dot"></span>sec-research // llm-threat-model</span>
+        <span class="status">[ status: PUBLIC-SAFE · scope: DEFENSIVE ]</span>
+      </div>
+    </div>
+    <div class="wrap hero">
+      <p class="kicker">Technical paper<span class="blink">_</span></p>
+      <h1>Jailbreaking <span class="accent">AI Systems</span>: How Prompt Attacks Work and How to Defend Against Them</h1>
+      <p class="subtitle">A public-safe overview of jailbreaks, prompt injection, agentic risk, and practical defenses for large language model applications.</p>
+      <p class="byline">Independent security researcher · <span class="v">v1.0</span></p>
+      <div class="meta" aria-label="paper metadata">
+        <span class="pill">Prepared: June 13, 2026</span>
+        <span class="pill">Sources checked: June 13, 2026</span>
+        <span class="pill">Scope: Defensive and educational</span>
+        <span class="pill">License: CC BY 4.0</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap" id="main">
+    <nav class="toc" aria-label="table of contents">
+      <h2>contents</h2>
+      <ol>
+        <li><a href="#abstract">Abstract</a></li>
+        <li><a href="#summary">Executive Summary</a></li>
+        <li><a href="#scope">Publication Scope</a></li>
+        <li><a href="#terms">Core Terms</a></li>
+        <li><a href="#model">The Security Model Problem</a></li>
+        <li><a href="#mechanisms">How Jailbreaks Work</a></li>
+        <li><a href="#lifecycle">Attack Lifecycle</a></li>
+        <li><a href="#taxonomy">Technique Taxonomy</a></li>
+        <li><a href="#impact">Impact: What Is Possible</a></li>
+        <li><a href="#misconceptions">Common Misconceptions</a></li>
+        <li><a href="#defense">Defensive Architecture</a></li>
+        <li><a href="#evaluation">Evaluation and Red Teaming</a></li>
+        <li><a href="#frontier">Research Frontier</a></li>
+        <li><a href="#examples">Safe Toy Examples</a></li>
+        <li><a href="#conclusion">Conclusion</a></li>
+        <li><a href="#references">References</a></li>
+      </ol>
+    </nav>
+
+    <section id="abstract">
+      <h2>Abstract</h2>
+      <p>Jailbreaking an AI system means inducing it to violate the safety behavior, instruction hierarchy (the priority order among system, developer, user, and third-party instructions), or application policy its builders intended. In everyday usage the term is often conflated with prompt injection. For a public technical discussion the two are worth separating: <strong>jailbreaking</strong> usually targets a model's safety behavior, while <strong>prompt injection</strong> targets the way an application mixes trusted instructions with untrusted text. These framings are not settled. OWASP groups the concepts under LLM01:2025 Prompt Injection and describes jailbreaking as a form of prompt injection that causes a model to disregard its safety protocols entirely<sup><a href="#ref-owasp-llm01">1</a></sup> — a <em>nested</em> taxonomy — whereas the distinction drawn here, following Willison, treats them as <em>separate</em> attack targets. This paper adopts the separated view for engineering clarity, because the defenses differ.</p>
+      <p>The central problem is architectural. Large language model (LLM) applications routinely combine system instructions, user requests, retrieved documents, tool outputs, memories, and hidden application policy into one model context. The model can be told that some text is authoritative and some is merely data. But unlike the hard separation that parameterized SQL queries provide in conventional software, the underlying system enforces no such boundary. The UK National Cyber Security Centre (NCSC) describes this as a reason prompt injection may not have a complete mitigation analogous to SQL injection; practical defenses reduce likelihood and impact rather than eliminating the class.<sup><a href="#ref-ncsc">3</a></sup></p>
+      <p>This paper explains how jailbreaks and prompt-injection attacks work at a level useful for builders, security reviewers, policymakers, and technically literate readers. It also argues that robustness is empirical: safety claims must be tested against evolving attack families rather than assumed. It does not include working jailbreak prompts, optimized adversarial suffixes, hidden-instruction payloads, or procedural guidance for bypassing safeguards. That omission is intentional: the publishable lesson is not a collection of strings, but a security model. LLMs are powerful interpreters, not access-control boundaries.</p>
+    </section>
+
+    <section id="summary">
+      <h2>Executive Summary</h2>
+      <div class="takeaways">
+        <div class="takeaway">
+          <strong>1. The model is not the whole system.</strong>
+          Many serious failures occur in the application layer: retrieval, memory, tool use, output parsing, workflow approval, and data access.
+        </div>
+        <div class="takeaway">
+          <strong>2. The instruction/data boundary is fragile.</strong>
+          LLMs can be prompted to treat untrusted text as instructions unless the surrounding system preserves source authority and limits what the model can do.
+        </div>
+        <div class="takeaway">
+          <strong>3. Longer contexts and tools raise the stakes.</strong>
+          Long prompts make many-shot conditioning possible, and tool-enabled agents can turn a misread instruction into a real-world action.
+        </div>
+        <div class="takeaway">
+          <strong>4. Prompt wording is not a security boundary.</strong>
+          System prompts, refusals, and filters matter, but they must be backed by authorization, sandboxing, structured outputs, logging, and human review.
+        </div>
+        <div class="takeaway">
+          <strong>5. Robustness is empirical.</strong>
+          Claims about safety should be tested against attack families, not only against yesterday's well-known prompt.
+        </div>
+        <div class="takeaway">
+          <strong>6. The goal is risk reduction.</strong>
+          Public evidence shows safeguards are improving, but current systems still have bypasses. Design for containment when bypasses occur.
+        </div>
+      </div>
+    </section>
+
+    <section id="scope">
+      <h2>Publication Scope</h2>
+      <p>This paper is intended for public release. It is written to be useful without being a how-to guide for misuse. It discusses mechanisms, threat models, defensive controls, and evaluation practice. It avoids operational artifacts that would make bypassing a deployed model easier.</p>
+      <div class="note warning">
+        <strong>Responsible-use boundary:</strong> The attack descriptions are conceptual. The toy examples are deliberately harmless and should be used to understand trust boundaries, not to attack systems you do not own or have explicit permission to test.
+      </div>
+      <p>A second constraint is precision. The field moves quickly, and individual model behavior changes often. This paper therefore avoids claims such as "all models fail in the same way" or "this defense solves prompt injection." Where current evidence is mixed, it says so.</p>
+    </section>
+
+    <section id="terms">
+      <h2>Core Terms</h2>
+      <div class="grid">
+        <div class="mini">
+          <h3>Large language model</h3>
+          <p>An LLM is a model trained to process and generate token sequences. In deployed products, it is usually wrapped with system instructions, developer prompts, retrieval, memory, tools, safety classifiers, output validators, logs, and user-interface constraints.</p>
+        </div>
+        <div class="mini">
+          <h3>Guardrails</h3>
+          <p>Guardrails are runtime and design controls that shape model behavior: system prompts, policy models, content filters, constrained decoding, tool permissions, schemas, approval flows, and human review.</p>
+        </div>
+        <div class="mini">
+          <h3>Jailbreak</h3>
+          <p>A jailbreak is an attempt to make a model violate its safety behavior or refusal policy. It most often involves coaxing disallowed output, but it can also mean exposing protected context or suppressing safeguards.</p>
+        </div>
+        <div class="mini">
+          <h3>Prompt injection</h3>
+          <p>Prompt injection is an attack against an LLM application in which untrusted text changes the model's behavior or the application's downstream behavior. Direct injection comes from the active user. Indirect injection comes from content the system retrieves or processes, such as a web page, file, email, image, support ticket, or database record.</p>
+        </div>
+      </div>
+
+      <h3>Why the distinction matters</h3>
+      <p>Security practitioners increasingly distinguish jailbreaks from prompt injection because the defenses differ. A pure model jailbreak is mostly a question of model safety training, policy adherence, refusal behavior, and monitoring. Application prompt injection is a system-design problem: how the product separates instructions from data, authorizes tools, handles untrusted retrieved content, and treats model output after generation. The terms overlap in practice, but collapsing them hides the most important engineering decisions.</p>
+      <p>Simon Willison named "prompt injection" in 2022 — by analogy to SQL injection — to describe attacks where adversarial input causes a prompt-driven AI system to perform a task outside its original objective, building on contemporaneous demonstrations by Riley Goodside and others.<sup><a href="#ref-willison-2022">12</a></sup> His later distinction between prompt injection and jailbreaking is useful for public discussion: prompt injection attacks applications built on top of models; jailbreaking attacks safety filters and alignment behavior in the model itself.<sup><a href="#ref-willison-2024">13</a></sup></p>
+    </section>
+
+    <section id="model">
+      <h2>The Security Model Problem</h2>
+      <p>Traditional application security depends on boundaries. A parameterized database query separates code from values. An operating system can separate users, processes, files, and permissions. A browser can isolate origins. These boundaries are imperfect, but they are explicit mechanisms that software can enforce.</p>
+      <p>LLM applications often ask a probabilistic model to infer a boundary from prose. A typical request might include system instructions from the developer, an authenticated user's task, documents from a search index, output from a plugin, and prior memory. The model can be told that only some of those sources are authoritative. The problem is that all of them are represented to the model as language-like context. NCSC summarizes the issue directly: under the hood, the model does not have an inherent instruction/data distinction comparable to classical software boundaries.<sup><a href="#ref-ncsc">3</a></sup></p>
+      <p>That does not mean LLM applications are impossible to secure. It means the LLM should not be the security boundary. A secure design uses the model for interpretation and generation while placing authorization, data access, tool permissions, output validation, and audit logging in deterministic application code.</p>
+
+      <div class="diagram" role="list" aria-label="Trust-source model: how a secure design treats each input">
+        <div class="node" role="listitem"><strong>Trusted policy</strong> System and developer instructions define the task and constraints.</div>
+        <div class="node" role="listitem"><strong>User intent</strong> The authenticated user supplies the goal and consent for actions.</div>
+        <div class="node" role="listitem"><strong>Untrusted data</strong> Retrieved documents, websites, files, messages, and tool output are evidence, not authority.</div>
+        <div class="node" role="listitem"><strong>Model judgment</strong> The LLM reasons over context but can confuse source authority.</div>
+        <div class="node" role="listitem"><strong>External controls</strong> Application code enforces permissions, schemas, confirmations, logs, and rollback.</div>
+      </div>
+
+      <h3>The lethal trifecta</h3>
+      <p>Agentic risk concentrates where three capabilities coincide: access to private data, exposure to untrusted content, and the ability to communicate externally. Willison calls this combination the "lethal trifecta," because an attacker who controls the untrusted content can use it to make the agent read private data and send it out through the external channel.<sup><a href="#ref-trifecta">14</a></sup> No single leg is dangerous on its own; the conjunction is. Much of the defensive architecture below works by removing one leg for a given task — for example, cutting off external egress once untrusted content has entered the context.</p>
+    </section>
+
+    <section id="mechanisms">
+      <h2>How Jailbreaks Work</h2>
+      <p>Jailbreaks are not a single trick. They exploit several properties of LLMs and LLM products. The details vary by model and application, but the recurring mechanisms are stable enough to guide defensive design.</p>
+
+      <h3>Instruction conflict</h3>
+      <p>LLMs are trained to follow instructions, but deployed assistants receive instructions from multiple places. A system prompt may set policy, a developer message may define the task, a user may ask for a result, and a retrieved document may contain text that looks like a command. Attacks work by creating conflicts and trying to make the model prefer the attacker's instruction over the intended hierarchy.</p>
+
+      <h3>Goal reframing</h3>
+      <p>Many jailbreaks do not ask for a forbidden output directly. They recast the task as fiction, research, translation, debugging, or safety testing. The surface task may look benign while the practical intent remains disallowed. Defenses therefore need to evaluate the meaning and foreseeable use of the request, not only its wording.</p>
+
+      <h3>In-context learning</h3>
+      <p>LLMs learn patterns from examples in the prompt. Anthropic's many-shot jailbreaking research showed that long prompts containing many demonstrations can steer a model toward unsafe completions, that attack success scales with the number of demonstrations, and that the pattern resembles ordinary in-context learning — so conventional alignment training alone did not reliably prevent it.<sup><a href="#ref-anthropic-many-shot">6</a></sup> Long context windows are valuable, but they also give attackers more room to condition behavior.</p>
+
+      <h3>Adversarial optimization</h3>
+      <p>Some attacks are produced by search rather than by hand. The 2023 paper "Universal and Transferable Adversarial Attacks on Aligned Language Models" showed that automatically generated suffixes could increase non-refusal behavior and sometimes transfer across models, including to closed commercial systems.<sup><a href="#ref-zou">7</a></sup> The important public lesson is not the suffix itself. It is that brittle regions in model behavior can be found automatically, so defenses must be tested against adaptive attackers.</p>
+
+      <h3>Source confusion</h3>
+      <p>Indirect prompt injection occurs when untrusted external content gives instructions to the model. Microsoft Research's Spotlighting paper describes this as a vulnerability created when multiple inputs are concatenated into a single text stream and the model cannot reliably distinguish their source authority.<sup><a href="#ref-spotlighting">9</a></sup> This is especially important for retrieval-augmented generation (RAG), browser agents, email assistants, and document-analysis workflows.</p>
+
+      <h3>Continuation bias</h3>
+      <p>LLMs generate outputs token by token. Requested formats, partial assistant messages, examples, and leading text can bias the continuation. A model may be more likely to continue a pattern than to stop and re-evaluate the policy. This is one reason robust systems validate final outputs and tool calls outside the model.</p>
+
+      <h3>Tool amplification</h3>
+      <p>A text-only model can produce bad text. A tool-enabled agent can affect external systems. If an LLM can browse, call APIs, send email, read databases, edit code, or execute commands, a prompt attack can become an authorization failure. NVIDIA's early discussion of prompt injection in LangChain-style systems made this point clearly: when model output is used to trigger external services, attacker influence over the output can become influence over those services.<sup><a href="#ref-nvidia">11</a></sup></p>
+
+      <h3>Multi-turn escalation</h3>
+      <p>Some attacks unfold over a conversation rather than in a single prompt. The Crescendo technique opens with benign requests and escalates gradually, each turn referencing the model's own prior replies, until the accumulated context pulls the model past a boundary it would have refused in one step.<sup><a href="#ref-crescendo">21</a></sup> Single-turn filters miss this because no individual message looks unsafe, which is why defenses need conversation-level state and refusal-consistency checks across turns.</p>
+    </section>
+
+    <section id="lifecycle">
+      <h2>Attack Lifecycle</h2>
+      <p>The lifecycle below is a defensive abstraction: a temporal view of the same mechanisms described above, not a new set of attacks. It describes what defenders should anticipate and log, and it does not include working payloads.</p>
+
+      <div class="table-scroll" role="region" aria-label="Attack lifecycle" tabindex="0">
+      <table>
+        <caption class="small">A defensive view of attacker phases: objectives, why each can work, and the signals worth logging.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Phase</th>
+            <th scope="col">Attacker objective</th>
+            <th scope="col">Why it can work</th>
+            <th scope="col">Defensive signal</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Reconnaissance</td>
+            <td>Infer the model, safety style, refusal boundaries, available tools, retrieval sources, and memory behavior.</td>
+            <td>Products often reveal capabilities through UI affordances, error messages, tool traces, citations, refusal wording, or latency.</td>
+            <td>Repeated boundary probing, requests for hidden policy, tool enumeration, and unusual topic pivots.</td>
+          </tr>
+          <tr>
+            <td>Reframing</td>
+            <td>Make a disallowed goal appear authorized, fictional, academic, historical, transformed, or part of a benign workflow.</td>
+            <td>Policy enforcement depends on semantic interpretation, not only keywords.</td>
+            <td>Excessive justification, contradictory context, sudden personas, or requests to suspend normal assumptions.</td>
+          </tr>
+          <tr>
+            <td>Authority confusion</td>
+            <td>Make lower-trust text seem more important than system, developer, user, or tool policy.</td>
+            <td>The model may over-weight recent, specific, or strongly worded text when source boundaries are weak.</td>
+            <td>Untrusted content containing instructions aimed at the assistant, especially about secrecy, tools, ranking, or policy.</td>
+          </tr>
+          <tr>
+            <td>Context conditioning</td>
+            <td>Use examples or repeated patterns to make unsafe compliance look like the expected answer.</td>
+            <td>In-context learning treats demonstrations as task specification, especially in long context windows.</td>
+            <td>Large blocks of demonstrations, repeated answer templates, or retrieved content that models policy-violating behavior.</td>
+          </tr>
+          <tr>
+            <td>Obfuscation</td>
+            <td>Hide intent from shallow filters or reviewers through indirection, transformation, alternate language, or fragmentation.</td>
+            <td>Models can reconstruct meaning from partial, translated, encoded, or messy text more effectively than simple filters.</td>
+            <td>Requests to decode, translate, merge fragments, complete masked instructions, or transform content near sensitive domains.</td>
+          </tr>
+          <tr>
+            <td>Iteration</td>
+            <td>Use refusals and partial answers to refine the prompt or split the goal into allowed-looking subtasks.</td>
+            <td>Refusals can reveal which policy dimension was triggered, allowing attackers to adapt.</td>
+            <td>High-volume near-duplicate attempts, semantic similarity around restricted intents, and repeated format changes.</td>
+          </tr>
+          <tr>
+            <td>Tool pivot</td>
+            <td>Convert model influence into external action: retrieve data, call an API, send a message, change a record, or execute code.</td>
+            <td>Weak agent designs let the model choose actions while also interpreting untrusted text that requests actions.</td>
+            <td>Tool calls that do not match authenticated user intent, unexpected recipients, hidden-content triggers, or abnormal egress.</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <section id="taxonomy">
+      <h2>Technique Taxonomy</h2>
+      <p>The taxonomy below is written for system owners and reviewers. Each family combines one or more of the mechanisms described earlier; the names differ because the lens differs (mechanism, lifecycle phase, attack family). It names attack families so teams can build evals and controls around them, without publishing reusable jailbreak strings.</p>
+
+      <div class="table-scroll" role="region" aria-label="Technique taxonomy" tabindex="0">
+      <table>
+        <caption class="small">Attack families named so teams can build evals and controls — without reusable jailbreak strings.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Family</th>
+            <th scope="col">Pattern</th>
+            <th scope="col">Risk</th>
+            <th scope="col">Primary mitigations</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Direct override</td>
+            <td>The active user tries to replace, ignore, or reinterpret prior instructions.</td>
+            <td>Safety bypass, altered task behavior, refusal suppression, or hidden-prompt extraction attempts.</td>
+            <td>Instruction hierarchy training, strict system/developer policy, refusal evals, and boundary-probe monitoring.</td>
+          </tr>
+          <tr>
+            <td>Scenario framing</td>
+            <td>The user wraps the request in a fictional, role-based, research, or debugging scenario.</td>
+            <td>The system may answer the surface task while missing the operational meaning.</td>
+            <td>Intent-aware policy checks, safe-completion patterns, and training data that covers disguised requests.</td>
+          </tr>
+          <tr>
+            <td>Transformation abuse</td>
+            <td>The model is asked to translate, summarize, decode, classify, complete, or reformat sensitive material.</td>
+            <td>Unsafe content may be reconstructed under the appearance of a neutral transformation.</td>
+            <td>Apply policy to input and output meaning, use semantic classifiers, and review high-risk transformations.</td>
+          </tr>
+          <tr>
+            <td>Many-shot conditioning</td>
+            <td>Long contexts provide many examples of the behavior the attacker wants.</td>
+            <td>Safety behavior can be weakened when the desired completion is heavily demonstrated in context.</td>
+            <td>Long-context scanning, source labels, example-count limits in high-risk domains, and regression testing.</td>
+          </tr>
+          <tr>
+            <td>Multi-turn escalation</td>
+            <td>A conversation starts benign and escalates over turns, each building on the model's prior replies.</td>
+            <td>Cumulative context elicits output the model would refuse in a single turn.</td>
+            <td>Conversation-level monitoring, cross-turn policy state, and refusal-consistency checks.</td>
+          </tr>
+          <tr>
+            <td>Optimized adversarial text</td>
+            <td>Automated search finds unusual token patterns that steer the model away from refusal.</td>
+            <td>Attacks can be non-intuitive to humans and may transfer across related models.</td>
+            <td>Adversarial training, output classifiers, model diversity, adaptive red teaming, and release regression suites.</td>
+          </tr>
+          <tr>
+            <td>Indirect prompt injection</td>
+            <td>External content contains instructions aimed at the assistant rather than the human user.</td>
+            <td>Manipulated summaries, data leakage, fraudulent approvals, and unexpected tool calls.</td>
+            <td>Provenance marking, spotlighting, retrieval isolation, least-privilege tools, and confirmation gates.</td>
+          </tr>
+          <tr>
+            <td>Multimodal injection</td>
+            <td>Instructions appear in images, PDFs, screenshots, OCR text, audio transcripts, or layout artifacts.</td>
+            <td>Document and vision pipelines can turn hidden media content into model-readable instructions.</td>
+            <td>Media sanitization, OCR provenance, separate extraction from execution, and source-aware review.</td>
+          </tr>
+          <tr>
+            <td>Retrieval or memory poisoning</td>
+            <td>Malicious content is planted in a knowledge base, vector store, shared document, ticket, profile, or memory.</td>
+            <td>Persistent manipulation can affect future users or sessions after the original injection is forgotten.</td>
+            <td>Ingestion controls, source trust tiers, permission-aware retrieval, memory expiration, and audit trails.</td>
+          </tr>
+          <tr>
+            <td>Tool and agent misuse</td>
+            <td>The prompt steers the model into using tools outside legitimate user intent.</td>
+            <td>Email sending, file edits, code execution, API calls, purchases, or access to private records.</td>
+            <td>Capability scoping, per-tool authorization, sandboxing, dry runs, and explicit user confirmation.</td>
+          </tr>
+          <tr>
+            <td>Output parser abuse</td>
+            <td>Generated text is interpreted downstream as markup, code, JSON control fields, SQL-like filters, or commands.</td>
+            <td>The dangerous behavior occurs after the model when application code trusts generated text as structured authority.</td>
+            <td>Strict schemas, escaping, allowlists, typed APIs, transaction review, and non-LLM validation.</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <section id="impact">
+      <h2>Impact: What Is Possible</h2>
+      <p>The impact of a jailbreak or prompt-injection attack depends on what the system can see and do. A public chatbot with no tools has a different risk profile from an enterprise assistant that reads email, searches internal documents, opens support tickets, and calls production APIs.</p>
+
+      <h3>Unsafe content generation</h3>
+      <p>The familiar risk is output that a provider intended to refuse: dangerous instructions, abuse-enabling text, non-consensual or hateful content, evasion guidance, fraud assistance, or other disallowed material. Stronger safeguards make this harder, but government and industry reports continue to find bypasses. The AI Security Institute's Frontier AI Trends Report says safeguards are improving while vulnerabilities remain. In one example, the expert effort required to jailbreak a model differed roughly 40-fold between two models released six months apart.<sup><a href="#ref-aisi-trends">4</a></sup></p>
+
+      <h3>Data exposure</h3>
+      <p>LLM applications often place sensitive data in context: private emails, support tickets, API results, internal documents, source code, policies, user profiles, or database snippets. A jailbreak may try to reveal that context directly, summarize it, translate it, or route it through a tool. The strongest mitigation is to avoid exposing data to the model unless the current user and task require it.</p>
+
+      <h3>Manipulated decisions</h3>
+      <p>Organizations use LLMs to rank, summarize, classify, triage, recommend, and approve. Prompt injection can target those decisions. A document might try to make itself appear urgent, suppress negative evidence, influence a hiring screen, bias a procurement summary, or alter a security triage result. Even without data theft, manipulated judgment can be costly.</p>
+
+      <h3>Unauthorized actions</h3>
+      <p>Agents raise the risk by giving the model tools. A manipulated assistant might send a message, change a ticket, retrieve confidential records, submit a form, call an internal API, modify code, or run a command. If the application treats model judgment as authorization, the attacker can target the model rather than the underlying access-control system.</p>
+
+      <h3>Persistence and scale</h3>
+      <p>Prompt attacks can be planted in persistent sources: knowledge-base articles, web pages, comments, resumes, shared documents, calendar descriptions, CRM notes, code repositories, images, and memories. Once indexed or stored, one malicious item can affect many future interactions. This makes some prompt-injection risk resemble supply-chain risk.</p>
+
+      <h3>Notable incidents</h3>
+      <p>These risks are not hypothetical. The zero-click "EchoLeak" flaw in Microsoft 365 Copilot (CVE-2025-32711) let a crafted email silently steer the assistant into exfiltrating a user's data, with no click required.<sup><a href="#ref-echoleak">24</a></sup> Public analyses have reported similar indirect-injection data theft against Slack's AI features and browser-using agents such as ChatGPT Operator, and the early Bing chat "Sydney" episode demonstrated direct injection against a deployed assistant. A recurring exfiltration channel in these cases is the rendering of attacker-controlled markdown images or links, which turns a passive summary into an outbound request.</p>
+
+      <h3>Residual risk despite progress</h3>
+      <p>The 2026 International AI Safety Report notes that reported prompt-injection attack success rates have fallen over time for major model releases, but remain relatively high.<sup><a href="#ref-iasr">5</a></sup> The evidence supports a measured posture: progress is real, but the class of attacks is not closed. Reported success rates also depend heavily on how strong an attacker is assumed. One 2025 study bypassed twelve recently published defenses at over 90% attack success even though most had originally reported near-zero rates, and found that human red-teamers outperformed automated attacks.<sup><a href="#ref-attacker-second">23</a></sup> Headline robustness numbers measured against static or weak attackers therefore tend to overstate real-world resilience.</p>
+    </section>
+
+    <section id="misconceptions">
+      <h2>Common Misconceptions</h2>
+      <ul>
+        <li><strong>"A jailbreak means root access."</strong> Not by itself. It can only affect what the model can see or do; the danger comes from excessive context, excessive tool authority, weak authorization, or unsafe downstream parsing.</li>
+        <li><strong>"A better system prompt solves it."</strong> A strong system prompt helps, but prompt wording is not an access-control mechanism.</li>
+        <li><strong>"Keyword filters are enough."</strong> Attackers can use synonyms, translation, fragmentation, indirection, media, and context to avoid simple filters.</li>
+        <li><strong>"RAG makes outputs trustworthy."</strong> Retrieval can improve factual grounding while also importing untrusted instructions into the model's context.</li>
+        <li><strong>"Fine-tuning closes the class."</strong> Safety training improves behavior, but new contexts, tools, modalities, and adversarial search can expose new failures.</li>
+        <li><strong>"More capable models are automatically safer."</strong> Better reasoning can improve policy understanding, but it can also improve the model's ability to interpret disguised attacker intent.</li>
+        <li><strong>"Refusing everything is safe."</strong> Over-refusal can make a product unusable and may push users toward weaker systems. Good evaluation measures both unsafe compliance and unnecessary refusal.</li>
+      </ul>
+    </section>
+
+    <section id="defense">
+      <h2>Defensive Architecture</h2>
+      <p>No single control eliminates jailbreaks or prompt injection. The practical goal is defense in depth: reduce the chance of unsafe behavior, reduce the authority of any confused model output, detect abuse early, and contain failures when they occur. OWASP's Top 10 for LLM and generative-AI applications offers a complementary catalogue of application-level risks and mitigations,<sup><a href="#ref-owasp-top10">2</a></sup> and NIST's AI Risk Management Framework and Generative AI Profile provide a useful governance structure around mapping, measuring, managing, and governing AI risks.<sup><a href="#ref-nist">10</a></sup></p>
+
+      <div class="diagram" role="list" aria-label="Control lifecycle: govern, separate, constrain, validate, monitor">
+        <div class="node" role="listitem"><strong>Govern</strong> Define risk owners, data classes, allowed use, policy boundaries, and incident thresholds.</div>
+        <div class="node" role="listitem"><strong>Separate</strong> Preserve source authority for system policy, user intent, untrusted content, memory, and tool output.</div>
+        <div class="node" role="listitem"><strong>Constrain</strong> Limit data exposure and tool permissions to what the current user and task require.</div>
+        <div class="node" role="listitem"><strong>Validate</strong> Check inputs, structured outputs, tool calls, approvals, and final responses outside the model.</div>
+        <div class="node" role="listitem"><strong>Monitor</strong> Log prompts, retrieval sources, decisions, confirmations, tool calls, and downstream effects.</div>
+      </div>
+
+      <h3>Instruction hierarchy</h3>
+      <p>The model and application should maintain a clear priority order: system and developer instructions outrank authenticated user requests, and user requests outrank untrusted third-party content. The instruction-hierarchy research by Wallace and colleagues argues that many attacks exploit models treating privileged and untrusted instructions too similarly, and shows that training on hierarchical instruction following can improve robustness.<sup><a href="#ref-hierarchy">8</a></sup> Application code must still enforce the same hierarchy around data and tools.</p>
+
+      <h3>Provenance and spotlighting</h3>
+      <p>Untrusted content should be labeled and isolated. Spotlighting and related methods transform or mark external content so the model receives a persistent signal about source provenance. Microsoft Research reported that spotlighting reduced indirect prompt-injection attack success substantially in its experiments, while preserving task utility.<sup><a href="#ref-spotlighting">9</a></sup> This should be treated as a layer, not as a complete fix.</p>
+
+      <h3>Least privilege for context</h3>
+      <p>Do not place secrets, broad database dumps, unnecessary emails, or hidden administrative instructions in model context. Retrieval should be permission-aware before documents enter the prompt. If the current user should not be allowed to read a source directly, the model should not receive it for that user's session.</p>
+
+      <h3>Least privilege for tools</h3>
+      <p>Every tool should have a narrow schema, narrow permissions, clear side effects, and independent authorization. Prefer read-only tools where possible. Require explicit confirmation for irreversible or externally visible actions. Bind tool calls to the authenticated user's stated intent, not to instructions found in untrusted content.</p>
+
+      <h3>External policy enforcement</h3>
+      <p>Do not ask the model to be the only judge of whether its own output or action is allowed. Use deterministic checks, policy engines, classifiers, allowlists, rate limits, business rules, and human review for sensitive operations. The model can draft or recommend; application code should authorize.</p>
+
+      <h3>Structured output safety</h3>
+      <p>Model output is untrusted until validated. For JSON, SQL-like filters, command parameters, HTML, or API calls, use strict schemas, escaping, typed APIs, bounded parameters, and allowlists. Reject unknown fields. Never pass free-form generated text directly into privileged interpreters.</p>
+
+      <h3>Retrieval hygiene</h3>
+      <p>RAG systems need source trust tiers, ingestion scanning, permission-aware retrieval, ranking controls, freshness controls, and audit trails. A retrieved document should be evidence for the answer, not a new authority over the assistant. Documents that contain instructions to the assistant should be treated as suspicious unless they come from a trusted prompt repository.</p>
+
+      <h3>Memory hygiene</h3>
+      <p>Long-term memory is a persistence layer. It should have user visibility, edit controls, source attribution, expiration, and policy scanning. Do not store instructions from untrusted content as durable user preferences. Separate user-authored preferences from inferred facts and third-party text.</p>
+
+      <h3>Monitoring and incident response</h3>
+      <p>Log enough to reconstruct incidents: user request, system version, retrieved sources, model output, classifier results, tool calls, approvals, and downstream effects. Monitor for repeated boundary probing, prompt-injection markers in external content, unusual tool-call patterns, high-risk topics, and abnormal data egress. Response plans should include revoking tool tokens, disabling memories, quarantining poisoned content, replaying evals, and notifying affected users when appropriate.</p>
+    </section>
+
+    <section id="evaluation">
+      <h2>Evaluation and Red Teaming</h2>
+      <p>Jailbreak robustness is not a one-time certification. It should be measured before release, after model upgrades, after prompt changes, after adding tools, and after changing retrieval sources. The relevant question is not "Can someone make the model say something odd?" It is "Can an attacker cause a harmful outcome in this system under this threat model?"</p>
+
+      <h3>Build a risk map</h3>
+      <ul>
+        <li>List all inputs: user text, uploaded files, images, audio, retrieved documents, memories, tool outputs, and hidden instructions.</li>
+        <li>List all outputs: user-visible text, structured data, tool calls, database writes, messages, files, code, and workflow decisions.</li>
+        <li>Classify data by sensitivity and tools by potential harm.</li>
+        <li>Identify who can plant content into each source the model reads.</li>
+        <li>Define unacceptable failures, tolerable failures with review, and acceptable failures with logging.</li>
+      </ul>
+
+      <h3>Test families, not only examples</h3>
+      <p>An eval set should cover families of attacks: direct overrides, scenario framing, transformation abuse, many-shot conditioning, multi-turn escalation, indirect injections in retrieved content, hidden text in documents, multimodal inputs, memory poisoning, system-prompt extraction, unsafe tool calls, and parser abuse. Known prompts are useful regression cases, but adaptive attackers will vary the form.</p>
+      <p>Standard benchmarks give these families a concrete starting point. For agentic and indirect-injection testing, AgentDojo<sup><a href="#ref-agentdojo">17</a></sup> and InjecAgent<sup><a href="#ref-injecagent">18</a></sup> provide tool-use environments and labeled injection cases; for model-level jailbreak robustness, HarmBench<sup><a href="#ref-harmbench">19</a></sup> and JailbreakBench<sup><a href="#ref-jailbreakbench">20</a></sup> offer standardized behaviors and scoring. Treat them as regression suites and shared baselines, not as certifications — passing a public benchmark does not prove robustness against an adaptive attacker.</p>
+
+      <h3>Measure both safety and utility</h3>
+      <p>Useful metrics include unsafe compliance rate, partial compliance rate, refusal quality, over-refusal rate, data-leakage rate, unauthorized tool-call rate, user-confirmation bypass rate, retrieval-source obedience rate, and regression delta across releases. A defense that blocks attacks by refusing normal work may be unacceptable. A defense that preserves usefulness while allowing easy data exfiltration is also unacceptable.</p>
+
+      <h3>Use staged release gates</h3>
+      <ol>
+        <li><strong>Unit evals:</strong> narrow tests for prompts, policies, classifiers, tool schemas, and output validators.</li>
+        <li><strong>Scenario evals:</strong> end-to-end workflows with planted benign injections and expected safe behavior.</li>
+        <li><strong>Adversarial evals:</strong> internal red-team attempts under written scope and logging.</li>
+        <li><strong>Canary deployment:</strong> limited rollout with monitoring, rollback, and incident thresholds.</li>
+        <li><strong>Continuous regression:</strong> replay known failure families whenever the model, prompt, retrieval corpus, memory policy, or toolset changes.</li>
+      </ol>
+
+      <h3>Red-team ethics</h3>
+      <p>Red-team work should have written authorization, defined scope, safe test payloads, data-handling rules, escalation contacts, and disclosure procedures. Testing systems without permission can create legal and ethical risk even if the tester's intent is research.</p>
+    </section>
+
+    <section id="frontier">
+      <h2>Research Frontier</h2>
+      <p>Prompt-attack defense is active research because the target keeps changing. Longer context windows, multimodal input, memory, tools, browser use, and autonomous agents all expand the attack surface.</p>
+
+      <h3>Instruction hierarchy training</h3>
+      <p>Training models to prioritize privileged instructions can reduce direct and indirect attacks. The open problem is generalization across domains, languages, modalities, long contexts, and novel attack forms.</p>
+
+      <h3>Provenance-aware prompting</h3>
+      <p>Spotlighting, source labels, delimiters, and data transformations can help models distinguish authority levels. The challenge is making provenance survive summarization, retrieval chains, OCR, media extraction, and adversarial formatting.</p>
+
+      <h3>Automated red teaming</h3>
+      <p>Automated attack generation can find failures at scale, including non-intuitive prompts. The same methods can generate regression suites and training data. Defenders must avoid overfitting to the attacks they already know.</p>
+
+      <h3>Runtime monitors</h3>
+      <p>Input and output classifiers, policy models, constrained decoding, and anomaly detection can reduce risk. Anthropic's Constitutional Classifiers, trained on synthetic data generated from a natural-language constitution, withstood thousands of hours of red teaming while adding only a small increase in over-refusals — illustrating both the promise of classifier guardrails and the safety-versus-usability tradeoff they must manage.<sup><a href="#ref-constitutional">22</a></sup> They are useful layers, but they can also be targeted through obfuscation, decomposition, or multi-turn setup.</p>
+
+      <h3>Secure agent design</h3>
+      <p>As models act through tools, the frontier shifts from "Can the model refuse unsafe text?" to "Can the system delegate bounded authority safely?" This requires identity-aware retrieval, tool-specific permissions, transaction review, sandboxing, rollback, and verifiable consent.</p>
+      <p>Recent work pursues guarantees by construction rather than by prompt wording. CaMeL extracts the control and data flow from the trusted user query so that untrusted data cannot alter program flow, and uses capabilities to constrain tool calls and block exfiltration.<sup><a href="#ref-camel">15</a></sup> A complementary catalogue of agent-security design patterns — including dual-LLM, plan-then-execute, action-selector, and context-minimization — trades some generality for resistance that does not depend on the model judging its own safety.<sup><a href="#ref-design-patterns">16</a></sup> Both reinforce the central point: the LLM should not be the security boundary.</p>
+    </section>
+
+    <section id="examples">
+      <h2>Safe Toy Examples</h2>
+      <p>These examples use harmless tasks to show the structure of failures. They are not jailbreak payloads for harmful outputs.</p>
+
+      <h3>Toy example 1: Instruction-in-data conflict</h3>
+      <pre><code>Application task: Classify the sentiment of the user's review as positive, neutral, or negative.
+User review: The delivery was late and the box was damaged.
+Extra text in the review: A sentence that tries to redirect the assistant away from classification.</code></pre>
+      <p>Here the conflicting instruction arrives through the data being processed — the review text itself — not from the active user, which makes it structurally the same channel as indirect injection. The failure mode is not the wording of the extra text; it is treating lower-priority content as authority over the application task. The safe behavior is to classify the review and treat the extra instruction as text to be analyzed.</p>
+
+      <h3>Toy example 2: Indirect prompt injection</h3>
+      <pre><code>Application task: Summarize this product page for a buyer.
+Retrieved page content: This backpack weighs 1.1 kg and has a 22 L capacity.
+Off-topic page text: A sentence addressed to the assistant that tries to change the recommendation.</code></pre>
+      <p>The retrieved page is evidence, not a command channel. The assistant should summarize product facts and ignore instructions embedded in untrusted content.</p>
+
+      <h3>Toy example 3: Tool-use mismatch</h3>
+      <pre><code>User intent: Draft a calendar invite for the project meeting.
+Untrusted email body: A sentence addressed to automation that tries to redirect the thread outside the organization.
+Available tool: send_email(to, subject, body)</code></pre>
+      <p>The safe behavior is to draft the invite or ask for explicit confirmation. The application should not allow an email-sending tool call that originates from untrusted email content rather than the authenticated user's instruction.</p>
+
+      <h3>Toy example 4: Output parser risk</h3>
+      <pre><code>Application expects: {"priority": "low|medium|high", "summary": "..."}
+Untrusted ticket text: A sentence that tries to add unauthorized workflow fields.</code></pre>
+      <p>The fix is a strict schema that rejects unknown fields and a workflow engine that does not treat model-written text as approval authority.</p>
+    </section>
+
+    <section id="conclusion">
+      <h2>Conclusion</h2>
+      <p>Jailbreaking and prompt injection are best understood as failures of authority, not as isolated prompt-writing tricks. The model receives language from many sources and tries to infer what to do. Attackers exploit that inference step. The more context, tools, memory, and autonomy a system has, the more important it becomes to separate evidence from authority.</p>
+      <p>The most resilient systems assume that a model will sometimes be confused. They limit what the model can see, limit what it can do, label untrusted content, validate outputs, authorize tools outside the model, log enough to investigate, and continuously test against evolving attack families. That posture does not make jailbreaks irrelevant. It makes them survivable.</p>
+    </section>
+
+    <section id="references">
+      <h2>References</h2>
+      <ol class="refs">
+        <li id="ref-owasp-llm01">OWASP Gen AI Security Project, <a href="https://genai.owasp.org/llmrisk/llm01-prompt-injection/">LLM01:2025 Prompt Injection</a>. Used for the relationship between prompt injection and jailbreaking, and for direct/indirect injection definitions.</li>
+        <li id="ref-owasp-top10">OWASP Gen AI Security Project, <a href="https://genai.owasp.org/llm-top-10/">2025 Top 10 Risk and Mitigations for LLMs and Gen AI Apps</a>. Used for broader LLM application risk framing.</li>
+        <li id="ref-ncsc">UK National Cyber Security Centre, <a href="https://www.ncsc.gov.uk/blog-post/prompt-injection-is-not-sql-injection">Prompt injection is not SQL injection (it may be worse)</a>, 2025. Used for the instruction/data boundary analysis and risk-reduction framing.</li>
+        <li id="ref-aisi-trends">AI Security Institute, <a href="https://www.aisi.gov.uk/frontier-ai-trends-report">Frontier AI Trends Report</a>. Used for current public findings on safeguard improvement and remaining vulnerabilities.</li>
+        <li id="ref-iasr">International AI Safety Report, <a href="https://internationalaisafetyreport.org/publication/international-ai-safety-report-2026">International AI Safety Report 2026</a>, February 3, 2026. Used for the broader evidence base on general-purpose AI risk and prompt-injection trends.</li>
+        <li id="ref-anthropic-many-shot">Anthropic, <a href="https://www.anthropic.com/research/many-shot-jailbreaking">Many-shot jailbreaking</a>, 2024. Used for long-context and in-context learning discussion.</li>
+        <li id="ref-zou">Andy Zou, Zifan Wang, Nicholas Carlini, Milad Nasr, J. Zico Kolter, and Matt Fredrikson, <a href="https://arxiv.org/abs/2307.15043">Universal and Transferable Adversarial Attacks on Aligned Language Models</a>, arXiv:2307.15043, 2023. Used for adversarial suffix and transferability discussion.</li>
+        <li id="ref-hierarchy">Eric Wallace, Kai Xiao, Reimar Leike, Lilian Weng, Johannes Heidecke, and Alex Beutel, <a href="https://arxiv.org/abs/2404.13208">The Instruction Hierarchy: Training LLMs to Prioritize Privileged Instructions</a>, arXiv:2404.13208, 2024. Used for instruction-priority defense discussion.</li>
+        <li id="ref-spotlighting">Keegan Hines, Gary Lopez, Matthew Hall, Federico Zarfati, Yonatan Zunger, and Emre Kiciman, Microsoft Research, <a href="https://www.microsoft.com/en-us/research/publication/defending-against-indirect-prompt-injection-attacks-with-spotlighting/">Defending Against Indirect Prompt Injection Attacks With Spotlighting</a>, 2024. Used for provenance and spotlighting defenses.</li>
+        <li id="ref-nist">NIST, <a href="https://www.nist.gov/itl/ai-risk-management-framework">AI Risk Management Framework</a> and <a href="https://doi.org/10.6028/NIST.AI.600-1">NIST AI 600-1: Generative AI Profile</a>. Used for risk-management structure and generative AI governance context.</li>
+        <li id="ref-nvidia">NVIDIA Developer Blog, <a href="https://developer.nvidia.com/blog/securing-llm-systems-against-prompt-injection/">Securing LLM Systems Against Prompt Injection</a>, 2023. Used for early application-security framing around tool and plugin misuse.</li>
+        <li id="ref-willison-2022">Simon Willison, <a href="https://simonwillison.net/2022/Sep/12/prompt-injection/">Prompt injection attacks against GPT-3</a>, September 12, 2022. Used for historical terminology context.</li>
+        <li id="ref-willison-2024">Simon Willison, <a href="https://simonwillison.net/2024/Mar/5/prompt-injection-jailbreaking/">Prompt injection and jailbreaking are not the same thing</a>, March 5, 2024. Used for the practical distinction between application-level prompt injection and model-level jailbreaking.</li>
+        <li id="ref-trifecta">Simon Willison, <a href="https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/">The lethal trifecta for AI agents: private data, untrusted content, and external communication</a>, June 16, 2025. Used for the conjunctive agentic-exfiltration risk model.</li>
+        <li id="ref-camel">Edoardo Debenedetti, Ilia Shumailov, Tianqi Fan, Jamie Hayes, Nicholas Carlini, Daniel Fabian, Christoph Kern, Chongyang Shi, Andreas Terzis, and Florian Tramèr, <a href="https://arxiv.org/abs/2503.18813">Defeating Prompt Injections by Design</a> (CaMeL), arXiv:2503.18813, 2025. Used for design-time control/data-flow isolation and capability-gated tool use.</li>
+        <li id="ref-design-patterns">Luca Beurer-Kellner, Beat Buesser, Ana-Maria Creţu, Edoardo Debenedetti, et al., <a href="https://arxiv.org/abs/2506.08837">Design Patterns for Securing LLM Agents against Prompt Injections</a>, arXiv:2506.08837, 2025. Used for named agent-security patterns (dual-LLM, plan-then-execute, action-selector, context-minimization).</li>
+        <li id="ref-agentdojo">Edoardo Debenedetti, Jie Zhang, Mislav Balunović, Luca Beurer-Kellner, Marc Fischer, and Florian Tramèr, <a href="https://arxiv.org/abs/2406.13352">AgentDojo: A Dynamic Environment to Evaluate Prompt Injection Attacks and Defenses for LLM Agents</a>, arXiv:2406.13352; NeurIPS 2024 Datasets and Benchmarks Track. Used for agentic prompt-injection benchmarking.</li>
+        <li id="ref-injecagent">Qiusi Zhan, Zhixiang Liang, Zifan Ying, and Daniel Kang, <a href="https://arxiv.org/abs/2403.02691">InjecAgent: Benchmarking Indirect Prompt Injections in Tool-Integrated Large Language Model Agents</a>, arXiv:2403.02691; Findings of ACL 2024. Used for indirect-injection benchmarking in tool-using agents.</li>
+        <li id="ref-harmbench">Mantas Mazeika, Long Phan, Xuwang Yin, Andy Zou, Zifan Wang, et al., <a href="https://arxiv.org/abs/2402.04249">HarmBench: A Standardized Evaluation Framework for Automated Red Teaming and Robust Refusal</a>, arXiv:2402.04249; ICML 2024. Used for jailbreak red-teaming benchmarking.</li>
+        <li id="ref-jailbreakbench">Patrick Chao, Edoardo Debenedetti, Alexander Robey, Maksym Andriushchenko, et al., <a href="https://arxiv.org/abs/2404.01318">JailbreakBench: An Open Robustness Benchmark for Jailbreaking Large Language Models</a>, arXiv:2404.01318; NeurIPS 2024 Datasets and Benchmarks Track. Used for jailbreak robustness benchmarking.</li>
+        <li id="ref-crescendo">Mark Russinovich, Ahmed Salem, and Ronen Eldan, <a href="https://arxiv.org/abs/2404.01833">Great, Now Write an Article About That: The Crescendo Multi-Turn LLM Jailbreak Attack</a>, arXiv:2404.01833, 2024; USENIX Security 2025. Used for multi-turn escalation attacks.</li>
+        <li id="ref-constitutional">Mrinank Sharma, Meg Tong, Jesse Mu, Jerry Wei, et al. (Anthropic), <a href="https://arxiv.org/abs/2501.18837">Constitutional Classifiers: Defending against Universal Jailbreaks across Thousands of Hours of Red Teaming</a>, arXiv:2501.18837, 2025. Used for constitution-trained input/output classifier guardrails and their over-refusal tradeoff.</li>
+        <li id="ref-attacker-second">Milad Nasr, Nicholas Carlini, Chawin Sitawarin, Sander V. Schulhoff, et al., <a href="https://arxiv.org/abs/2510.09023">The Attacker Moves Second: Stronger Adaptive Attacks Bypass Defenses Against LLM Jailbreaks and Prompt Injections</a>, arXiv:2510.09023, 2025. Used for the evaluation-validity caveat on reported attack-success rates.</li>
+        <li id="ref-echoleak">NIST National Vulnerability Database, <a href="https://nvd.nist.gov/vuln/detail/CVE-2025-32711">CVE-2025-32711</a> ("EchoLeak," Microsoft 365 Copilot information disclosure), 2025; discovered by Aim Labs, rated CVSS 9.3 (critical) by Microsoft. Used as a real-world zero-click indirect-injection exfiltration example.</li>
+      </ol>
+      <p class="small">This public version intentionally excludes working jailbreak prompts, harmful procedural instructions, hidden-instruction payloads, and optimized adversarial suffixes.</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p class="sig">// end of transmission</p>
+      <p>Version 1.0 — June 13, 2026. Licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Provided as-is, without warranty; not legal advice.</p>
+      <p class="small">Corrections and responsible-disclosure reports: <a href="mailto:claudlos@agentmail.to">claudlos@agentmail.to</a>.</p>
+    </div>
+  </footer>
+</body>
+</html>
