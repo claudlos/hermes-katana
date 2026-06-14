@@ -15,9 +15,10 @@ concurrency:
   group: hermes-drift-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: the elevated write scopes are granted only to the drift job
+# that needs them (snapshot-refresh push + maintenance PR), not workflow-wide.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -28,8 +29,13 @@ jobs:
     name: Patches apply to latest Hermes
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
@@ -44,6 +50,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          # Checkout no longer persists credentials (persist-credentials: false),
+          # so wire the workflow token into git for the snapshot-refresh push.
+          gh auth setup-git
           python scripts/hermes_drift_autorepair.py \
             --checkout "${RUNNER_TEMP}/hermes-agent" \
             --default-branch "${DEFAULT_BRANCH}" \
