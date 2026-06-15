@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Cosine-similarity false-positive softener (`hermes_katana.scabbard.similarity_allowlist`). On a Scabbard or pattern-scanner BLOCK, the verdict is softened to ALLOW when the classified text is cosine-close to a vetted benign exemplar (`policies/scabbard_benign_exemplars.yaml`) and carries no concrete-exploit finding (secret / dangerous command / unicode-evasion / binary payload). It generalises past the hash allowlist to the security-domain content a research agent writes (documentation that *quotes* attack strings). Torch-free: runs on an ONNX all-MiniLM-L6-v2 encoder via `onnxruntime` (install with `scripts/setup_similarity_embedder.py`); fails closed (no softening) when the encoder is absent. The threshold sits above the adversarial-corpus attack ceiling, so it never softens an attack — enforced by the evasion gate and `tests/smoke/test_similarity_allowlist_safety.py`. Untrusted-origin (tainted) content is never softened.
+- `scabbard.audit_blocked_text` config flag: records a truncated (≤200 char) preview of the exact classified text for softened and denied Scabbard blocks, so live false positives can be reviewed and allowlisted by call_id. Off by default (stores tool-argument plaintext).
+
+### Changed
+- Capability-aware Scabbard backend selection. The v17/v14 production checkpoints are PyTorch models; in a torch-free deployment they failed to load and Scabbard ran DEGRADED — every call fail-closed to BLOCK and unsoftenable, so the security tool blocked its own benign tool calls. `ScabbardConfig.runtime_default()` and the `fast_cpu` profile now fall back to the v15 ONNX MiniLM (run via `onnxruntime`) when torch is unavailable, instead of degrading.
+- Behavioral spike detector: default `spike_threshold` raised 5 → 10 (an active agent legitimately bursts several file/exec calls a minute; the spike is observe-only), and the finding is now de-duplicated so a saturated window logs once per new high instead of on every call.
+- Scabbard `block_threshold` default raised 0.5 → 0.7 (fewer raw false positives on the deployed v15-ONNX model); the cosine softener and hash allowlist provide additional, surgical FP relief without lowering attack recall (evasion gate stays at 0 evasions).
+- v17 origin-aware MiniLM-L6 (HF `Carlosian/hermes-katana-90`, PyTorch) is now wired in as a selectable Scabbard backend and is preferred by `runtime_default()` *when PyTorch is available*. It is NOT the forced default: v15-ONNX remains the default deployable backend (the production gateway is torch-free and pins `katana_v15_minilm` + `onnx`), and the capability-aware fallback selects v17-torch only when torch can actually load. Select v17 explicitly with `scabbard_profile: katana_v17_minilm`.
+
+### Fixed
+- `_handle_katana_status` accepts the Hermes tool-registry dispatch contract `handler(args, **kwargs)` (was `**kwargs`-only, which raised a live TypeError when katana_status was invoked through the registry).
+- Regenerated `policies/scabbard_known_fps.yaml` against the deployed v15-ONNX backend (the prior hashes were generated against a different model/text and no longer matched), restoring the false-positive gate to zero blocks on the 154-case benign corpus.
+
 ## [3.1.0] - 2026-06-03
+
 
 ### Added
 - v3.1 preprint under `paper/` (*Cross-Platform Transferability of Prompt Injection Attacks: Universal Attack Surfaces and an Origin-Aware Defense*), self-contained (LaTeX source, figures, and bibliography), buildable with `pdflatex`/`bibtex` via the included Makefile.

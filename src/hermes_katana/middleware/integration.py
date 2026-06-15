@@ -102,13 +102,25 @@ def _normalize_chain_profile(profile: Any) -> str:
 def _profile_defaults(profile: str) -> dict[str, Any]:
     """Return explicit production-profile defaults for the middleware chain."""
     if profile == "fast_cpu":
+        import importlib.util
+
         from hermes_katana.scabbard import ScabbardConfig
 
+        # Capability-aware backend: v17 MiniLM is a PyTorch model. fast_cpu is a
+        # CPU-first profile, so it prefers v17-torch only when torch can actually
+        # load; otherwise it pins the v15 ONNX MiniLM (onnxruntime) so Scabbard
+        # produces real verdicts rather than running DEGRADED (fail-closed BLOCK
+        # on every call). When torch is absent the v15 ONNX artifact is required
+        # (its absence raises the usual ArtifactNotFoundError).
+        if importlib.util.find_spec("torch") is not None and ScabbardConfig.katana_v17_minilm_available():
+            _base = ScabbardConfig.katana_v17_minilm(backend="torch")
+        else:
+            _base = ScabbardConfig.katana_v15_minilm(backend="onnx")
         # Timeout decision "escalate", not "allow": fast_cpu is an enforcing
         # profile, so a classifier timeout must surface through the escalation
         # policy instead of silently allowing the call (audit finding A6).
         scabbard_config = replace(
-            ScabbardConfig.katana_v15_minilm(backend="onnx"),
+            _base,
             protectai_enabled=False,
             classifier_timeout_seconds=0.5,
             classifier_timeout_decision="escalate",
@@ -157,6 +169,8 @@ def _profile_defaults(profile: str) -> dict[str, Any]:
         "scan.enforce_output_findings": True,
         "scan.block_threshold": 0.5,
         "scan.warn_threshold": 0.3,
+        # max is the strict profile: no FP softening on the pattern scanner.
+        "scan.similarity_soften": False,
         "policy.preset": "max",
     }
 
@@ -498,14 +512,21 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
         - ``scabbard_arg_origins``: per-arg origin tier used (when v11 active)
         """
         from hermes_katana.scabbard.fusion import Decision as ScabbardDecision
+        from hermes_katana.scabbard.known_fps import is_known_fp, text_hash
         from hermes_katana.scabbard.routing import (
             extract_scabbard_arg_texts,
             has_scabbard_adversarial_signal,
             should_scabbard_scan_arg,
         )
+        from hermes_katana.scabbard.similarity_allowlist import similarity_match
+
+        similarity_enabled = getattr(self._config, "similarity_allowlist_enabled", True)
+        audit_blocked_text = getattr(self._config, "audit_blocked_text", False)
 
         worst_confidence = 0.0
         worst_result: dict[str, Any] | None = None
+        worst_text: str = ""
+        worst_origin: str | None = None
         used_origins: dict[str, str] = {}
         routes: list[dict[str, Any]] = []
         skipped: dict[str, dict[str, Any]] = {}
@@ -554,17 +575,58 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                     # Never soften a degraded verdict: a deny-on-timeout or
                     # fallback BLOCK is a fail-closed decision, not a
                     # low-confidence classification of short text.
-                    softened = degraded is None and len(text.strip()) < 96 and not has_scabbard_adversarial_signal(text)
+                    known_fp = is_known_fp(text, result.top_category)
+                    # Cosine-similarity softener: generalizes beyond the hash
+                    # allowlist to benign security-domain text the classifier
+                    # over-triggers on. Only runs for non-degraded verdicts and
+                    # trusted (non-tainted) origins; the threshold sits above the
+                    # adversarial-corpus attack ceiling so it never softens an
+                    # attack (enforced by the evasion gate + safety test).
+                    similar_fp = False
+                    similarity = 0.0
+                    if not known_fp and degraded is None and similarity_enabled:
+                        similar_fp, similarity = similarity_match(text, origin=origin)
+                    softened = (
+                        known_fp
+                        or similar_fp
+                        or (degraded is None and len(text.strip()) < 96 and not has_scabbard_adversarial_signal(text))
+                    )
                     if softened:
-                        ctx.extras.setdefault("scabbard_softened_blocks", []).append(
+                        if known_fp:
+                            soften_reason = "known_fp_allowlist"
+                        elif similar_fp:
+                            soften_reason = "similarity_allowlist"
+                        else:
+                            soften_reason = "short_text_without_adversarial_signal"
+                        softened_record = {
+                            "arg": leaf_name,
+                            "reason": soften_reason,
+                            "text_hash": text_hash(text),
+                            "confidence": float(result.confidence),
+                            "top_category": result.top_category,
+                        }
+                        if similar_fp:
+                            softened_record["similarity"] = round(similarity, 4)
+                        if audit_blocked_text:
+                            softened_record["text_preview"] = text[:200]
+                        ctx.extras.setdefault("scabbard_softened_blocks", []).append(softened_record)
+                        continue
+                    # Audit instrumentation: capture a truncated preview of the
+                    # exact classified text (keyed by call_id via the audit
+                    # trail) so a live false positive can be reviewed and added
+                    # to the allowlist/exemplars. Off by default (records tool-arg
+                    # plaintext); enable via scabbard.audit_blocked_text.
+                    if audit_blocked_text:
+                        ctx.extras.setdefault("scabbard_blocked_texts", []).append(
                             {
                                 "arg": leaf_name,
-                                "reason": "short_text_without_adversarial_signal",
-                                "confidence": float(result.confidence),
+                                "text_hash": text_hash(text),
                                 "top_category": result.top_category,
+                                "confidence": float(result.confidence),
+                                "similarity": round(similarity, 4),
+                                "text_preview": text[:200],
                             }
                         )
-                        continue
                     ctx.deny(f"Scabbard blocked ({result.top_category}, confidence={result.confidence:.2f})")
                     ctx.extras["scabbard_result"] = result_dict
                     ctx.extras["scabbard_results_by_arg"] = by_arg
@@ -583,6 +645,8 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                 if result.confidence > worst_confidence:
                     worst_confidence = result.confidence
                     worst_result = result_dict
+                    worst_text = text
+                    worst_origin = origin
 
         ctx.extras["scabbard_route_counts"] = {"scanned": scanned_count, "skipped": skipped_count}
         if self._audit_routes:
@@ -612,6 +676,32 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                 return DispatchDecision.ESCALATE
 
         if worst_confidence >= 0.5:
+            # FLAG. Soften to ALLOW when the flagged text is cosine-close to a
+            # vetted benign exemplar (non-degraded, non-tainted) -- otherwise an
+            # autonomous agent stalls on an ESCALATE of benign security-domain
+            # text just as it would on a BLOCK. Same threshold/arbiter as the
+            # BLOCK softener.
+            _flag_category = (worst_result or {}).get("top_category") or ""
+            _flag_known_fp = not degraded_args and is_known_fp(worst_text, _flag_category)
+            _flag_sim_ok, _flag_sim_score = (
+                similarity_match(worst_text, origin=worst_origin)
+                if (similarity_enabled and not degraded_args and not _flag_known_fp)
+                else (False, 0.0)
+            )
+            if _flag_known_fp or _flag_sim_ok:
+                softened_record = {
+                    "arg": "scabbard_flag",
+                    "reason": "known_fp_allowlist" if _flag_known_fp else "similarity_allowlist",
+                    "text_hash": text_hash(worst_text),
+                    "confidence": float(worst_confidence),
+                    "top_category": _flag_category,
+                }
+                if _flag_sim_ok:
+                    softened_record["similarity"] = round(_flag_sim_score, 4)
+                if audit_blocked_text:
+                    softened_record["text_preview"] = worst_text[:200]
+                ctx.extras.setdefault("scabbard_softened_blocks", []).append(softened_record)
+                return DispatchDecision.ALLOW
             # FLAG — add taint hint for downstream middleware
             ctx.extras["scabbard_flagged"] = True
             ctx.escalate(f"Scabbard flagged (confidence={worst_confidence:.2f})")
@@ -790,6 +880,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
         enforce_output_findings: bool = False,
         redact_output_secrets: bool = True,
         route_aware: bool = True,
+        similarity_soften: bool = True,
         enabled: bool = True,
     ) -> None:
         """
@@ -816,6 +907,62 @@ class KatanaScanMiddleware(KatanaMiddleware):
         self._enforce_output_findings = enforce_output_findings
         self._redact_output_secrets = redact_output_secrets
         self._route_aware = route_aware
+        self._similarity_soften = similarity_soften
+
+    # ScanResult finding fields that represent CONCRETE exploit artifacts:
+    # credentials, dangerous shell commands, unicode/homoglyph evasion, and
+    # binary/markup payloads. A scan block driven by ANY of these is NEVER
+    # similarity-softened -- only blocks driven purely by text injection-pattern
+    # families (injection/persona/prompt-leak/content/etc.) are eligible, and
+    # only when the text is cosine-close to a vetted benign exemplar.
+    _HARD_SCAN_FINDING_FIELDS = (
+        "secret_findings",
+        "command_findings",
+        "unicode_findings",
+        "unicode_spoof_findings",
+        "html_findings",
+        "pdf_findings",
+        "pdf_js_findings",
+        "svg_findings",
+        "css_findings",
+        "ooxml_findings",
+        "image_injection_findings",
+        "multimodal_findings",
+        "structural_flags",
+    )
+
+    @classmethod
+    def _scan_result_hard_blocked(cls, result: Any) -> bool:
+        """True if the result has any concrete-exploit finding (never softenable)."""
+        return any(getattr(result, field, None) for field in cls._HARD_SCAN_FINDING_FIELDS)
+
+    def _scan_block_softenable(
+        self, all_results: list[Any], finding_args: list[tuple[str, str | None]]
+    ) -> bool:
+        """True iff a scan block may be similarity-softened.
+
+        Fails closed. Requires: (1) NO result carries a concrete-exploit finding
+        (secret/command/unicode-evasion/binary payload); (2) at least one
+        finding-bearing arg; (3) EVERY finding-bearing arg is non-tainted AND
+        cosine-close to a vetted benign exemplar. A single arg that is tainted or
+        not exemplar-matched leaves the block intact.
+        """
+        from hermes_katana.scabbard.similarity_allowlist import (
+            is_untrusted_origin,
+            similarity_match,
+        )
+
+        if any(self._scan_result_hard_blocked(r) for r in all_results):
+            return False
+        if not finding_args:
+            return False
+        for text, origin in finding_args:
+            if is_untrusted_origin(origin):
+                return False
+            matched, _score = similarity_match(text, origin=origin)
+            if not matched:
+                return False
+        return True
 
     @staticmethod
     def _scabbard_route_for_arg(ctx: CallContext, arg_name: str) -> Any | None:
@@ -889,6 +1036,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
 
         worst_score = 0.0
         all_results = []
+        finding_args: list[tuple[str, str]] = []  # (text, origin) for args with findings
 
         for arg_name, arg_val in ctx.args.items():
             text = str(arg_val) if arg_val is not None else ""
@@ -932,6 +1080,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
             worst_score = max(worst_score, result.risk_score)
 
             if result.has_findings:
+                finding_args.append((text, KatanaScabbardMiddleware._resolve_origin(ctx, arg_name)))
                 logger.debug(
                     "Scanner findings for %s.%s: %s",
                     ctx.tool_name,
@@ -942,12 +1091,22 @@ class KatanaScanMiddleware(KatanaMiddleware):
         ctx.scan_results = all_results
         ctx.extras["scan_risk_score"] = worst_score
 
-        if worst_score >= self._block_threshold:
-            findings_summary = "; ".join(r.summary for r in all_results if r.has_findings)
-            ctx.deny(f"Scanner blocked: {findings_summary}")
-            return DispatchDecision.DENY
-
         if worst_score >= self._warn_threshold:
+            # Run the (model-backed) similarity check once, only when we would
+            # otherwise escalate or block. Content that is cosine-close to a
+            # vetted benign exemplar -- and free of any concrete-exploit finding
+            # (secret/command/unicode-evasion/binary) -- is ALLOWed outright, so
+            # an autonomous agent is not stalled on benign security-domain text.
+            if self._similarity_soften and self._scan_block_softenable(all_results, finding_args):
+                findings_summary = "; ".join(r.summary for r in all_results if r.has_findings)
+                ctx.extras.setdefault("scan_softened_blocks", []).append(
+                    {"reason": "similarity_allowlist", "summary": findings_summary[:120]}
+                )
+                return DispatchDecision.ALLOW
+            if worst_score >= self._block_threshold:
+                findings_summary = "; ".join(r.summary for r in all_results if r.has_findings)
+                ctx.deny(f"Scanner blocked: {findings_summary}")
+                return DispatchDecision.DENY
             ctx.escalate(f"Scanner warning: risk_score={worst_score:.2f}")
             return DispatchDecision.ESCALATE
 
@@ -1782,6 +1941,7 @@ def create_default_chain(
         enforce_output_findings=cfg.get("scan.enforce_output_findings", False),
         redact_output_secrets=cfg.get("scan.redact_output_secrets", True),
         route_aware=cfg.get("scan.route_aware", True),
+        similarity_soften=cfg.get("scan.similarity_soften", True),
         enabled=cfg.get("scan.enabled", True),
     )
     chain.add(scan_mw)

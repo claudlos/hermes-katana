@@ -30,8 +30,8 @@ Plugin config lives under ``katana:`` in Hermes ``config.yaml``::
         taint_enabled: true
         audit_enabled: true
         audit_log_allow: true
-        scabbard_profile: katana_v15_minilm   # minimal | standard | full | katana_v15_minilm | katana_v15_large
-        scabbard_backend: onnx                # onnx for MiniLM, torch for v15 large
+        scabbard_profile: katana_v17_minilm   # minimal | standard | full | katana_v17_minilm | katana_v15_minilm | katana_v15_large
+        scabbard_backend: torch                # torch for v17_minilm (default), onnx for v15_minilm, torch for v15 large
         scabbard_device: cuda                 # optional torch device for v15 large
         scabbard_route_mode: balanced         # off | content_only | balanced | max
         scabbard_scan_outputs: true           # scan routed tool-output content
@@ -295,6 +295,12 @@ def _initialize_runtime(config: dict[str, Any]) -> tuple:
         scabbard_cfg = ScabbardConfig.full()
     elif _scabbard_profile == "standard":
         scabbard_cfg = ScabbardConfig.standard()
+    elif _scabbard_profile in {"katana_v17_minilm", "v17_minilm", "minilm_v17"}:
+        scabbard_cfg = ScabbardConfig.katana_v17_minilm(
+            model_path=_scabbard_model_path,
+            backend=_scabbard_backend or "torch",
+            device=_scabbard_device,
+        )
     elif _scabbard_profile in {"katana_v15_minilm", "v15_minilm", "minilm"}:
         scabbard_cfg = ScabbardConfig.katana_v15_minilm(
             model_path=_scabbard_model_path,
@@ -684,8 +690,16 @@ def _on_session_end(
 # ---------------------------------------------------------------------------
 
 
-def _handle_katana_status(**kwargs: Any) -> str:
-    """Return current HermesKatana security status as a JSON string."""
+def _handle_katana_status(args: dict | None = None, **kwargs: Any) -> str:
+    """Return current HermesKatana security status as a JSON string.
+
+    The Hermes tool registry dispatches handlers as ``handler(args, **kwargs)``
+    (tools/registry.py), so ``args`` must be accepted as the first positional
+    argument. The previous ``**kwargs``-only signature raised a live TypeError
+    ("takes 0 positional arguments but 1 was given") when katana_status was
+    invoked through the registry. ``args`` is unused here (status takes no
+    parameters) but the positional slot is required by the dispatch contract.
+    """
     from hermes_katana.cli._support import collect_ml_runtime_status
 
     status: dict[str, Any] = {

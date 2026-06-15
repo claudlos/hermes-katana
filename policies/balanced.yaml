@@ -273,6 +273,19 @@ policies:
   tags:
   - side-effect
   - persistence
+- name: balanced_memory_clean
+  description: Allow clean memory writes; tainted memory writes stay DENY at the
+    higher-priority balanced_memory_tainted rule (pri 100). Without this allow the
+    catchall (priority 1) flags every benign note/memory write. The Scabbard ML
+    scanner still classifies the content fields independently.
+  tool_pattern: memory
+  conditions: []
+  action: allow
+  priority: 50
+  tags:
+  - side-effect
+  - persistence
+  - known-tool
 - name: balanced_skill_manage_tainted
   description: Block skill modifications with tainted data.
   tool_pattern: skill_manage
@@ -625,3 +638,39 @@ policies:
   tags:
   - catchall
   - unknown-tool
+- name: balanced_katana_status_allow
+  description: Allow katana_status; it is a read-only introspection call that surfaces the active policy
+    and middleware chain. Without this allow, the catchall (priority 1) flags the security tool inspecting
+    itself, which is a false positive.
+  tool_pattern: katana_status
+  conditions: []
+  action: allow
+  priority: 50
+  tags:
+  - read-only
+  - known-tool
+  - meta
+- name: balanced_cronjob_allow
+  description: Allow cronjob; it is a scheduling/introspection tool. Listing, inspecting, pausing, resuming
+    and removing jobs are all read-only or administrative operations on the scheduler itself. The catchall
+    (priority 1) flags cronjob because no specific allow rule existed for it.
+  tool_pattern: cronjob
+  conditions: []
+  action: allow
+  priority: 50
+  tags:
+  - read-only
+  - known-tool
+  - scheduling
+- name: balanced_send_message_allow
+  description: Allow send_message; it is a channel-listing and outbound-messaging tool. Listing connected
+    targets is a read-only inspection. Outbound messages are already covered by taint tracking and the
+    high-taint catchall (priority 8), so this allow does not weaken protection on tainted content.
+  tool_pattern: send_message
+  conditions: []
+  action: allow
+  priority: 50
+  tags:
+  - read-only
+  - known-tool
+  - messaging

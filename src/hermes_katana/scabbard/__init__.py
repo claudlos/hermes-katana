@@ -23,6 +23,12 @@ from hermes_katana.scabbard.fusion import (
     FusionClassifier,
 )
 from hermes_katana.scabbard.normalizer import NormalizedResult, normalize
+from hermes_katana.scabbard.known_fps import is_known_fp, reload_known_fps, text_hash
+from hermes_katana.scabbard.similarity_allowlist import (
+    SimilarityAllowlist,
+    reload_similarity_allowlist,
+    similarity_match,
+)
 from hermes_katana.scabbard.routing import (
     RouteKind,
     RouteMode,
@@ -53,6 +59,12 @@ __all__ = [
     "extract_scabbard_arg_texts",
     "extract_scabbard_output_texts",
     "has_scabbard_adversarial_signal",
+    "is_known_fp",
+    "reload_known_fps",
+    "text_hash",
+    "SimilarityAllowlist",
+    "reload_similarity_allowlist",
+    "similarity_match",
     "normalize",
     "normalize_route_mode",
     "should_scabbard_scan_arg",
