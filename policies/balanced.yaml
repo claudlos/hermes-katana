@@ -382,6 +382,15 @@ policies:
   tags:
   - read-only
   - tainted-read
+- name: balanced_vision_analyze_clean
+  description: Allow clean vision_analyze; tainted reads stay log_only at the higher-priority rule.
+  tool_pattern: vision_analyze
+  conditions: []
+  action: allow
+  priority: 35
+  tags:
+  - read-only
+  - known-tool
 - name: balanced_todo_tainted_log
   description: Log-only for tainted todo access.
   tool_pattern: todo
@@ -507,6 +516,26 @@ policies:
   tags:
   - read-only
   - skills
+  - known-tool
+- name: balanced_clarify_clean
+  description: Always allow clarify; it is the human-in-the-loop question tool and must never be blocked.
+  tool_pattern: clarify
+  conditions: []
+  action: allow
+  priority: 50
+  tags:
+  - read-only
+  - ux
+  - known-tool
+- name: balanced_skill_manage_clean
+  description: Allow clean skill_manage; tainted skill writes stay DENY at the higher-priority rule.
+  tool_pattern: skill_manage
+  conditions: []
+  action: allow
+  priority: 50
+  tags:
+  - skills
+  - side-effect
   - known-tool
 - name: balanced_todo_clean
   description: Allow clean todo updates; tainted todo content is logged by the higher-priority tainted
