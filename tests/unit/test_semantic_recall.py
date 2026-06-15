@@ -133,7 +133,7 @@ def test_lazy_contrastive_loader_accepts_deployed_projector_schema(tmp_path, mon
         def encode(self, values):
             return [[0.0] * 384 for _ in values]
 
-    fake_zvec = types.SimpleNamespace(open=lambda path: object())
+    fake_zvec = types.SimpleNamespace(open=lambda *args, **kwargs: object())
     monkeypatch.setitem(
         sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=FakeSentenceTransformer)
     )

@@ -613,6 +613,23 @@ class TestKatanaStatus:
         assert "policy_preset" in data
         assert "taint_tracker" in data
 
+    def test_registry_dispatch_pattern(self):
+        """Regression: the Hermes tool registry dispatches handlers as
+        handler(args, **kwargs), passing args as the first POSITIONAL argument.
+        The handler must accept that positional arg. This caught a real
+        production TypeError where the registry called the handler positionally
+        against a def(**kwargs)-only signature, raising "takes 0 positional
+        arguments but 1 was given". Both the positional-args call and the
+        no-arg call must work.
+        """
+        result = hermes_plugin._handle_katana_status({})
+        data = json.loads(result)
+        assert "plugin_version" in data
+
+        result2 = hermes_plugin._handle_katana_status()
+        data2 = json.loads(result2)
+        assert "plugin_version" in data2
+
     def test_middleware_list(self):
         ctx = MockPluginContext(config={"audit_enabled": False})
         hermes_plugin.setup(ctx)
