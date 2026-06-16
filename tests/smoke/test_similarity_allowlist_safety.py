@@ -9,6 +9,7 @@ softener can never turn an attack into an ALLOW.
 Tests that need the ONNX embedder artifact skip when it is not installed (the
 softener fails closed in that case, so the security posture is unchanged).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -78,9 +79,7 @@ def test_attack_ceiling_below_threshold(adversarial_texts, embedder_ready):
         pytest.skip("ONNX embedder artifact not installed")
     al = SimilarityAllowlist()
     ceiling = max(al.match(t)[1] for t in adversarial_texts)
-    assert ceiling < al.threshold, (
-        f"attack ceiling {ceiling:.3f} >= threshold {al.threshold:.3f}: no safety margin"
-    )
+    assert ceiling < al.threshold, f"attack ceiling {ceiling:.3f} >= threshold {al.threshold:.3f}: no safety margin"
 
 
 @pytest.mark.parametrize(

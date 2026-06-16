@@ -936,9 +936,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
         """True if the result has any concrete-exploit finding (never softenable)."""
         return any(getattr(result, field, None) for field in cls._HARD_SCAN_FINDING_FIELDS)
 
-    def _scan_block_softenable(
-        self, all_results: list[Any], finding_args: list[tuple[str, str | None]]
-    ) -> bool:
+    def _scan_block_softenable(self, all_results: list[Any], finding_args: list[tuple[str, str | None]]) -> bool:
         """True iff a scan block may be similarity-softened.
 
         Fails closed. Requires: (1) NO result carries a concrete-exploit finding
@@ -1036,7 +1034,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
 
         worst_score = 0.0
         all_results = []
-        finding_args: list[tuple[str, str]] = []  # (text, origin) for args with findings
+        finding_args: list[tuple[str, str | None]] = []  # (text, origin) for args with findings
 
         for arg_name, arg_val in ctx.args.items():
             text = str(arg_val) if arg_val is not None else ""

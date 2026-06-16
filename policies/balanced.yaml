@@ -671,6 +671,6 @@ policies:
   action: allow
   priority: 50
   tags:
-  - read-only
+  - side-effect
   - known-tool
   - messaging

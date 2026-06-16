@@ -6,7 +6,10 @@
 # content classifier over-triggers on this style because it *describes* or
 # *quotes* attack patterns without being an attack.
 #
-# At runtime the middleware embeds each exemplar once (ZvecEmbedder) and, on a
+# At runtime the middleware embeds each exemplar once (the torch-free ONNX
+# all-MiniLM-L6-v2 encoder in similarity_allowlist.py -- deliberately NOT the
+# Scabbard zvec embedder, which clusters attacks and is unsafe as an allowlist
+# signal) and, on a
 # Scabbard BLOCK, softens the verdict ONLY if the classified text's cosine
 # similarity to the NEAREST exemplar exceeds `similarity_threshold` AND the
 # text carries no hard adversarial imperative signal. The threshold is chosen

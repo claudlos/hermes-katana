@@ -32,6 +32,7 @@ Design constraints (all deliberate):
   (tool output, retrieved/web content) are never similarity-softened — only
   assistant/user-authored arguments, which is where the structural FP lives.
 """
+
 from __future__ import annotations
 
 import os
@@ -52,9 +53,7 @@ _DEFAULT_THRESHOLD = 0.62
 _MAX_TOKENS = 256
 
 # Origin tiers that must never be similarity-softened (untrusted provenance).
-_UNTRUSTED_ORIGINS = frozenset(
-    {"tool_output", "tool_result", "retrieved", "rag", "web", "untrusted", "external"}
-)
+_UNTRUSTED_ORIGINS = frozenset({"tool_output", "tool_result", "retrieved", "rag", "web", "untrusted", "external"})
 
 
 def is_untrusted_origin(origin: Optional[str]) -> bool:
@@ -113,9 +112,7 @@ class _OnnxTextEmbedder:
             from transformers import AutoTokenizer  # noqa: PLC0415
 
             self._tokenizer = AutoTokenizer.from_pretrained(str(self._model_dir))
-            self._session = ort.InferenceSession(
-                str(model_path), providers=["CPUExecutionProvider"]
-            )
+            self._session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
             self._input_names = [i.name for i in self._session.get_inputs()]
         return True
 

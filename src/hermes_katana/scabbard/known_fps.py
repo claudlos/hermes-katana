@@ -12,6 +12,7 @@ Lookup is O(1) over a frozenset of (hash, category) tuples. The set is
 loaded once at import time from the path resolved by
 _default_known_fps_path() (override with KATANA_KNOWN_FPS_PATH).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -45,6 +46,7 @@ def _load_known_fps() -> FrozenSet[Tuple[str, str]]:
         return frozenset()
     try:
         import yaml
+
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except Exception:
         return frozenset()

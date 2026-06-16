@@ -116,18 +116,16 @@ def _production_katana_checkpoint() -> Path:
     # called from readiness diagnostics (katana_default_available ->
     # default_runtime_profile -> katana_status), which must never crash just
     # because the optional v17 artifact is absent.
-    v17_minilm_path: Optional[Path] = None
     try:
         candidate = _katana_v17_minilm_artifact_path()
         if (candidate / "model.safetensors").is_file():
             return candidate
-        v17_minilm_path = candidate
     except Exception:
-        v17_minilm_path = None
+        pass
     for cand in (_KATANA_V14_BEST, _KATANA_V12_BEST, _KATANA_V11_BEST):
         if (cand / "model.safetensors").is_file():
             return cand
-    return v17_minilm_path if v17_minilm_path is not None else _KATANA_V14_BEST
+    return _KATANA_V14_BEST
 
 
 # Map "best" checkpoint dir -> stable model_version tag used in metrics/audit rows.
@@ -294,17 +292,15 @@ class ScabbardConfig:
     tfidf_path: Optional[str] = str(_TFIDF) if _TFIDF.exists() else None
     homoglyph_path: Optional[str] = None
 
-    # Decision thresholds. Set to block=0.60 on 2026-06-14 as a middle
-    # ground when v17 origin-aware MiniLM became the default model: the
-    # v14-era sweep (block=0.50 catching +12 attacks/1000 with FPR unchanged
-    # at 0.10%) was measured on the curated eval set, which is light on
-    # security-domain benign content. On the v17 model, block=0.50 caused
+    # Decision thresholds. block=0.70 on the v15-ONNX/v17 models. The v14-era
+    # sweep (block=0.50 catching +12 attacks/1000 with hard-negatives FPR
+    # unchanged at 0.10%) was measured on the curated eval set, which is light on
+    # security-domain benign content; on the deployed models block=0.50 caused
     # 38/154 (24.7%) FPs in the security-notes subset of
-    # tests/smoke/false_positive_gate.py (all confident false positives on
-    # benign text that *talks about* security). block=0.70 was too
-    # conservative and would have lost those +12 attacks/1000 from the
-    # v14-era sweep entirely. block=0.60 is a deliberate middle ground;
-    # if the v17 model is recalibrated, this can be re-tuned.
+    # tests/smoke/false_positive_gate.py (confident false positives on benign
+    # text that *talks about* security). 0.70 removes those raw FPs, and the
+    # cosine similarity softener + hash allowlist give surgical FP relief on top
+    # without lowering attack recall (the evasion gate stays at 0 evasions).
     allow_threshold: float = 0.3
     block_threshold: float = 0.7
 
@@ -434,7 +430,6 @@ class ScabbardConfig:
         default; the 34 remaining FPs cluster at 1.0 confidence and are
         not threshold-tunable. Re-tuning the v17 model itself is the
         path to reducing FPs further.
-
 
         ``backend`` selects the runtime: ``"torch"`` (default; GPU-aware) /
         ``"onnx"`` (CPU; ~2x faster than torch on CPU) / ``"onnx_int8"`` when

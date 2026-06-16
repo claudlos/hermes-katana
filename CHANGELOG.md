@@ -23,7 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.1.0] - 2026-06-03
 
-
 ### Added
 - v3.1 preprint under `paper/` (*Cross-Platform Transferability of Prompt Injection Attacks: Universal Attack Surfaces and an Origin-Aware Defense*), self-contained (LaTeX source, figures, and bibliography), buildable with `pdflatex`/`bibtex` via the included Makefile.
 - Released the v17 origin-aware prompt-injection classifiers on Hugging Face under MIT: `Carlosian/hermes-katana-17` (DeBERTa-v3-large teacher) and `Carlosian/hermes-katana-90` (distilled MiniLM-L6 CPU scanner).
