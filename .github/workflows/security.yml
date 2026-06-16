@@ -54,7 +54,7 @@ jobs:
             src examples scripts
       - name: Upload Semgrep SARIF
         if: ${{ always() && hashFiles('security-reports/semgrep.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           category: semgrep
           sarif_file: security-reports/semgrep.sarif
@@ -69,7 +69,7 @@ jobs:
             -o security-reports/bandit.sarif
       - name: Upload Bandit SARIF
         if: ${{ always() && hashFiles('security-reports/bandit.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           category: bandit
           sarif_file: security-reports/bandit.sarif
@@ -169,7 +169,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - name: Upload zizmor SARIF
         if: ${{ always() && hashFiles('security-reports/zizmor.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           category: zizmor
           sarif_file: security-reports/zizmor.sarif
@@ -205,7 +205,7 @@ jobs:
           no-fail: true
       - name: Upload Hadolint SARIF
         if: ${{ always() && hashFiles('security-reports/hadolint.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           category: hadolint
           sarif_file: security-reports/hadolint.sarif
@@ -224,7 +224,7 @@ jobs:
           skip-files: .gitleaks.toml
       - name: Upload Trivy filesystem SARIF
         if: ${{ always() && hashFiles('security-reports/trivy-fs.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           category: trivy-fs
           sarif_file: security-reports/trivy-fs.sarif
@@ -269,7 +269,7 @@ jobs:
           exit-code: "0"
       - name: Upload Trivy image SARIF
         if: ${{ always() && hashFiles('security-reports/trivy-image.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           category: trivy-image
           sarif_file: security-reports/trivy-image.sarif
