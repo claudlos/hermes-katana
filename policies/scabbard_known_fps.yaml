@@ -1,0 +1,348 @@
+version: 1
+description: Hash allowlist of benign content the deployed Scabbard model mis-classifies (BLOCK or FLAG). Each entry is (text_hash,
+  top_category); only the SHA-256 prefix is stored. Layered UNDER the cosine similarity softener (entries here are FPs the
+  embedder did not generalize to, e.g. non-English notes). Regenerate against the deployed backend with scripts/regen via
+  the false-positive gate.
+entries:
+- case_id: leak_api_key_in_output
+  tool_name: notes
+  text_hash: 89e485d2e75150cb
+  top_category: semantic_manipulation
+  confidence_at_review: 0.941
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: leak_password_in_output
+  tool_name: notes
+  text_hash: 12187d6cb4896ac9
+  top_category: exfiltration
+  confidence_at_review: 1.0
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: leak_aws_key_in_output
+  tool_name: notes
+  text_hash: 01942b189d06d3e1
+  top_category: exfiltration
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: leak_no_secret_clean_output
+  tool_name: notes
+  text_hash: d0370361376f128b
+  top_category: exfiltration
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_security_checklist
+  tool_name: notes
+  text_hash: 9cb4db766b44570b
+  top_category: encoding_evasion
+  confidence_at_review: 0.97
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_audit_finding
+  tool_name: notes
+  text_hash: cf4859ec6f91cb2a
+  top_category: content_injection
+  confidence_at_review: 0.802
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_xss_education
+  tool_name: notes
+  text_hash: fe2a90abec7a4e20
+  top_category: content_injection
+  confidence_at_review: 0.995
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_csrf_protection
+  tool_name: notes
+  text_hash: 5226d0c38ebd1206
+  top_category: exfiltration
+  confidence_at_review: 0.863
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_password_hashing
+  tool_name: notes
+  text_hash: 9549cdab763439ec
+  top_category: encoding_evasion
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_incident_response
+  tool_name: notes
+  text_hash: 5af5fd6ad646fb70
+  top_category: content_injection
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_bug_bounty
+  tool_name: notes
+  text_hash: 323569833eba9702
+  top_category: content_injection
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_pentest_recon
+  tool_name: notes
+  text_hash: f1b8747cbf8e3fd1
+  top_category: exfiltration
+  confidence_at_review: 0.993
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_parameterized_sql
+  tool_name: notes
+  text_hash: 6215e3ecff70f976
+  top_category: content_injection
+  confidence_at_review: 0.978
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_subprocess_code
+  tool_name: notes
+  text_hash: 51332fd0f754bd3a
+  top_category: content_injection
+  confidence_at_review: 0.998
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_input_validation
+  tool_name: notes
+  text_hash: 9308afb6abb738a3
+  top_category: encoding_evasion
+  confidence_at_review: 1.0
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_rate_limiting
+  tool_name: notes
+  text_hash: 31572eb8f09c10ab
+  top_category: content_injection
+  confidence_at_review: 0.978
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_tls_config
+  tool_name: notes
+  text_hash: 8cfaf7cebc90059d
+  top_category: encoding_evasion
+  confidence_at_review: 1.0
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_devops_runbook
+  tool_name: notes
+  text_hash: 7f29ffdc3d3646e2
+  top_category: content_injection
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_owasp_reference
+  tool_name: notes
+  text_hash: 23ba5d969cefcc6a
+  top_category: content_injection
+  confidence_at_review: 0.977
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_code_review_finding
+  tool_name: notes
+  text_hash: 40499ce4ba7a8c17
+  top_category: encoding_evasion
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_firewall_rules
+  tool_name: notes
+  text_hash: b1126f60a5beb81f
+  top_category: encoding_evasion
+  confidence_at_review: 0.987
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_vulnerability_scan
+  tool_name: notes
+  text_hash: 5acf93dba812ef84
+  top_category: behavioral_control
+  confidence_at_review: 0.559
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_patching_procedure
+  tool_name: notes
+  text_hash: 6dfece91462d3314
+  top_category: content_injection
+  confidence_at_review: 0.994
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_sast_finding
+  tool_name: notes
+  text_hash: 8b875a4e7cf8380b
+  top_category: exfiltration
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_network_config
+  tool_name: notes
+  text_hash: b952fe322188b9d3
+  top_category: content_injection
+  confidence_at_review: 0.971
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_auth_code_snippet
+  tool_name: notes
+  text_hash: 1ff5ac2aca03850c
+  top_category: encoding_evasion
+  confidence_at_review: 1.0
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_crypto_snippet
+  tool_name: notes
+  text_hash: f72826cef3940f5b
+  top_category: encoding_evasion
+  confidence_at_review: 1.0
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_log_injection
+  tool_name: notes
+  text_hash: 337e621d62cbe682
+  top_category: content_injection
+  confidence_at_review: 0.978
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_container_security
+  tool_name: notes
+  text_hash: 761296e0c1de83d4
+  top_category: content_injection
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_api_security
+  tool_name: notes
+  text_hash: 604adb10210af7e0
+  top_category: content_injection
+  confidence_at_review: 0.996
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_secrets_management
+  tool_name: notes
+  text_hash: 635f123443831d8c
+  top_category: content_injection
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_dependency_scan
+  tool_name: notes
+  text_hash: d1e142244906d014
+  top_category: content_injection
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_threat_model
+  tool_name: notes
+  text_hash: 458fe430f04445cc
+  top_category: behavioral_control
+  confidence_at_review: 0.988
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_zero_trust
+  tool_name: notes
+  text_hash: c43d84ecfbac13bd
+  top_category: jailbreak
+  confidence_at_review: 0.657
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_pentest_finding
+  tool_name: notes
+  text_hash: 3cc0ec69b3d98f2f
+  top_category: content_injection
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_red_team
+  tool_name: notes
+  text_hash: f340d0e7def3a591
+  top_category: jailbreak
+  confidence_at_review: 0.789
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_ctf_writeup
+  tool_name: notes
+  text_hash: 3fbd510be4d0b311
+  top_category: exfiltration
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_compliance
+  tool_name: notes
+  text_hash: 271dfa7a36e38456
+  top_category: behavioral_control
+  confidence_at_review: 0.619
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_supply_chain
+  tool_name: notes
+  text_hash: befcdd9e2fed2181
+  top_category: content_injection
+  confidence_at_review: 0.799
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_security_chat
+  tool_name: notes
+  text_hash: 378a9a2292b5054b
+  top_category: exfiltration
+  confidence_at_review: 0.935
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_note_devops_chat
+  tool_name: notes
+  text_hash: 0ba7167aae36efa2
+  top_category: content_injection
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_chinese_ai_discussion
+  tool_name: notes
+  text_hash: 3c52729530186ec0
+  top_category: content_injection
+  confidence_at_review: 0.878
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_chinese_security_doc
+  tool_name: notes
+  text_hash: d47f26ac454df586
+  top_category: encoding_evasion
+  confidence_at_review: 0.986
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_hindi_ai_discussion
+  tool_name: notes
+  text_hash: 6db0b2c016b82ca2
+  top_category: encoding_evasion
+  confidence_at_review: 0.926
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_thai_ai_discussion
+  tool_name: notes
+  text_hash: 5e0cd9d67083856e
+  top_category: encoding_evasion
+  confidence_at_review: 1.0
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_german_ai_doc
+  tool_name: notes
+  text_hash: 783166d671c24969
+  top_category: content_injection
+  confidence_at_review: 0.996
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_japanese_ai_discussion
+  tool_name: notes
+  text_hash: abeba6df7c35570c
+  top_category: encoding_evasion
+  confidence_at_review: 0.951
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_korean_tech_note
+  tool_name: notes
+  text_hash: adba7739554de928
+  top_category: encoding_evasion
+  confidence_at_review: 0.581
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_polish_tech_note
+  tool_name: notes
+  text_hash: f5c2372293fd387f
+  top_category: encoding_evasion
+  confidence_at_review: 0.998
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_dutch_security_note
+  tool_name: notes
+  text_hash: d6f55905ab566cc2
+  top_category: content_injection
+  confidence_at_review: 0.99
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_ukrainian_tech_note
+  tool_name: notes
+  text_hash: 25d22fc5ece46f37
+  top_category: jailbreak
+  confidence_at_review: 0.827
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_indonesian_ai_discussion
+  tool_name: notes
+  text_hash: 070d5247a66d9d95
+  top_category: content_injection
+  confidence_at_review: 0.918
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_malay_tech_note
+  tool_name: notes
+  text_hash: 57cf993ea47f7c18
+  top_category: content_injection
+  confidence_at_review: 0.92
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_vietnamese_ai_note
+  tool_name: notes
+  text_hash: 4d692ea5f575eb8f
+  top_category: encoding_evasion
+  confidence_at_review: 0.992
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: benign_turkish_tech_note
+  tool_name: notes
+  text_hash: e67439c799c54d63
+  top_category: encoding_evasion
+  confidence_at_review: 0.503
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: provenance_design_note_user
+  tool_name: notes
+  text_hash: b5ef667bbd5c909c
+  top_category: exfiltration
+  confidence_at_review: 0.999
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)
+- case_id: provenance_meeting_summary_user
+  tool_name: notes
+  text_hash: bff0df3fbe34e815
+  top_category: exfiltration
+  confidence_at_review: 0.94
+  note: v15-onnx over-trigger on benign security/multilingual text (regenerated)

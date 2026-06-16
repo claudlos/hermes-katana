@@ -337,7 +337,13 @@ class BehavioralTracker:
     """
 
     window_seconds: float = 60.0
-    spike_threshold: int = 5
+    # Raised from 5 to 10: an active coding/research agent legitimately issues
+    # several file/exec calls within a minute, so 5 produced a continuous stream
+    # of false TOOL_SPIKE findings during normal work. The spike is observe-only
+    # (KatanaBehavioralMiddleware does not block on it unless block_on_sequence is
+    # set), so this only affects the anomaly signal's sensitivity. Tune per
+    # deployment via BehavioralTracker(spike_threshold=...).
+    spike_threshold: int = 10
     failure_threshold: int = 3
     length_z_threshold: float = 3.0
     length_min_samples: int = 5
@@ -345,6 +351,11 @@ class BehavioralTracker:
     _history: Deque[ToolCall] = field(default_factory=lambda: deque(maxlen=500))
     _tool_lengths: dict[str, list[int]] = field(default_factory=dict)
     _consecutive_failures: dict[str, int] = field(default_factory=dict)
+    # Highest sensitive-call count already reported as a spike in the current
+    # episode; used to suppress re-emitting the same finding on every subsequent
+    # call while the window stays saturated. Reset when the count falls back
+    # below threshold.
+    _last_spike_count: int = 0
 
     def record_tool_call(
         self,
@@ -418,6 +429,13 @@ class BehavioralTracker:
         recent = self._recent_calls(now)
         sensitive_count = sum(1 for c in recent if c.tool_name.lower() in _ALL_SENSITIVE)
         if sensitive_count >= self.spike_threshold:
+            # De-duplicate: only emit when the spike reaches a NEW high for this
+            # episode. Otherwise a saturated window re-emits the identical finding
+            # on every call (the live logs showed the same spike logged dozens of
+            # times). Re-arms once the window drains below threshold.
+            if sensitive_count <= self._last_spike_count:
+                return []
+            self._last_spike_count = sensitive_count
             return [
                 BehavioralFinding(
                     pattern_name="tool_spike",
@@ -432,6 +450,7 @@ class BehavioralTracker:
                     confidence=0.85,
                 )
             ]
+        self._last_spike_count = 0
         return []
 
     def _check_sequence(self) -> list[BehavioralFinding]:

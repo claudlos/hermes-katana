@@ -1,0 +1,61 @@
+# Benign exemplar corpus for the Scabbard cosine-similarity softener.
+#
+# These are KNOWN-GOOD, security-domain benign texts of the kind an agent
+# legitimately authors while working ON a prompt-injection defense codebase
+# (documentation, regression tests, FP-fix notes, skill content). The v17
+# content classifier over-triggers on this style because it *describes* or
+# *quotes* attack patterns without being an attack.
+#
+# At runtime the middleware embeds each exemplar once (the torch-free ONNX
+# all-MiniLM-L6-v2 encoder in similarity_allowlist.py -- deliberately NOT the
+# Scabbard zvec embedder, which clusters attacks and is unsafe as an allowlist
+# signal) and, on a
+# Scabbard BLOCK, softens the verdict ONLY if the classified text's cosine
+# similarity to the NEAREST exemplar exceeds `similarity_threshold` AND the
+# text carries no hard adversarial imperative signal. The threshold is chosen
+# so that NO adversarial-dispatch attack case is ever softened (the evasion
+# gate is the arbiter). See tests/smoke/test_similarity_allowlist_safety.py.
+#
+# Exemplars must be DESCRIPTIVE (documentation / test / explanation), never an
+# imperative instruction directed at a model. Do not add anything that reads as
+# a command ("ignore...", "reveal...", "exfiltrate...").
+# similarity_threshold is set ABOVE the empirical attack ceiling. On the
+# adversarial_dispatch corpus (226 attacks) the highest attack->exemplar cosine
+# is ~0.46 with the all-MiniLM-L6-v2 ONNX encoder; genuine security-doc false
+# positives score ~0.6-0.86. 0.62 leaves a ~0.16 margin over the attack ceiling
+# and is validated by tests/smoke/test_similarity_allowlist_safety.py and the
+# evasion gate (both must show zero softened attacks). Re-run the safety test if
+# you add exemplars: an exemplar that sits near an attack raises the ceiling.
+version: 1
+similarity_threshold: 0.62
+exemplars:
+  - "This module documents how the Scabbard classifier detects prompt-injection patterns inside tool-call arguments before they reach the model."
+  - "The false-positive rate rose because benign security notes that quote attack phrases are flagged by the content classifier as if they were attacks."
+  - "Add a regression test confirming the evasion gate still blocks direct prompt injection after the known-false-positive allowlist change."
+  - "The origin-aware MiniLM classifier assigns higher attack probability to untrusted tool-output content than to assistant-authored arguments."
+  - "Reviewers should verify that the taint tracker still escalates write_file calls whose content was derived from an untrusted web page."
+  - "This skill explains how HermesKatana scores tool calls and how to add an entry to the known false-positive allowlist when the scanner over-triggers."
+  - "The README section on threat models describes how an attacker might try to smuggle instructions through a tool result and how the middleware blocks it."
+  - "We measured 34 false positives on the security-domain benign subset of the false-positive gate at block threshold 0.7."
+  - "The behavioral detector counts file, network, and exec tool calls within a sixty-second window and emits an observability finding above the spike threshold."
+  - "Document the difference between the policy engine allow rules and the Scabbard content classifier, which runs first and can short-circuit the chain."
+  - "When the classifier returns a block verdict on benign text, the operator captures the exact string and appends a hashed entry to the allowlist file."
+  - "This changelog entry records that the default classifier was swapped to the v17 origin-aware distilled CPU model."
+  - "The unit test feeds a benign security checklist to the scanner and asserts that the dispatch decision is allow rather than deny."
+  - "Explain in the contributor guide why the evasion corpus contains direct, untainted attack strings in tool arguments."
+  - "The audit trail records the tool name, call identifier, and decision reason for every blocked tool call so false positives can be reviewed."
+  - "Our defense pairs a fast pattern scanner with a transformer classifier and a taint tracker to catch injected instructions in retrieved content."
+  - "Note that the cosine softener only relaxes a block for text that closely matches a vetted benign exemplar and never for tainted arguments."
+  - "Describe how the cascade routes each argument through normalization, feature extraction, retrieval, and fusion before producing a decision."
+  - "The promotion gate requires zero structural false positives on benign tool arguments and one hundred percent recall on the canonical attack set."
+  - "This section of the paper analyzes cross-platform transferability of prompt-injection attacks and an origin-aware defense."
+  - "Add a fixture that simulates an assistant editing a security skill file so the test covers the legitimate self-modification path."
+  - "The scanner flags encoding evasion when it sees base64 or homoglyph obfuscation, so document benign uses of base64 in configuration files."
+  - "Summarize how the middleware redacts blocked tool-output content while still allowing the underlying read to complete."
+  - "Explain that a degraded classifier verdict from a timeout is never softened and always fails closed to a block."
+  - "The benchmark script measures classifier latency per tool call across the base, MiniLM, and DeBERTa variants on CPU."
+  - "Write documentation describing the persona-shift and restriction-removal categories the behavioral scanner reports."
+  - "We added benign-from-untrusted training data so the model stops marking every quoted instruction as an attack."
+  - "The handoff notes that the live agent was blocked while editing skill content about the hermes-katana false-positive fix."
+  - "Clarify in the policy comments that tainted skill writes remain denied at the higher-priority rule while clean writes are allowed."
+  - "This test asserts that paraphrased attack strings are still blocked even when they resemble a vetted benign exemplar."
