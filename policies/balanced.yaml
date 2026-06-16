@@ -274,10 +274,9 @@ policies:
   - side-effect
   - persistence
 - name: balanced_memory_clean
-  description: Allow clean memory writes; tainted memory writes stay DENY at the
-    higher-priority balanced_memory_tainted rule (pri 100). Without this allow the
-    catchall (priority 1) flags every benign note/memory write. The Scabbard ML
-    scanner still classifies the content fields independently.
+  description: Allow clean memory writes; tainted memory writes stay DENY at the higher-priority balanced_memory_tainted
+    rule (pri 100). Without this allow the catchall (priority 1) flags every benign note/memory write.
+    The Scabbard ML scanner still classifies the content fields independently.
   tool_pattern: memory
   conditions: []
   action: allow
