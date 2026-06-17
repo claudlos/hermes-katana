@@ -80,9 +80,10 @@ katana setup full
 ```
 
 This downloads every managed setup model artifact, installs the ONNX Runtime
-CPU, PyTorch CPU, and Proving Ground dependency groups, then verifies that all
-of them are present. Research artifacts such as `v17_minilm` and `v17_large`
-remain explicit downloads.
+CPU, PyTorch CPU, and Proving Ground dependency groups, installs the separate
+similarity-softener embedder, then verifies that all of them are present.
+Research artifacts such as `v17_minilm` and `v17_large` remain explicit
+downloads.
 
 For model artifacts only:
 
@@ -101,7 +102,7 @@ katana artifacts setup --all          # every managed setup model
 katana setup --fast-cpu               # ONNX Runtime dependencies only
 katana setup --torch-cpu              # PyTorch CPU dependencies only
 katana setup --proving-ground         # install Proving Ground dependencies
-katana setup --yes --proving-ground   # small ONNX model, ONNX Runtime, plus Proving Ground
+katana setup --yes --proving-ground   # small ONNX model, similarity embedder, ONNX Runtime, plus Proving Ground
 katana setup full                     # managed setup models, setup dependencies, and verification
 ```
 

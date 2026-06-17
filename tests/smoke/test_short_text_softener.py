@@ -196,7 +196,7 @@ class TestShouldSoftenShortText:
 
     def test_untrusted_origin_is_never_softened(self):
         text = "This module documents how the Scabbard classifier detects prompt-injection."
-        for origin in ("tool_output", "tool:read_file", "retrieved_web", "https://example.invalid"):
+        for origin in ("tool_output", "tool:read_file", "retrieved_web", "web_search", "https://example.invalid"):
             should, reason = should_soften_short_text(text, origin=origin)
             assert not should
             assert reason == "untrusted_origin"
