@@ -490,6 +490,36 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
         """
         if not ctx.taint_context:
             return None
+        tainted = ctx.taint_context.get("tainted_fields")
+        if isinstance(tainted, dict):
+            field = tainted.get(arg_name)
+            if isinstance(field, dict):
+                raw_labels = field.get("labels", [])
+                if isinstance(raw_labels, str):
+                    raw_labels = [raw_labels]
+                labels = {str(label).upper() for label in raw_labels if label is not None}
+                if "MCP_TOOL_DESCRIPTION" in labels:
+                    return "mcp_tool_description"
+                if labels & {"MCP", "MCP_TOOL_RESULT", "MCP_RESOURCE", "MCP_PROMPT"}:
+                    return "mcp_tool_result"
+                if labels & {"MEMORY", "CROSS_SESSION"}:
+                    return "prior_session_memory"
+                if labels & {"AGENT", "AGENT_DELEGATED"}:
+                    return "delegated_agent_output"
+                if labels & {"WEB_CONTENT", "TOOL_OUTPUT", "FILE_CONTENT", "UNKNOWN"}:
+                    return "retrieved_web"
+
+                source = field.get("source")
+                if isinstance(source, str):
+                    lowered = source.strip().lower()
+                    if lowered.startswith(("http://", "https://", "tool:", "mcp:", "file:", "session:")):
+                        return "retrieved_web"
+                    if lowered in {"web", "tool_output", "tool-output", "retrieved", "untrusted", "external"}:
+                        return "retrieved_web"
+
+                level = field.get("level")
+                if isinstance(level, (int, float)) and level > 0:
+                    return "retrieved_web"
         per_arg = ctx.taint_context.get("arg_origins")
         if isinstance(per_arg, dict):
             tier = per_arg.get(arg_name)
@@ -515,7 +545,6 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
         from hermes_katana.scabbard.known_fps import is_known_fp, text_hash
         from hermes_katana.scabbard.routing import (
             extract_scabbard_arg_texts,
-            has_scabbard_adversarial_signal,
             should_scabbard_scan_arg,
         )
         from hermes_katana.scabbard.similarity_allowlist import similarity_match
@@ -586,18 +615,30 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                     similarity = 0.0
                     if not known_fp and degraded is None and similarity_enabled:
                         similar_fp, similarity = similarity_match(text, origin=origin)
-                    softened = (
-                        known_fp
-                        or similar_fp
-                        or (degraded is None and len(text.strip()) < 96 and not has_scabbard_adversarial_signal(text))
-                    )
+                    # Structural short-text softener: handles the most common
+                    # FP surface (security-domain English with attack-string
+                    # keywords) more precisely than the embedding-based
+                    # cosine softener for texts <200 chars. Fails closed: a
+                    # short text containing an attack-imperative verb falls
+                    # through to the chain so the dangerous-command / policy
+                    # / taint layers can also see it.
+                    short_soften = False
+                    short_reason = None
+                    if degraded is None and not known_fp and not similar_fp:
+                        from hermes_katana.scabbard.short_text_softener import (
+                            should_soften_short_text,
+                        )
+                        short_soften, short_reason = should_soften_short_text(
+                            text, result.top_category, origin=origin
+                        )
+                    softened = known_fp or similar_fp or short_soften
                     if softened:
                         if known_fp:
                             soften_reason = "known_fp_allowlist"
                         elif similar_fp:
                             soften_reason = "similarity_allowlist"
                         else:
-                            soften_reason = "short_text_without_adversarial_signal"
+                            soften_reason = short_reason or "short_text_without_adversarial_signal"
                         softened_record = {
                             "arg": leaf_name,
                             "reason": soften_reason,
@@ -688,10 +729,25 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                 if (similarity_enabled and not degraded_args and not _flag_known_fp)
                 else (False, 0.0)
             )
-            if _flag_known_fp or _flag_sim_ok:
+            _flag_short_ok = False
+            _flag_short_reason = None
+            if not degraded_args and not _flag_known_fp and not _flag_sim_ok:
+                from hermes_katana.scabbard.short_text_softener import (
+                    should_soften_short_text,
+                )
+                _flag_short_ok, _flag_short_reason = should_soften_short_text(
+                    worst_text, _flag_category, origin=worst_origin
+                )
+            if _flag_known_fp or _flag_sim_ok or _flag_short_ok:
+                if _flag_known_fp:
+                    _soften_reason = "known_fp_allowlist"
+                elif _flag_sim_ok:
+                    _soften_reason = "similarity_allowlist"
+                else:
+                    _soften_reason = _flag_short_reason or "short_text_without_adversarial_signal"
                 softened_record = {
                     "arg": "scabbard_flag",
-                    "reason": "known_fp_allowlist" if _flag_known_fp else "similarity_allowlist",
+                    "reason": _soften_reason,
                     "text_hash": text_hash(worst_text),
                     "confidence": float(worst_confidence),
                     "top_category": _flag_category,
@@ -927,8 +983,18 @@ class KatanaScanMiddleware(KatanaMiddleware):
         "css_findings",
         "ooxml_findings",
         "image_injection_findings",
+    )
+    _STRUCTURAL_SCAN_FINDING_FIELDS = (
         "multimodal_findings",
         "structural_flags",
+    )
+    _EXACT_SOFTENABLE_SCAN_FP_HASHES = frozenset(
+        {
+            # Benign audit fixture documenting an encoded prompt-injection
+            # payload. The scanner correctly decodes it, so this must stay an
+            # exact text hash rather than a broad base64-documentation rule.
+            "965af077390c29d7",
+        }
     )
 
     @classmethod
@@ -936,31 +1002,105 @@ class KatanaScanMiddleware(KatanaMiddleware):
         """True if the result has any concrete-exploit finding (never softenable)."""
         return any(getattr(result, field, None) for field in cls._HARD_SCAN_FINDING_FIELDS)
 
-    def _scan_block_softenable(self, all_results: list[Any], finding_args: list[tuple[str, str | None]]) -> bool:
+    @classmethod
+    def _exact_scan_fp_softenable(
+        cls,
+        all_results: list[Any],
+        finding_args: list[tuple[str, str | None, Any]],
+    ) -> bool:
+        """Return True for exact, reviewed scanner false positives only."""
+        from hermes_katana.scabbard.known_fps import text_hash
+        from hermes_katana.scabbard.short_text_softener import (
+            should_soften_short_text,
+        )
+        from hermes_katana.scabbard.similarity_allowlist import is_untrusted_origin
+
+        finding_results = [r for r in all_results if getattr(r, "has_findings", False)]
+        if len(finding_results) != 1 or len(finding_args) != 1:
+            return False
+
+        text, origin, result = finding_args[0]
+        if result is not finding_results[0]:
+            return False
+        if is_untrusted_origin(origin):
+            return False
+        if text_hash(text) not in cls._EXACT_SOFTENABLE_SCAN_FP_HASHES:
+            return False
+
+        short_ok, short_reason = should_soften_short_text(text, origin=origin)
+        if not short_ok or short_reason not in {"quoted_documentation", "long_quoted_documentation"}:
+            return False
+
+        hard_fields_except_entropy_secret = tuple(
+            field for field in cls._HARD_SCAN_FINDING_FIELDS if field != "secret_findings"
+        )
+        if any(getattr(result, field, None) for field in hard_fields_except_entropy_secret):
+            return False
+        if not getattr(result, "injection_findings", None) or not getattr(result, "decoder_findings", None):
+            return False
+
+        # The exact reviewed case carries one medium-confidence high-entropy
+        # finding for the quoted base64 payload. Do not let this path suppress
+        # named secret patterns such as AWS keys or bearer tokens.
+        secret_findings = getattr(result, "secret_findings", None) or []
+        for finding in secret_findings:
+            pattern_name = str(getattr(finding, "pattern_name", "")).lower()
+            if pattern_name != "high_entropy":
+                return False
+        return bool(secret_findings)
+
+    def _scan_block_softenable(
+        self,
+        all_results: list[Any],
+        finding_args: list[tuple[str, str | None, Any]],
+    ) -> tuple[bool, str]:
         """True iff a scan block may be similarity-softened.
 
         Fails closed. Requires: (1) NO result carries a concrete-exploit finding
         (secret/command/unicode-evasion/binary payload); (2) at least one
         finding-bearing arg; (3) EVERY finding-bearing arg is non-tainted AND
-        cosine-close to a vetted benign exemplar. A single arg that is tainted or
-        not exemplar-matched leaves the block intact.
+        either cosine-close to a vetted benign exemplar OR a benign short text
+        recognized by the structural softener. A single arg that is tainted or
+        not exempted leaves the block intact.
         """
+        from hermes_katana.scabbard.short_text_softener import (
+            should_soften_short_text,
+        )
         from hermes_katana.scabbard.similarity_allowlist import (
             is_untrusted_origin,
             similarity_match,
         )
 
-        if any(self._scan_result_hard_blocked(r) for r in all_results):
-            return False
         if not finding_args:
-            return False
-        for text, origin in finding_args:
+            return False, "no_findings"
+        if self._exact_scan_fp_softenable(all_results, finding_args):
+            return True, "known_scanner_fp"
+        has_structural_soften = False
+        for text, origin, _result in finding_args:
             if is_untrusted_origin(origin):
-                return False
+                return False, "untrusted_origin"
             matched, _score = similarity_match(text, origin=origin)
-            if not matched:
-                return False
-        return True
+            if matched:
+                continue
+            # Structural short-text softener: text mentioning a unicode
+            # issue, behavioral pattern, or similar non-concrete finding in
+            # a descriptive context is benign documentation. The
+            # short-text softener is the right tool here: it inspects
+            # structure (quotes, descriptive voice) rather than embedding
+            # similarity, which the unicode-spam signal in benign text
+            # makes unreliable.
+            short_ok, _reason = should_soften_short_text(text, origin=origin)
+            if not short_ok:
+                return False, _reason
+            has_structural_soften = True
+        if any(self._scan_result_hard_blocked(r) for r in all_results):
+            return False, "hard_scan_finding"
+        if has_structural_soften:
+            # Structural/documentation softening is allowed for scanner text
+            # pattern families, including their structural/multimodal mirrors,
+            # but never for concrete exploit scanners covered above.
+            return True, "short_text_softener"
+        return True, "similarity_allowlist"
 
     @staticmethod
     def _scabbard_route_for_arg(ctx: CallContext, arg_name: str) -> Any | None:
@@ -1034,7 +1174,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
 
         worst_score = 0.0
         all_results = []
-        finding_args: list[tuple[str, str | None]] = []  # (text, origin) for args with findings
+        finding_args: list[tuple[str, str | None, Any]] = []  # (text, origin, result) for args with findings
 
         for arg_name, arg_val in ctx.args.items():
             text = str(arg_val) if arg_val is not None else ""
@@ -1078,7 +1218,7 @@ class KatanaScanMiddleware(KatanaMiddleware):
             worst_score = max(worst_score, result.risk_score)
 
             if result.has_findings:
-                finding_args.append((text, KatanaScabbardMiddleware._resolve_origin(ctx, arg_name)))
+                finding_args.append((text, KatanaScabbardMiddleware._resolve_origin(ctx, arg_name), result))
                 logger.debug(
                     "Scanner findings for %s.%s: %s",
                     ctx.tool_name,
@@ -1095,10 +1235,15 @@ class KatanaScanMiddleware(KatanaMiddleware):
             # vetted benign exemplar -- and free of any concrete-exploit finding
             # (secret/command/unicode-evasion/binary) -- is ALLOWed outright, so
             # an autonomous agent is not stalled on benign security-domain text.
-            if self._similarity_soften and self._scan_block_softenable(all_results, finding_args):
+            scan_soften_ok, scan_soften_reason = (
+                self._scan_block_softenable(all_results, finding_args)
+                if self._similarity_soften
+                else (False, "disabled")
+            )
+            if scan_soften_ok:
                 findings_summary = "; ".join(r.summary for r in all_results if r.has_findings)
                 ctx.extras.setdefault("scan_softened_blocks", []).append(
-                    {"reason": "similarity_allowlist", "summary": findings_summary[:120]}
+                    {"reason": scan_soften_reason, "summary": findings_summary[:120]}
                 )
                 return DispatchDecision.ALLOW
             if worst_score >= self._block_threshold:
