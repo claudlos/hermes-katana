@@ -229,6 +229,10 @@ class SimilarityAllowlist:
                 self._ready = False
             return self._ready
 
+    def is_ready(self) -> bool:
+        """Return True when the similarity embedder and exemplars are loaded."""
+        return self._ensure_ready()
+
     def match(self, text: str, origin: Optional[str] = None) -> Tuple[bool, float]:
         """Return ``(is_benign_fp, similarity)``.
 

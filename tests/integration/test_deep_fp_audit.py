@@ -69,7 +69,7 @@ pytestmark = pytest.mark.skipif(
 # correctly, but the context is documentation). All structural FPs
 # (security-domain prose, multilingual notes, code reviews) should be 0.
 HARD_FP_BUDGET = 0.01  # < 1% HARD FPs
-SOFT_FP_BUDGET = 0.10  # < 10% SOFT FPs acceptable (some text IS ambiguous)
+SOFT_FP_BUDGET = 0.05  # < 5% SOFT FPs acceptable (some text IS ambiguous)
 ATTACK_RECALL_FLOOR = 1.0  # 100% recall on the sanity set
 
 

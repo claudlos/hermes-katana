@@ -271,6 +271,8 @@ CONFUSABLE_MAP: dict[str, str] = {
 
 # Reverse lookup: build set of confusable codepoints for fast detection
 _CONFUSABLE_CODEPOINTS = frozenset(ord(c) for c in CONFUSABLE_MAP)
+_URL_PUNCTUATION_EQUIVS = frozenset({".", "/", ":", "\\"})
+_URL_CONTEXT_RE = re.compile(r"(?i)(?:https?://|www\.|[A-Za-z0-9-]{2,63}\.[A-Za-z]{2,63}(?:\b|[/:?#]))")
 
 # ---------------------------------------------------------------------------
 # Script categories for mixed-script detection
@@ -364,13 +366,23 @@ def _is_all_confusable_domain_label(text: str, start: int, end: int, word: str) 
         return False
     scripts = {_get_script(ch) for ch in alpha}
     scripts.discard(None)
-    scripts.discard("Other")
-    if len(scripts) != 1 or "Latin" in scripts:
+    if not scripts or "Latin" in scripts:
         return False
     if not all(ch in CONFUSABLE_MAP for ch in alpha):
         return False
     skeleton = "".join(CONFUSABLE_MAP[ch] for ch in alpha)
     return bool(re.fullmatch(r"[A-Za-z0-9-]{3,63}", skeleton))
+
+
+def _url_skeleton_window(text: str, start: int, end: int) -> str:
+    """Return a small URL-normalized window around a possible confusable."""
+    window = text[max(0, start - 80) : min(len(text), end + 80)]
+    return "".join(CONFUSABLE_MAP.get(ch, ch) for ch in window)
+
+
+def _is_url_punctuation_context(text: str, start: int, end: int) -> bool:
+    """True when a punctuation confusable appears in URL/domain context."""
+    return bool(_URL_CONTEXT_RE.search(_url_skeleton_window(text, start, end)))
 
 
 def _detect_bidi(text: str) -> list[UnicodeFinding]:
@@ -465,6 +477,32 @@ def _detect_homoglyphs(text: str) -> list[UnicodeFinding]:
     findings: list[UnicodeFinding] = []
     # Split into word-like tokens so we can require mixed-script context
     word_pattern = re.compile(r"[\w]+", re.UNICODE)
+
+    for i, ch in enumerate(text):
+        latin_equiv = CONFUSABLE_MAP.get(ch)
+        if latin_equiv not in _URL_PUNCTUATION_EQUIVS:
+            continue
+        if not _is_url_punctuation_context(text, i, i + 1):
+            continue
+        try:
+            char_name = unicodedata.name(ch, f"U+{ord(ch):04X}")
+        except ValueError:
+            char_name = f"U+{ord(ch):04X}"
+        findings.append(
+            UnicodeFinding(
+                category=UnicodeCategory.HOMOGLYPH,
+                severity=UnicodeSeverity.HIGH,
+                description=(
+                    f"URL punctuation confusable '{ch}' ({char_name}) "
+                    f"looks like '{latin_equiv}' in a suspicious URL/domain context. "
+                    "Confusable URL separators can hide spoofed destinations."
+                ),
+                position=(i, i + 1),
+                matched_text=ch,
+                char_names=[char_name],
+                recommendation=(f"Replace with ASCII URL separator '{latin_equiv}' or reject input"),
+            )
+        )
 
     for match in word_pattern.finditer(text):
         word = match.group()

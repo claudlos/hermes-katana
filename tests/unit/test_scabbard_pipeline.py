@@ -84,17 +84,15 @@ class TestScabbardConfig:
             ScabbardConfig(allow_threshold=0.8, block_threshold=0.2)
 
     def test_runtime_default_prefers_minimal_when_standard_not_ready(self, monkeypatch):
-        import hermes_katana.scabbard.config as config_mod
-
-        monkeypatch.setattr(config_mod, "_standard_runtime_ready", lambda **_: False)
         monkeypatch.setattr(ScabbardConfig, "katana_default_available", classmethod(lambda cls: False))
+        monkeypatch.setattr(ScabbardConfig, "katana_v15_minilm_available", classmethod(lambda cls, **_: False))
+        monkeypatch.setattr(ScabbardConfig, "standard_runtime_ready", classmethod(lambda cls, **_: False))
         assert ScabbardConfig.runtime_default().profile == "minimal"
 
     def test_runtime_default_prefers_standard_when_ready(self, monkeypatch):
-        import hermes_katana.scabbard.config as config_mod
-
-        monkeypatch.setattr(config_mod, "_standard_runtime_ready", lambda **_: True)
         monkeypatch.setattr(ScabbardConfig, "katana_default_available", classmethod(lambda cls: False))
+        monkeypatch.setattr(ScabbardConfig, "katana_v15_minilm_available", classmethod(lambda cls, **_: False))
+        monkeypatch.setattr(ScabbardConfig, "standard_runtime_ready", classmethod(lambda cls, **_: True))
         assert ScabbardConfig.runtime_default().profile == "standard"
 
     def test_runtime_default_prefers_blessed_production_when_katana_ready(self, monkeypatch, tmp_path):
