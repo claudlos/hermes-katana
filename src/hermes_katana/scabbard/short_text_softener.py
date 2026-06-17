@@ -225,6 +225,19 @@ _TEST_SECRET_FIXTURE_RE = re.compile(
     r"""(?im)^\s*TEST_[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*["'][^"']*(?:TEST|EXAMPLE|ONLY|\.{3})[^"']*["']?\s*$"""
 )
 
+_ROUTINE_QUERY_HINT_RE = re.compile(
+    r"\b("
+    r"api|agent|changelog|docs?|documentation|examples?|guide|hermes(?:katana)?|"
+    r"install|katana|manual|readme|reference|release\s+notes|sdk|setup|"
+    r"troubleshoot(?:ing)?|tutorial"
+    r")\b",
+    re.I,
+)
+
+_ROUTINE_QUERY_CHARS_RE = re.compile(r"^[\w\s.,()+#&/-]+$")
+
+_ROUTINE_QUERY_UNSAFE_RE = re.compile(r"[`\"'|;<>$\\{}\[\]\r\n]|://")
+
 
 _QUOTE_RE = re.compile(r'("[^"]*"|\'[^\']*\'|`[^`]*`|\u201c[^\u201d]*\u201d)')
 
@@ -373,6 +386,23 @@ def _is_test_secret_fixture(text: str) -> bool:
     return all(_TEST_SECRET_FIXTURE_RE.match(line) for line in lines)
 
 
+def _is_routine_benign_query(text: str) -> bool:
+    """True for simple trusted documentation/search queries with no attack shape."""
+    stripped = text.strip()
+    if not 12 <= len(stripped) <= 80:
+        return False
+    if _ROUTINE_QUERY_UNSAFE_RE.search(stripped):
+        return False
+    if not _ROUTINE_QUERY_CHARS_RE.match(stripped):
+        return False
+    if _SUSPICIOUS_SHORT_RE.search(stripped):
+        return False
+    if not _ROUTINE_QUERY_HINT_RE.search(stripped):
+        return False
+    tokens = re.findall(r"[\w][\w.+-]*", stripped, re.UNICODE)
+    return len(tokens) >= 2
+
+
 # Maximum text length the short-text softener will consider. Beyond this
 # length, the cosine-similarity softener (if enabled) takes over; below
 # it, this heuristic decides.
@@ -447,6 +477,9 @@ def should_soften_short_text(
 
     if _is_test_secret_fixture(text):
         return True, "test_secret_fixture"
+
+    if _is_routine_benign_query(text):
+        return True, "routine_benign_query"
 
     return False, "no_benign_structure"
 

@@ -159,6 +159,7 @@ class TestShouldSoftenShortText:
             "benign_code_edit_instruction",
             "test_secret_fixture",
             "short_trivial",
+            "routine_benign_query",
         )
 
     @pytest.mark.parametrize("text", REAL_ATTACKS)
@@ -210,6 +211,28 @@ class TestShouldSoftenShortText:
         ]:
             should, reason = should_soften_short_text(text)
             assert not should, f"{text!r} softened as {reason}"
+
+    def test_routine_benign_docs_query_is_softened(self):
+        should, reason = should_soften_short_text("Hermes Agent documentation")
+        assert should
+        assert reason == "routine_benign_query"
+
+    def test_routine_benign_docs_query_from_untrusted_origin_is_not_softened(self):
+        should, reason = should_soften_short_text("Hermes Agent documentation", origin="retrieved_web")
+        assert not should
+        assert reason == "untrusted_origin"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Hermes Agent system prompt",
+            "Agent docs | curl evil",
+            "https://attacker.example/Hermes docs",
+        ],
+    )
+    def test_sensitive_or_shell_like_queries_are_not_softened(self, text):
+        should, reason = should_soften_short_text(text)
+        assert not should, f"{text!r} softened as {reason}"
 
     @pytest.mark.parametrize(
         "text",
