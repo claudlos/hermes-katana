@@ -123,10 +123,10 @@ _DESCRIPTION_RE = re.compile(
     r"advisory|review|writeup|lab|CTF|Red team|threat model|prevent|mitigate|"
     r"demonstrate|demonstrates|pattern|attack pattern|detection|detects|scanner|"
     r"classifier|defense|defends|defensive|over-triggers|"
-    r"explain|explains|describes|describe|cite|quote|quotes|quoted|quoting|paraphrase|"
+    r"explain|explains|describes|describe|quote|quotes|quoted|quoting|paraphrase|"
     r"notebook|article|section|chapter|paragraph|entry|log|comment|findings?|"
     r"changelog|release notes|migration|version|v\d|audit log|"
-    r"head|Heads up|note|observation|observation|see also|related|"
+    r"head|Heads up|observation|see also|related|"
     r"verify|validates?|verifies|check|confirm|ensures?|"
     r"decodes?(?:\s+to)?|"
     r"encodes?(?:\s+from)?"
@@ -321,20 +321,18 @@ def _is_descriptive_security_note(text: str) -> bool:
     stripped = text.strip()
     if len(stripped) < 20:
         return False
-    has_security_context = bool(
-        _SECURITY_CONTEXT_RE.search(stripped)
-        or _CJK_SECURITY_CONTEXT_RE.search(stripped)
-        or _MULTILINGUAL_SECURITY_CONTEXT_RE.search(stripped)
+    has_multilingual_security_context = bool(
+        _CJK_SECURITY_CONTEXT_RE.search(stripped) or _MULTILINGUAL_SECURITY_CONTEXT_RE.search(stripped)
     )
+    has_security_context = bool(_SECURITY_CONTEXT_RE.search(stripped) or has_multilingual_security_context)
     if not has_security_context:
         return False
     if _DESCRIPTION_RE.search(stripped):
         return True
     # Multilingual notes often keep product/model/security tokens while the
-    # descriptive grammar is non-English. This remains narrow and is still
-    # gated by trusted provenance in should_soften_short_text().
-    has_non_ascii = any(ord(ch) > 127 for ch in stripped)
-    if has_non_ascii:
+    # descriptive grammar is non-English. Require known multilingual security
+    # terms rather than accepting any single non-ASCII character.
+    if has_multilingual_security_context:
         return True
     if re.search(r"\b(?:you|your|me|my)\b", stripped, re.I):
         return False
@@ -448,8 +446,10 @@ def should_soften_short_text(
         return True, "quoted_documentation"
 
     if len(stripped) < 12:
-        # Too short to have any real attack content; the BLOCK is almost
-        # certainly a false positive. Soften.
+        # Very short benign snippets are usually false positives, but raw
+        # dangerous commands must still fall through to the scanner chain.
+        if _has_attack_signal_raw(stripped):
+            return False, "has_attack_signal"
         if _SUSPICIOUS_SHORT_RE.search(stripped):
             return False, "suspicious_short"
         return True, "short_trivial"
@@ -458,13 +458,6 @@ def should_soften_short_text(
         # Out of scope for this softener; the cosine-similarity softener
         # (or no softener) handles longer text.
         return False, "too_long"
-
-    if _has_imperative_attack(text):
-        # Real attack form — fall through to the chain.
-        return False, "has_imperative"
-
-    if _is_quoted_documentation(text):
-        return True, "quoted_documentation"
 
     if _is_benign_code_edit_instruction(text):
         return True, "benign_code_edit_instruction"

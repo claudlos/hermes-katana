@@ -382,6 +382,25 @@ class TestUnicodeScanning:
         cats = {f.category for f in findings}
         assert UnicodeCategory.HOMOGLYPH in cats
 
+    def test_fullwidth_domain_label_homoglyph(self):
+        text = "https://\uff21\uff30\uff30\uff2c\uff25.com/login"
+        findings = scan_unicode(text)
+        cats = {f.category for f in findings}
+        assert UnicodeCategory.HOMOGLYPH in cats
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Open google\u2024com for the report",
+            "https\u2236//google.com/login",
+            "https://google.com\u2215login",
+        ],
+    )
+    def test_url_punctuation_confusable_homoglyph(self, text):
+        findings = scan_unicode(text)
+        cats = {f.category for f in findings}
+        assert UnicodeCategory.HOMOGLYPH in cats
+
     def test_plain_cyrillic_sentence_not_homoglyph(self):
         text = "\u0441\u0435\u0433\u043e\u0434\u043d\u044f \u043c\u044b \u043e\u0431\u0441\u0443\u0434\u0438\u043b\u0438 \u0441\u043a\u0430\u043d\u0435\u0440"
         findings = scan_unicode(text)

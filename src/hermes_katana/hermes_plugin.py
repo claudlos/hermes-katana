@@ -134,7 +134,7 @@ def register(context: Any) -> None:
         from hermes_katana.scabbard.similarity_allowlist import SimilarityAllowlist
 
         al = SimilarityAllowlist()
-        if al.enabled() and not al._ensure_ready():
+        if al.enabled() and not al.is_ready():
             log_security_event(
                 logger,
                 logging.WARNING,

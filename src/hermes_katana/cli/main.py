@@ -1032,7 +1032,8 @@ def setup(
         )
     if install_torch_cpu and no_torch_cpu:
         raise click.ClickException("--torch-cpu and --no-torch-cpu cannot be used together")
-    explicit_artifact_choice = yes or small or small_torch or large or all_models
+    explicit_model_choice = small or small_torch or large or all_models
+    explicit_artifact_choice = yes or explicit_model_choice
     selected_artifacts = _run_artifacts_setup(
         yes=yes,
         small=small,
@@ -1082,7 +1083,7 @@ def setup(
     # or when the user explicitly chose --yes (default). The download is
     # cheap (~88 MB) and required for the FP-relief behavior PR #44
     # added.
-    if selected_onnx_artifact or setup_profile == "full" or (yes and not explicit_artifact_choice):
+    if selected_onnx_artifact or setup_profile == "full" or (yes and not explicit_model_choice):
         _install_similarity_embedder(target_dir=target_dir, force=force)
 
 
@@ -1098,7 +1099,9 @@ def _install_similarity_embedder(*, target_dir: str | None, force: bool) -> None
 
     from hermes_katana.scabbard.similarity_allowlist import _default_embedder_dir
 
-    embedder_dir = _default_embedder_dir()
+    embedder_dir = (
+        Path(target_dir).expanduser().resolve() / "onnx_embedder_allMiniLM" if target_dir else _default_embedder_dir()
+    )
     if embedder_dir and embedder_dir.is_dir() and any(embedder_dir.iterdir()) and not force:
         console.print(f"[green]Present[/green] similarity embedder: {embedder_dir}")
         return
@@ -1114,9 +1117,7 @@ def _install_similarity_embedder(*, target_dir: str | None, force: bool) -> None
         return
 
     env = os.environ.copy()
-    if target_dir:
-        env["KATANA_SIM_EMBEDDER_DIR"] = str(Path(target_dir).expanduser().resolve() / "onnx_embedder_allMiniLM")
-    elif embedder_dir:
+    if embedder_dir:
         env["KATANA_SIM_EMBEDDER_DIR"] = str(embedder_dir)
 
     console.print("[bold]Installing similarity embedder (ONNX all-MiniLM-L6-v2)[/bold]")

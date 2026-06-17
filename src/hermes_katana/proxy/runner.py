@@ -663,6 +663,6 @@ class KatanaProxy:
                 # Give it a moment to clean up
                 time.sleep(0.5)
                 if _is_process_running(pid):
-                    os.kill(pid, signal.SIGKILL)
+                    os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         except (OSError, ProcessLookupError):
             pass

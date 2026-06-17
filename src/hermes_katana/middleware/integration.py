@@ -984,10 +984,6 @@ class KatanaScanMiddleware(KatanaMiddleware):
         "ooxml_findings",
         "image_injection_findings",
     )
-    _STRUCTURAL_SCAN_FINDING_FIELDS = (
-        "multimodal_findings",
-        "structural_flags",
-    )
     _EXACT_SOFTENABLE_SCAN_FP_HASHES = frozenset(
         {
             # Benign audit fixture documenting an encoded prompt-injection
@@ -1075,6 +1071,10 @@ class KatanaScanMiddleware(KatanaMiddleware):
             return False, "no_findings"
         if self._exact_scan_fp_softenable(all_results, finding_args):
             return True, "known_scanner_fp"
+        if any(getattr(r, "decoder_findings", None) for r in all_results):
+            return False, "decoder_finding"
+        if any(self._scan_result_hard_blocked(r) for r in all_results):
+            return False, "hard_scan_finding"
         has_structural_soften = False
         for text, origin, _result in finding_args:
             if is_untrusted_origin(origin):
@@ -1093,8 +1093,6 @@ class KatanaScanMiddleware(KatanaMiddleware):
             if not short_ok:
                 return False, _reason
             has_structural_soften = True
-        if any(self._scan_result_hard_blocked(r) for r in all_results):
-            return False, "hard_scan_finding"
         if has_structural_soften:
             # Structural/documentation softening is allowed for scanner text
             # pattern families, including their structural/multimodal mirrors,
@@ -1230,6 +1228,9 @@ class KatanaScanMiddleware(KatanaMiddleware):
         ctx.extras["scan_risk_score"] = worst_score
 
         if worst_score >= self._warn_threshold:
+            if not finding_args and worst_score < self._block_threshold:
+                ctx.extras["scan_warning_suppressed"] = "no_findings"
+                return DispatchDecision.ALLOW
             # Run the (model-backed) similarity check once, only when we would
             # otherwise escalate or block. Content that is cosine-close to a
             # vetted benign exemplar -- and free of any concrete-exploit finding
@@ -1341,6 +1342,7 @@ class KatanaStructuralMiddleware(KatanaMiddleware):
 
         worst_score = 0.0
         reports: list[dict] = []
+        report_args: list[tuple[str, str, str | None, float]] = []
 
         for arg_name, arg_val in ctx.args.items():
             text = str(arg_val) if arg_val is not None else ""
@@ -1354,6 +1356,14 @@ class KatanaStructuralMiddleware(KatanaMiddleware):
                 continue
 
             reports.append(report.to_dict())
+            report_args.append(
+                (
+                    arg_name,
+                    text,
+                    KatanaScabbardMiddleware._resolve_origin(ctx, arg_name),
+                    report.structural_score,
+                )
+            )
             worst_score = max(worst_score, report.structural_score)
 
             if report.flags:
@@ -1375,6 +1385,20 @@ class KatanaStructuralMiddleware(KatanaMiddleware):
             return DispatchDecision.DENY
 
         if worst_score >= self._warn_threshold:
+            softened = []
+            for arg_name, text, origin, score in report_args:
+                from hermes_katana.scabbard.short_text_softener import (
+                    should_soften_short_text,
+                )
+
+                soft_ok, reason = should_soften_short_text(text, origin=origin)
+                if not soft_ok:
+                    softened = []
+                    break
+                softened.append({"arg": arg_name, "reason": reason, "score": round(score, 4)})
+            if softened:
+                ctx.extras.setdefault("structural_softened_blocks", []).extend(softened)
+                return DispatchDecision.ALLOW
             ctx.escalate(f"Structural scanner warning: score={worst_score:.2f}")
             return DispatchDecision.ESCALATE
 

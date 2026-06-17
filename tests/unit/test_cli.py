@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from io import StringIO
 from types import SimpleNamespace
 from pathlib import Path
@@ -19,6 +20,7 @@ import hermes_katana.cli.main as cli_main
 import hermes_katana.config as config_mod
 import hermes_katana.installer as installer_mod
 import hermes_katana.proxy as proxy_mod
+import hermes_katana.scabbard.similarity_allowlist as similarity_allowlist_mod
 
 
 def _test_console(stream: StringIO) -> Console:
@@ -669,6 +671,7 @@ class TestCLIContracts:
         onnx_calls = []
         torch_calls = []
         install_calls = []
+        embedder_calls = []
 
         def fake_download(spec, target_dir=None, *, force=False):
             path = Path(target_dir or tmp_dir / spec.name)
@@ -684,6 +687,11 @@ class TestCLIContracts:
         monkeypatch.setattr(cli_main, "_install_onnx_runtime_extra", lambda: onnx_calls.append("fast-cpu"))
         monkeypatch.setattr(cli_main, "_install_torch_cpu_extra", lambda: torch_calls.append("torch-cpu"))
         monkeypatch.setattr(cli_main, "_install_proving_ground_extra", fake_install)
+        monkeypatch.setattr(
+            cli_main,
+            "_install_similarity_embedder",
+            lambda *, target_dir, force: embedder_calls.append((target_dir, force)),
+        )
 
         result = self.runner.invoke(cli_main.main, ["setup", "--yes"])
 
@@ -692,6 +700,30 @@ class TestCLIContracts:
         assert onnx_calls == ["fast-cpu"]
         assert torch_calls == []
         assert install_calls == []
+        assert embedder_calls == [(None, False)]
+
+    def test_similarity_embedder_install_checks_explicit_target_dir(self, monkeypatch, tmp_dir):
+        stdout = StringIO()
+        stderr = StringIO()
+        monkeypatch.setattr(cli_main, "console", _test_console(stdout))
+        monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
+        default_dir = tmp_dir / "default" / "onnx_embedder_allMiniLM"
+        default_dir.mkdir(parents=True)
+        (default_dir / "model.onnx").write_text("present", encoding="utf-8")
+        target_dir = tmp_dir / "target"
+        calls = []
+
+        def fake_run(cmd, *, env):
+            calls.append((cmd, env))
+            return SimpleNamespace(returncode=0)
+
+        monkeypatch.setattr(similarity_allowlist_mod, "_default_embedder_dir", lambda: default_dir)
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        cli_main._install_similarity_embedder(target_dir=str(target_dir), force=False)
+
+        assert calls
+        assert calls[0][1]["KATANA_SIM_EMBEDDER_DIR"] == str((target_dir / "onnx_embedder_allMiniLM").resolve())
 
     def test_setup_fast_cpu_installs_extra_without_artifact_choice(self, monkeypatch, tmp_dir):
         stdout = StringIO()
@@ -781,6 +813,7 @@ class TestCLIContracts:
         artifact_calls = []
         status_calls = []
         install_calls = []
+        embedder_calls = []
         missing_dependencies = {
             "onnx": ["onnxruntime"],
             "torch": ["torch"],
@@ -830,6 +863,11 @@ class TestCLIContracts:
         monkeypatch.setattr(cli_main, "_install_onnx_runtime_extra", install_onnx)
         monkeypatch.setattr(cli_main, "_install_torch_cpu_extra", install_torch)
         monkeypatch.setattr(cli_main, "_install_proving_ground_extra", install_proving_ground)
+        monkeypatch.setattr(
+            cli_main,
+            "_install_similarity_embedder",
+            lambda *, target_dir, force: embedder_calls.append((target_dir, force)),
+        )
 
         result = self.runner.invoke(
             cli_main.main,
@@ -846,6 +884,7 @@ class TestCLIContracts:
         assert artifact_calls[1][1] == tmp_dir / "cache" / "katana_v15_distill_minilm_torch"
         assert artifact_calls[2][1] == tmp_dir / "cache" / "katana_v15_large"
         assert install_calls == ["fast-cpu", "torch-cpu", "proving-ground"]
+        assert embedder_calls == [(str(tmp_dir / "cache"), False)]
         assert status_calls[-3:] == [
             ("katana_v15_distill_minilm_onnx", tmp_dir / "cache" / "katana_v15_distill_minilm_onnx"),
             ("katana_v15_distill_minilm_torch", tmp_dir / "cache" / "katana_v15_distill_minilm_torch"),
