@@ -343,6 +343,36 @@ def _get_script(char: str) -> Optional[str]:
     return "Other"
 
 
+def _is_domain_label_context(text: str, start: int, end: int) -> bool:
+    """Return True when a word token appears to be a DNS/URL label."""
+    before = text[start - 1] if start > 0 else ""
+    after = text[end] if end < len(text) else ""
+    if after == ".":
+        return bool(re.match(r"\.[A-Za-z]{2,63}(?:\b|[/:?#])", text[end:]))
+    if before == ".":
+        return True
+    prefix = text[max(0, start - 12) : start].lower()
+    return prefix.endswith(("http://", "https://", "www."))
+
+
+def _is_all_confusable_domain_label(text: str, start: int, end: int, word: str) -> bool:
+    """True for URL/domain labels made entirely from non-Latin confusables."""
+    if not _is_domain_label_context(text, start, end):
+        return False
+    alpha = [ch for ch in word if ch.isalpha()]
+    if len(alpha) < 3:
+        return False
+    scripts = {_get_script(ch) for ch in alpha}
+    scripts.discard(None)
+    scripts.discard("Other")
+    if len(scripts) != 1 or "Latin" in scripts:
+        return False
+    if not all(ch in CONFUSABLE_MAP for ch in alpha):
+        return False
+    skeleton = "".join(CONFUSABLE_MAP[ch] for ch in alpha)
+    return bool(re.fullmatch(r"[A-Za-z0-9-]{3,63}", skeleton))
+
+
 def _detect_bidi(text: str) -> list[UnicodeFinding]:
     """Detect bidirectional override characters.
 
@@ -425,10 +455,41 @@ def _detect_homoglyphs(text: str) -> list[UnicodeFinding]:
     visual spoofs of URLs, identifiers, or commands.
 
     Example: "gооgle.com" with Cyrillic 'о' instead of Latin 'o'.
+
+    To avoid false-positives on legitimate multilingual text (where the
+    entire text is in a non-Latin script), a confusable character is only
+    reported when it appears inside a *word* that mixes Latin and another
+    script. A pure-Cyrillic word like "сегодня" is benign; a word like
+    "gооgle" (mixed Latin+Cyrillic) is a homoglyph attack.
     """
     findings: list[UnicodeFinding] = []
-    for i, ch in enumerate(text):
-        if ord(ch) in _CONFUSABLE_CODEPOINTS:
+    # Split into word-like tokens so we can require mixed-script context
+    word_pattern = re.compile(r"[\w]+", re.UNICODE)
+
+    for match in word_pattern.finditer(text):
+        word = match.group()
+        if len(word) < 2:
+            continue
+
+        # Determine the scripts present in this word
+        scripts_found: dict[str, list[int]] = {}
+        for i, ch in enumerate(word):
+            script = _get_script(ch)
+            if script and script != "Other":
+                scripts_found.setdefault(script, []).append(i)
+
+        domain_label_spoof = _is_all_confusable_domain_label(text, match.start(), match.end(), word)
+
+        # Skip single-script words unless they are URL/domain labels whose
+        # whole visible label is built from Latin-looking confusables.
+        if len(scripts_found) < 2 and not domain_label_spoof:
+            continue
+
+        # Mixed-script word or all-confusable domain label: report each
+        # confusable character inside it.
+        for i, ch in enumerate(word):
+            if ord(ch) not in _CONFUSABLE_CODEPOINTS:
+                continue
             latin_equiv = CONFUSABLE_MAP[ch]
             try:
                 char_name = unicodedata.name(ch, f"U+{ord(ch):04X}")
@@ -440,11 +501,12 @@ def _detect_homoglyphs(text: str) -> list[UnicodeFinding]:
                     severity=UnicodeSeverity.HIGH,
                     description=(
                         f"Confusable character '{ch}' ({char_name}) "
-                        f"looks like Latin '{latin_equiv}'. "
-                        "This can be used for visual spoofing attacks on URLs, "
+                        f"in suspicious word '{word}' looks like Latin '{latin_equiv}'. "
+                        "Mixed-script identifiers and all-confusable domain labels "
+                        "are strong indicators of homoglyph attacks on URLs, "
                         "identifiers, or commands."
                     ),
-                    position=(i, i + 1),
+                    position=(match.start() + i, match.start() + i + 1),
                     matched_text=ch,
                     char_names=[char_name],
                     recommendation=(f"Replace with Latin equivalent '{latin_equiv}' or reject input"),

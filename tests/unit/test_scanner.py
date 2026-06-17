@@ -376,6 +376,18 @@ class TestUnicodeScanning:
         cats = {f.category for f in findings}
         assert UnicodeCategory.HOMOGLYPH in cats or UnicodeCategory.MIXED_SCRIPT in cats
 
+    def test_all_confusable_domain_label_homoglyph(self):
+        text = "https://\u0430\u0440\u0440\u04cf\u0435.com/login"
+        findings = scan_unicode(text)
+        cats = {f.category for f in findings}
+        assert UnicodeCategory.HOMOGLYPH in cats
+
+    def test_plain_cyrillic_sentence_not_homoglyph(self):
+        text = "\u0441\u0435\u0433\u043e\u0434\u043d\u044f \u043c\u044b \u043e\u0431\u0441\u0443\u0434\u0438\u043b\u0438 \u0441\u043a\u0430\u043d\u0435\u0440"
+        findings = scan_unicode(text)
+        cats = {f.category for f in findings}
+        assert UnicodeCategory.HOMOGLYPH not in cats
+
     def test_clean_text(self):
         text = "Normal ASCII text with numbers 123"
         findings = scan_unicode(text)

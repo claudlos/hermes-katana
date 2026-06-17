@@ -750,9 +750,31 @@ class ScabbardConfig:
 
     @classmethod
     def default_runtime_profile(cls) -> str:
-        """Choose the safest default runtime profile for the current checkout."""
+        """Choose the safest default runtime profile for the current checkout.
+
+        Resolution order (most capable first):
+
+        1. ``production`` if a blessed production checkpoint is available
+           (v17/v14/v12/v11 torch, or any safetensors checkpoint under
+           ``_production_katana_checkpoint()``). The v17 MiniLM is preferred
+           when torch is available; the function transparently falls back
+           to the v15 ONNX MiniLM if torch cannot load (see
+           :meth:`runtime_default`).
+        2. ``v15_minilm`` if the v15 ONNX MiniLM artifact is present. This is
+           the *deployed* production backend for torch-free environments and
+           is preferred over degrading to the rule-based ``minimal`` profile.
+        3. ``standard`` if the standard zvec+fusion pipeline is ready.
+        4. ``minimal`` as a last resort (rule-based; does NOT reliably
+           block prompt injections).
+        """
         if cls.katana_default_available():
             return "production"
+        if cls.katana_v15_minilm_available(backend="onnx"):
+            # v15 ONNX is the production-recommended torch-free backend.
+            # Returning "v15_minilm" (recognized by runtime_default) avoids
+            # the v14/v17 torch fallback that would degrade if torch is
+            # unavailable.
+            return "v15_minilm"
         if cls.standard_runtime_ready():
             return "standard"
         if cls.minimal_runtime_ready():
@@ -786,6 +808,11 @@ class ScabbardConfig:
                 )
                 return cls.katana_v15_minilm(backend="onnx")
             return cls.production()
+        if profile == "v15_minilm":
+            # v15 ONNX is the production-recommended torch-free backend. Use it
+            # directly so the runtime does not degrade to the rule-based
+            # 'minimal' profile when only v15-onnx is downloaded.
+            return cls.katana_v15_minilm(backend="onnx")
         if profile == "standard":
             return cls.standard()
         if _require_trained_scabbard():

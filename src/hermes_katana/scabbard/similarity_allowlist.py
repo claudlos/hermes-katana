@@ -53,12 +53,45 @@ _DEFAULT_THRESHOLD = 0.62
 _MAX_TOKENS = 256
 
 # Origin tiers that must never be similarity-softened (untrusted provenance).
-_UNTRUSTED_ORIGINS = frozenset({"tool_output", "tool_result", "retrieved", "rag", "web", "untrusted", "external"})
+_UNTRUSTED_ORIGINS = frozenset(
+    {
+        "tool_output",
+        "tool_result",
+        "retrieved",
+        "retrieved_web",
+        "rag",
+        "web",
+        "remote",
+        "network",
+        "external",
+        "untrusted",
+        "unknown",
+        "file_content",
+        "prior_session_memory",
+        "delegated_agent_output",
+        "mcp",
+        "mcp_tool_description",
+        "mcp_tool_result",
+        "mcp_resource",
+        "mcp_prompt",
+    }
+)
+_UNTRUSTED_ORIGIN_PREFIXES = (
+    "tool:",
+    "http://",
+    "https://",
+    "mcp:",
+    "file:",
+    "session:",
+)
 
 
 def is_untrusted_origin(origin: Optional[str]) -> bool:
     """Return True if ``origin`` denotes an untrusted provenance tier."""
-    return bool(origin) and origin.lower() in _UNTRUSTED_ORIGINS
+    if not origin:
+        return False
+    normalized = origin.strip().lower().replace("-", "_")
+    return normalized in _UNTRUSTED_ORIGINS or normalized.startswith(_UNTRUSTED_ORIGIN_PREFIXES)
 
 
 def _default_exemplars_path() -> Path:
