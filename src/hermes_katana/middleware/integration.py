@@ -628,9 +628,8 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                         from hermes_katana.scabbard.short_text_softener import (
                             should_soften_short_text,
                         )
-                        short_soften, short_reason = should_soften_short_text(
-                            text, result.top_category, origin=origin
-                        )
+
+                        short_soften, short_reason = should_soften_short_text(text, result.top_category, origin=origin)
                     softened = known_fp or similar_fp or short_soften
                     if softened:
                         if known_fp:
@@ -735,6 +734,7 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
                 from hermes_katana.scabbard.short_text_softener import (
                     should_soften_short_text,
                 )
+
                 _flag_short_ok, _flag_short_reason = should_soften_short_text(
                     worst_text, _flag_category, origin=worst_origin
                 )

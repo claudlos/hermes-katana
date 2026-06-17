@@ -238,11 +238,7 @@ def _quoted_segments(text: str) -> list[str]:
 
 
 def _has_attack_signal_raw(text: str) -> bool:
-    return bool(
-        _ADVERSARIAL_IMPERATIVE_RE.search(text)
-        or _DANGEROUS_COMMAND_RE.search(text)
-        or _EXFIL_RE.search(text)
-    )
+    return bool(_ADVERSARIAL_IMPERATIVE_RE.search(text) or _DANGEROUS_COMMAND_RE.search(text) or _EXFIL_RE.search(text))
 
 
 def _has_imperative_attack(text: str) -> bool:
@@ -313,7 +309,8 @@ def _is_descriptive_security_note(text: str) -> bool:
     if len(stripped) < 20:
         return False
     has_security_context = bool(
-        _SECURITY_CONTEXT_RE.search(stripped) or _CJK_SECURITY_CONTEXT_RE.search(stripped)
+        _SECURITY_CONTEXT_RE.search(stripped)
+        or _CJK_SECURITY_CONTEXT_RE.search(stripped)
         or _MULTILINGUAL_SECURITY_CONTEXT_RE.search(stripped)
     )
     if not has_security_context:

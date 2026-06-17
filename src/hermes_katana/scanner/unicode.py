@@ -509,9 +509,7 @@ def _detect_homoglyphs(text: str) -> list[UnicodeFinding]:
                     position=(match.start() + i, match.start() + i + 1),
                     matched_text=ch,
                     char_names=[char_name],
-                    recommendation=(
-                        f"Replace with Latin equivalent '{latin_equiv}' or reject input"
-                    ),
+                    recommendation=(f"Replace with Latin equivalent '{latin_equiv}' or reject input"),
                 )
             )
     return findings

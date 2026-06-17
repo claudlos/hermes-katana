@@ -132,6 +132,7 @@ def register(context: Any) -> None:
     # `python scripts/setup_similarity_embedder.py`.
     try:
         from hermes_katana.scabbard.similarity_allowlist import SimilarityAllowlist
+
         al = SimilarityAllowlist()
         if al.enabled() and not al._ensure_ready():
             log_security_event(
