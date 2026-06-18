@@ -77,7 +77,7 @@ _ADVERSARIAL_IMPERATIVE_RE = re.compile(
     r"new\s+instructions?:|"
     r"system\s*:\s*override|"
     r"developer\s+mode\s+(?:enabled|activated|on)|"
-    r"(?:run|execute|perform|carry\s+out)\s+(?:it|this|that|the\s+(?:command|payload|instruction|attack))"
+    r"(?:run|execute|perform|carry\s+out)\s+(?:this|that|the\s+(?:command|payload|instruction|attack))"
     r")\b",
     re.I,
 )
@@ -155,6 +155,23 @@ _SUSPICIOUS_SHORT_RE = re.compile(
     re.I,
 )
 
+_SENSITIVE_ARTIFACT_RE = re.compile(
+    r"(?is)("
+    r"-----BEGIN\s+[A-Z ]*PRIVATE\s+KEY-----|"
+    r"\bAKIA[0-9A-Z]{16}\b|"
+    r"\bASIA[0-9A-Z]{16}\b|"
+    r"\bsk-(?:live|proj|test)?-[A-Za-z0-9_-]{16,}\b|"
+    r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b|"
+    r"\bxox[abprs]-[A-Za-z0-9-]{16,}\b|"
+    r"\bKATANA_CANARY_[A-Za-z0-9_]+\b|"
+    r"(?:api|auth|access|secret|private|github|openai|aws)?\s*"
+    r"(?:key|token|password|secret|credential)s?\s*[:=]\s*"
+    r"[\"']?[A-Za-z0-9_./+=-]{12,}[\"']?|"
+    r"(?:key|token|password|secret|credential)s?\s+(?:is|value)\s+"
+    r"[\"']?[A-Za-z0-9_./+=-]{8,}[\"']?"
+    r")"
+)
+
 
 _CJK_SECURITY_CONTEXT_RE = re.compile("(?:\u5b89\u5168|\u626b\u63cf\u5668)")
 
@@ -225,6 +242,14 @@ _TEST_SECRET_FIXTURE_RE = re.compile(
     r"""(?im)^\s*TEST_[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*["'][^"']*(?:TEST|EXAMPLE|ONLY|\.{3})[^"']*["']?\s*$"""
 )
 
+_PLACEHOLDER_SECRET_DOC_RE = re.compile(r"(?is)\b(?:detects?|pattern|example|fixture|placeholder|sample|test)\b")
+
+_PLACEHOLDER_VALUE_RE = re.compile(r"(?i)(?:\.\.\.|abc123|example|fake|dummy|placeholder|redacted)")
+
+_LIVE_SECRET_PREFIX_RE = re.compile(
+    r"(?i)(?:\bsk-(?:live|proj)-|\bAKIA[0-9A-Z]{16}\b|\bASIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9_]{20,})"
+)
+
 _ROUTINE_QUERY_HINT_RE = re.compile(
     r"\b("
     r"api|agent|changelog|docs?|documentation|examples?|guide|hermes(?:katana)?|"
@@ -237,6 +262,40 @@ _ROUTINE_QUERY_HINT_RE = re.compile(
 _ROUTINE_QUERY_CHARS_RE = re.compile(r"^[\w\s.,()+#&/-]+$")
 
 _ROUTINE_QUERY_UNSAFE_RE = re.compile(r"[`\"'|;<>$\\{}\[\]\r\n]|://")
+
+_TOOL_DOC_OUTPUT_HINT_RE = re.compile(
+    r"\b("
+    r"acp\s+prompt|api|agent|approver|artifacts?|attributes?|audit|benchmark|benign|"
+    r"built[-\s]?in|changelog|classifiers?|cli|command\s+map|configuration|corpus|corpora|"
+    r"credential|defaults?|denial\s+of\s+service|dependencies|detects?|docs?|documentation|"
+    r"encrypted|errors?|evaluation|examples?|exceptions?|guide|"
+    r"flow\s+rules?|global\s+tracker|harness|hermes(?:katana)?|hugging\s+face|install|integrity|katana|"
+    r"key[-\s]?rotation|key[-\s]?value|keyring|load\s+yaml|manual|metadata|methods?|"
+    r"middleware|models?|modules?|patterns?|plugin|polic(?:y|ies)|policyengine|principal|"
+    r"provenance|proving[-\s]ground|quickstart|readme|reference|registry|release\s+notes|"
+    r"required|runbook|scanner|scabbard|sdk|secret\s+storage|setup|social\s+engineering|sources?|taint|"
+    r"tainted|telemetry|token(?:izer|ization|\s+ablation)|tool(?:\s+calls?)?|"
+    r"tracker|training(?:-data)?|tutorial|upstream|user\s+manual|vault"
+    r")\b",
+    re.I,
+)
+
+_BENIGN_MARKUP_OR_LINK_RE = re.compile(
+    r"(?is)("
+    r"<(?:h[1-6]|p|a|img|span|div|code|pre|table|tr|td|th)\b|"
+    r"\bhttps?://(?:github\.com|claudlos\.github\.io|huggingface\.co|arxiv\.org|example\.invalid)/|"
+    r"\b[a-z0-9.-]+\.github\.io/[a-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*"
+    r")"
+)
+
+_CONTACT_OUTPUT_RE = re.compile(r"(?i)^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$")
+
+_DOCUMENTED_ATTACK_SIGNAL_OUTPUT_RE = re.compile(
+    r"(?is)\b("
+    r"api|combined|dangerous|denied|docs?|documentation|example|fixture|"
+    r"pattern|readme|safe|source|taint(?:ed)?|test|web\s+content"
+    r")\b"
+)
 
 
 _QUOTE_RE = re.compile(r'("[^"]*"|\'[^\']*\'|`[^`]*`|\u201c[^\u201d]*\u201d)')
@@ -275,6 +334,20 @@ def _has_imperative_attack(text: str) -> bool:
     unquoted = _strip_quoted_content(text)
 
     return bool(_has_attack_signal_raw(unquoted))
+
+
+def _has_tool_output_imperative_attack(text: str) -> bool:
+    """True for command-like attack instructions in untrusted tool output.
+
+    Unlike ``_has_imperative_attack``, this does not treat every bare dangerous
+    shell token as imperative. Tool output can legitimately document commands
+    such as ``rm -rf /`` in scanner tables; the caller handles those with a
+    stricter documented-example gate.
+    """
+    if not text:
+        return False
+    unquoted = _strip_quoted_content(text)
+    return bool(_ADVERSARIAL_IMPERATIVE_RE.search(unquoted) or _EXFIL_RE.search(unquoted))
 
 
 def _strip_quoted_content(text: str) -> str:
@@ -384,6 +457,42 @@ def _is_test_secret_fixture(text: str) -> bool:
     return all(_TEST_SECRET_FIXTURE_RE.match(line) for line in lines)
 
 
+def _is_documented_placeholder_secret(text: str) -> bool:
+    """True for docs that demonstrate secret scanner patterns with fake values."""
+    stripped = text.strip()
+    if not stripped or len(stripped) > MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN:
+        return False
+    if _LIVE_SECRET_PREFIX_RE.search(stripped):
+        return False
+    if not _PLACEHOLDER_SECRET_DOC_RE.search(stripped):
+        return False
+    if not _PLACEHOLDER_VALUE_RE.search(stripped):
+        return False
+    return bool(_TOOL_DOC_OUTPUT_HINT_RE.search(stripped) or _DESCRIPTION_RE.search(stripped))
+
+
+def _is_documented_attack_signal_output(text: str, scanner_has_findings: bool | None) -> bool:
+    """True for clean docs that quote/show attack-shaped payloads as examples."""
+    if scanner_has_findings is not False:
+        return False
+    stripped = text.strip()
+    if len(stripped) < 40 or len(stripped) > MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN:
+        return False
+    if _SENSITIVE_ARTIFACT_RE.search(stripped):
+        return False
+    if not _DOCUMENTED_ATTACK_SIGNAL_OUTPUT_RE.search(stripped):
+        return False
+    return bool(
+        _TOOL_DOC_OUTPUT_HINT_RE.search(stripped)
+        or _DESCRIPTION_RE.search(stripped)
+        or _QUOTE_RE.search(stripped)
+        or " = " in stripped
+        or " -- " in stripped
+        or "->" in stripped
+        or "\u2192" in stripped
+    )
+
+
 def _is_routine_benign_query(text: str) -> bool:
     """True for simple trusted documentation/search queries with no attack shape."""
     stripped = text.strip()
@@ -405,6 +514,11 @@ def _is_routine_benign_query(text: str) -> bool:
 # length, the cosine-similarity softener (if enabled) takes over; below
 # it, this heuristic decides.
 MAX_SOFTEN_TEXT_LEN = 200
+
+# Tool-output snippets from web/search/read_file often include a whole README
+# sentence, badge row, or command paragraph. Keep this bounded so the output
+# softener does not become a broad replacement for classifier/scanner verdicts.
+MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN = 800
 
 
 def should_soften_short_text(
@@ -477,9 +591,75 @@ def should_soften_short_text(
     return False, "no_benign_structure"
 
 
+def should_soften_short_tool_output(
+    text: str,
+    top_category: str | None = None,
+    *,
+    scanner_has_findings: bool | None = None,
+) -> Tuple[bool, str]:
+    """Return (should_soften, reason) for short Scabbard-only tool-output FPs.
+
+    Tool output is untrusted, so this is intentionally narrower than
+    ``should_soften_short_text``. It is meant for the post-dispatch path after
+    the deterministic scanner has already had a chance to redact concrete
+    injection/secret/command findings. It only relaxes short documentation-like
+    text with no imperative attack shape or sensitive artifact signal.
+    """
+    if not text or not text.strip():
+        return False, "empty"
+
+    stripped = text.strip()
+    if len(stripped) > MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN:
+        return False, "too_long"
+
+    if _has_tool_output_imperative_attack(stripped):
+        return False, "has_attack_signal"
+    if _has_attack_signal_raw(stripped):
+        if _is_documented_attack_signal_output(stripped, scanner_has_findings):
+            return True, "documented_attack_signal_output"
+        return False, "has_attack_signal"
+
+    if _is_documented_placeholder_secret(stripped):
+        return True, "documented_placeholder_secret_output"
+
+    if _SENSITIVE_ARTIFACT_RE.search(stripped):
+        return False, "sensitive_artifact"
+
+    if _is_quoted_documentation(stripped):
+        return True, "quoted_documentation_output"
+
+    if scanner_has_findings:
+        return False, "scanner_findings"
+
+    if _CONTACT_OUTPUT_RE.fullmatch(stripped):
+        return True, "contact_output"
+
+    if _is_descriptive_security_note(stripped):
+        return True, "descriptive_security_output"
+
+    if _is_benign_code_or_config_fragment(stripped):
+        return True, "benign_code_or_config_output"
+
+    if len(stripped) <= MAX_SOFTEN_TEXT_LEN and _is_routine_benign_query(stripped):
+        return True, "routine_benign_output"
+
+    if _BENIGN_MARKUP_OR_LINK_RE.search(stripped) and _TOOL_DOC_OUTPUT_HINT_RE.search(stripped):
+        return True, "benign_doc_markup_or_link_output"
+
+    if _TOOL_DOC_OUTPUT_HINT_RE.search(stripped):
+        return True, "benign_documentation_output"
+
+    if _SUSPICIOUS_SHORT_RE.search(stripped):
+        return False, "suspicious_short"
+
+    return False, "no_benign_output_structure"
+
+
 __all__ = [
     "should_soften_short_text",
+    "should_soften_short_tool_output",
     "_has_imperative_attack",
     "_is_quoted_documentation",
     "MAX_SOFTEN_TEXT_LEN",
+    "MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN",
 ]
