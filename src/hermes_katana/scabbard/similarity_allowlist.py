@@ -59,6 +59,7 @@ _UNTRUSTED_ORIGINS = frozenset(
         "tool_result",
         "retrieved",
         "retrieved_web",
+        "web_search",
         "rag",
         "web",
         "remote",

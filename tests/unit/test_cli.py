@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from io import StringIO
 from types import SimpleNamespace
 from pathlib import Path
@@ -20,7 +19,7 @@ import hermes_katana.cli.main as cli_main
 import hermes_katana.config as config_mod
 import hermes_katana.installer as installer_mod
 import hermes_katana.proxy as proxy_mod
-import hermes_katana.scabbard.similarity_allowlist as similarity_allowlist_mod
+import hermes_katana.scabbard.similarity_embedder_setup as similarity_embedder_setup_mod
 
 
 def _test_console(stream: StringIO) -> Console:
@@ -707,23 +706,51 @@ class TestCLIContracts:
         stderr = StringIO()
         monkeypatch.setattr(cli_main, "console", _test_console(stdout))
         monkeypatch.setattr(cli_main, "err_console", _test_console(stderr))
-        default_dir = tmp_dir / "default" / "onnx_embedder_allMiniLM"
-        default_dir.mkdir(parents=True)
-        (default_dir / "model.onnx").write_text("present", encoding="utf-8")
         target_dir = tmp_dir / "target"
         calls = []
 
-        def fake_run(cmd, *, env):
-            calls.append((cmd, env))
-            return SimpleNamespace(returncode=0)
+        def fake_install(*, target_dir, force):
+            calls.append((target_dir, force))
+            return similarity_embedder_setup_mod.SimilarityEmbedderSetupResult(
+                target_dir=Path(target_dir),
+                downloaded_files=("onnx/model.onnx",),
+                ready=True,
+            )
 
-        monkeypatch.setattr(similarity_allowlist_mod, "_default_embedder_dir", lambda: default_dir)
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(similarity_embedder_setup_mod, "install_similarity_embedder", fake_install)
+        monkeypatch.setattr(
+            similarity_embedder_setup_mod, "verify_similarity_embedder_runtime", lambda target_dir: True
+        )
 
         cli_main._install_similarity_embedder(target_dir=str(target_dir), force=False)
 
-        assert calls
-        assert calls[0][1]["KATANA_SIM_EMBEDDER_DIR"] == str((target_dir / "onnx_embedder_allMiniLM").resolve())
+        assert calls == [((target_dir / "onnx_embedder_allMiniLM").resolve(), False)]
+
+    def test_similarity_embedder_setup_respects_skip_env(self, monkeypatch, tmp_dir):
+        monkeypatch.setenv("HERMES_KATANA_SKIP_SETUP", "1")
+        target_dir = tmp_dir / "embedder"
+
+        result = similarity_embedder_setup_mod.install_similarity_embedder(target_dir=target_dir)
+
+        assert result.skipped
+        assert result.target_dir == target_dir.resolve()
+
+    def test_similarity_embedder_files_present_requires_all_files(self, tmp_dir):
+        target_dir = tmp_dir / "embedder"
+        (target_dir / "onnx").mkdir(parents=True)
+        (target_dir / "onnx" / "model.onnx").write_text("present", encoding="utf-8")
+
+        assert not similarity_embedder_setup_mod.similarity_embedder_files_present(target_dir)
+        assert "tokenizer.json" in similarity_embedder_setup_mod.missing_similarity_embedder_files(target_dir)
+
+    def test_similarity_embedder_runtime_verifies_installed_cache(self):
+        missing = similarity_embedder_setup_mod.missing_similarity_embedder_files()
+        if missing:
+            pytest.skip(f"similarity embedder artifact not installed: {', '.join(missing)}")
+        pytest.importorskip("onnxruntime")
+        pytest.importorskip("transformers")
+
+        assert similarity_embedder_setup_mod.verify_similarity_embedder_runtime()
 
     def test_setup_fast_cpu_installs_extra_without_artifact_choice(self, monkeypatch, tmp_dir):
         stdout = StringIO()

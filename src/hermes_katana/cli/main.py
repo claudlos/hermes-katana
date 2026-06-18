@@ -1090,44 +1090,39 @@ def setup(
 def _install_similarity_embedder(*, target_dir: str | None, force: bool) -> None:
     """Download the torch-free ONNX sentence-encoder for the FP softener.
 
-    Thin wrapper around ``scripts/setup_similarity_embedder.py`` so the
-    CLI surfaces failures as proper exit codes and console output.
-    Skips silently if the embedder artifact is already present.
+    ``target_dir`` is the Katana artifact cache root supplied by the CLI; the
+    embedder itself is stored below it in ``onnx_embedder_allMiniLM``.
+    Skips silently when ``HERMES_KATANA_SKIP_SETUP=1`` is set.
     """
-    import subprocess
-    import sys
-
-    from hermes_katana.scabbard.similarity_allowlist import _default_embedder_dir
-
-    embedder_dir = (
-        Path(target_dir).expanduser().resolve() / "onnx_embedder_allMiniLM" if target_dir else _default_embedder_dir()
+    from hermes_katana.scabbard.similarity_embedder_setup import (
+        install_similarity_embedder,
+        verify_similarity_embedder_runtime,
     )
-    if embedder_dir and embedder_dir.is_dir() and any(embedder_dir.iterdir()) and not force:
-        console.print(f"[green]Present[/green] similarity embedder: {embedder_dir}")
-        return
 
-    repo_root = Path(__file__).resolve().parents[3]
-    script = repo_root / "scripts" / "setup_similarity_embedder.py"
-    if not script.is_file():
-        console.print(
-            f"[yellow]Similarity embedder script not found at {script}; "
-            "skipping. The FP softener will fail closed until "
-            "`scripts/setup_similarity_embedder.py` is run manually.[/yellow]"
+    embedder_dir = Path(target_dir).expanduser().resolve() / "onnx_embedder_allMiniLM" if target_dir else None
+    try:
+        result = install_similarity_embedder(target_dir=embedder_dir, force=force)
+    except RuntimeError as exc:
+        err_console.print(
+            f"[yellow]Similarity embedder setup failed: {exc}. "
+            "The FP softener will fail closed until setup succeeds. "
+            "The rest of katana will still work.[/yellow]"
         )
         return
 
-    env = os.environ.copy()
-    if embedder_dir:
-        env["KATANA_SIM_EMBEDDER_DIR"] = str(embedder_dir)
+    if result.skipped:
+        return
+    if result.downloaded_files:
+        console.print(f"[green]Downloaded[/green] similarity embedder: {result.target_dir}")
+    else:
+        console.print(f"[green]Present[/green] similarity embedder: {result.target_dir}")
 
-    console.print("[bold]Installing similarity embedder (ONNX all-MiniLM-L6-v2)[/bold]")
-    result = subprocess.run([sys.executable, str(script)], env=env)
-    if result.returncode != 0:
+    if verify_similarity_embedder_runtime(result.target_dir):
+        console.print("[green]Verified[/green] similarity softener embedder")
+    else:
         err_console.print(
-            "[yellow]Similarity embedder download failed (exit "
-            f"{result.returncode}). The FP softener will fail closed "
-            "until `python scripts/setup_similarity_embedder.py` is run "
-            "manually. The rest of katana will still work.[/yellow]"
+            "[yellow]Similarity embedder files are present, but runtime verification failed. "
+            "Check ONNX Runtime/transformers dependencies; the FP softener will fail closed.[/yellow]"
         )
 
 

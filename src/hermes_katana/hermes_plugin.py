@@ -128,7 +128,7 @@ def register(context: Any) -> None:
     # (PR #44) cannot run because the ONNX embedder artifact is missing.
     # The softener fails closed (no FP relief) when the embedder is
     # absent, which is correct but invisible to the user. Operators
-    # can fix this by running `katana artifacts setup` or
+    # can fix this by running `katana setup --yes` or
     # `python scripts/setup_similarity_embedder.py`.
     try:
         from hermes_katana.scabbard.similarity_allowlist import SimilarityAllowlist
@@ -140,10 +140,8 @@ def register(context: Any) -> None:
                 logging.WARNING,
                 "scabbard_similarity_softener_no_op",
                 reason=(
-                    "Cosine-similarity FP softener is enabled but the ONNX "
-                    "all-MiniLM-L6-v2 embedder is not installed. The softener "
-                    "will fail closed (no FP relief). Run `katana artifacts setup` "
-                    "or `python scripts/setup_similarity_embedder.py` to install."
+                    "Similarity softener embedder missing; FP relief disabled. "
+                    "Run `katana setup --yes` or setup_similarity_embedder.py."
                 ),
                 fail_closed=False,
             )

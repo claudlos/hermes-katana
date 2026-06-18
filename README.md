@@ -56,9 +56,10 @@ The base install is intentionally small and works without model downloads.
 `katana setup` prompts for the small MiniLM ONNX artifact, optional MiniLM
 PyTorch checkpoint, larger PyTorch model, and Proving Ground research harness.
 For unattended installs, use `katana setup --yes` to accept the default small
-ONNX path. Use `katana setup full` to install every setup dependency group,
-download every managed setup model artifact, and verify the result. Research
-artifacts such as `v17_minilm` remain explicit downloads.
+ONNX path and install the separate similarity-softener embedder. Use
+`katana setup full` to install every setup dependency group, download every
+managed setup model artifact, and verify the result. Research artifacts such as
+`v17_minilm` remain explicit downloads.
 
 Large model and dataset artifacts live on Hugging Face, not in this GitHub
 repository. Downloads remain explicit unless you opt into runtime auto-download.

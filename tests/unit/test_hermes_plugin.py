@@ -195,6 +195,35 @@ class TestPluginSetup:
         assert hermes_plugin._initialization_error == "boom"
         assert "pre_tool_call" in ctx.hooks
 
+    def test_similarity_softener_warning_points_to_katana_setup(self, monkeypatch, caplog):
+        ctx = MockPluginContext(config={"audit_enabled": False})
+        monkeypatch.setattr(hermes_plugin, "_initialize_runtime", lambda _config: (None, None, None, None))
+
+        class MissingSimilarityEmbedder:
+            def enabled(self):
+                return True
+
+            def is_ready(self):
+                return False
+
+        monkeypatch.setattr(
+            "hermes_katana.scabbard.similarity_allowlist.SimilarityAllowlist",
+            MissingSimilarityEmbedder,
+        )
+
+        with caplog.at_level(logging.WARNING, logger="hermes_katana.hermes_plugin"):
+            hermes_plugin.setup(ctx)
+
+        record = next(
+            record
+            for record in caplog.records
+            if getattr(record, "katana_event", "") == "scabbard_similarity_softener_no_op"
+        )
+        reason = record.katana_payload["reason"]
+        assert "katana setup --yes" in reason
+        assert "setup_similarity_embedder.py" in reason
+        assert "katana artifacts setup" not in reason
+
     def test_initialize_runtime_uses_passed_config(self, monkeypatch):
         captured: dict[str, Any] = {}
         import hermes_katana.middleware.integration as integration_mod

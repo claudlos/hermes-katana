@@ -122,6 +122,7 @@ def test_tainted_origin_never_softened(embedder_ready):
         "tool:read_file",
         "retrieved",
         "retrieved_web",
+        "web_search",
         "web",
         "https://example.invalid",
         "untrusted",
