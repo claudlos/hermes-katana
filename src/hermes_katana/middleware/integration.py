@@ -74,6 +74,7 @@ from typing import Any
 from hermes_katana.middleware.chain import CallContext, DispatchDecision, KatanaMiddleware, MiddlewareChain
 from hermes_katana.middleware.protectai_middleware import KatanaProtectAIMiddleware
 from hermes_katana.middleware.taint_middleware import KatanaTaintMiddleware
+from hermes_katana.scabbard.short_text_softener import should_soften_short_tool_output
 
 logger = logging.getLogger(__name__)
 
@@ -807,10 +808,6 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
             if degraded:
                 degraded_paths.append({"path": fragment.path, "reason": degraded})
             if result.decision == ScabbardDecision.BLOCK and degraded is None:
-                from hermes_katana.scabbard.short_text_softener import (
-                    should_soften_short_tool_output,
-                )
-
                 soften_output, soften_reason = should_soften_short_tool_output(
                     fragment.text,
                     result.top_category,
