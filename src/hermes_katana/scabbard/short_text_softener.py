@@ -33,7 +33,10 @@ dangerous-command / policy / taint layers.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Tuple
+from urllib.parse import urlsplit
 
 from hermes_katana.scabbard.similarity_allowlist import is_untrusted_origin
 
@@ -80,6 +83,20 @@ _ADVERSARIAL_IMPERATIVE_RE = re.compile(
     r"(?:run|execute|perform|carry\s+out)\s+(?:it|this|that|the\s+(?:command|payload|instruction|attack))"
     r")\b",
     re.I,
+)
+
+_BARE_IT_IMPERATIVE_RE = re.compile(r"\b(?:run|execute|perform|carry\s+out)\s+it\b", re.I)
+
+_CREDENTIAL_SOLICITATION_RE = re.compile(
+    r"(?is)\b(?:please\s+)?"
+    r"(?:share|paste|provide|enter|input|supply|submit|send|type|give)\s+"
+    r"(?:me\s+|us\s+)?(?:your\s+|the\s+|an?\s+)?"
+    r"(?:api\s+)?(?:key|token|password|secret|credential)s?\b|"
+    r"\b(?:ask|asks|request|requests|require|requires|need|needs)\s+"
+    r"(?:you\s+to\s+)?(?:share|paste|provide|enter|input|supply|submit|send|type|give)?\s*"
+    r"(?:your\s+|the\s+|an?\s+)?(?:api\s+)?(?:key|token|password|secret|credential)s?\b|"
+    r"\b(?:api\s+key|token|password|secret|credential)s?\s+"
+    r"(?:here|below|into\s+this|in\s+this\s+chat)\b"
 )
 
 
@@ -155,6 +172,25 @@ _SUSPICIOUS_SHORT_RE = re.compile(
     re.I,
 )
 
+_SENSITIVE_ARTIFACT_RE = re.compile(
+    r"(?is)("
+    r"-----BEGIN\s+[A-Z ]*PRIVATE\s+KEY-----|"
+    r"\bAKIA[0-9A-Z]{16}\b|"
+    r"\bASIA[0-9A-Z]{16}\b|"
+    r"\bsk-(?:live|proj|test)?-[A-Za-z0-9_-]{16,}\b|"
+    r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b|"
+    r"\bxox[abprs]-[A-Za-z0-9-]{16,}\b|"
+    r"\bKATANA_CANARY_[A-Za-z0-9_]+\b|"
+    r"\b[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)[A-Z0-9_]*\s*[:=]\s*"
+    r"[\"']?(?:\*{3,}|[A-Za-z0-9_./+=-]{8,})[\"']?|"
+    r"(?:api|auth|access|secret|private|github|openai|aws)?\s*"
+    r"(?:key|token|password|secret|credential)s?\s*[:=]\s*"
+    r"[\"']?[A-Za-z0-9_./+=-]{12,}[\"']?|"
+    r"(?:key|token|password|secret|credential)s?\s+(?:is|value)\s+"
+    r"[\"']?[A-Za-z0-9_./+=-]{8,}[\"']?"
+    r")"
+)
+
 
 _CJK_SECURITY_CONTEXT_RE = re.compile("(?:\u5b89\u5168|\u626b\u63cf\u5668)")
 
@@ -225,6 +261,14 @@ _TEST_SECRET_FIXTURE_RE = re.compile(
     r"""(?im)^\s*TEST_[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*["'][^"']*(?:TEST|EXAMPLE|ONLY|\.{3})[^"']*["']?\s*$"""
 )
 
+_PLACEHOLDER_SECRET_DOC_RE = re.compile(r"(?is)\b(?:detects?|pattern|example|fixture|placeholder|sample|test)\b")
+
+_PLACEHOLDER_VALUE_RE = re.compile(r"(?i)(?:\.\.\.|abc123|example|fake|dummy|placeholder|redacted)")
+
+_LIVE_SECRET_PREFIX_RE = re.compile(
+    r"(?i)(?:\bsk-(?:live|proj)-|\bAKIA[0-9A-Z]{16}\b|\bASIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9_]{20,})"
+)
+
 _ROUTINE_QUERY_HINT_RE = re.compile(
     r"\b("
     r"api|agent|changelog|docs?|documentation|examples?|guide|hermes(?:katana)?|"
@@ -237,6 +281,41 @@ _ROUTINE_QUERY_HINT_RE = re.compile(
 _ROUTINE_QUERY_CHARS_RE = re.compile(r"^[\w\s.,()+#&/-]+$")
 
 _ROUTINE_QUERY_UNSAFE_RE = re.compile(r"[`\"'|;<>$\\{}\[\]\r\n]|://")
+
+_TOOL_DOC_OUTPUT_HINT_RE = re.compile(
+    r"\b("
+    r"acp\s+prompt|api|agent|approver|artifacts?|attributes?|audit|benchmark|benign|"
+    r"built[-\s]?in|changelog|classifiers?|cli|command\s+map|configuration|corpus|corpora|"
+    r"credential|defaults?|denial\s+of\s+service|dependencies|detects?|docs?|documentation|"
+    r"encrypted|errors?|evaluation|examples?|exceptions?|guide|"
+    r"flow\s+rules?|global\s+tracker|harness|hermes(?:katana)?|hugging\s+face|install|integrity|katana|"
+    r"key[-\s]?rotation|key[-\s]?value|keyring|load\s+yaml|manual|metadata|methods?|"
+    r"middleware|models?|modules?|patterns?|plugin|polic(?:y|ies)|policyengine|principal|"
+    r"provenance|proving[-\s]ground|quickstart|readme|reference|registry|release\s+notes|"
+    r"required|runbook|scanner|scabbard|sdk|secret\s+storage|setup|social\s+engineering|sources?|taint|"
+    r"tainted|telemetry|token(?:izer|ization|\s+ablation)|tool(?:\s+calls?)?|"
+    r"tracker|training(?:-data)?|tutorial|upstream|user\s+manual|vault"
+    r")\b",
+    re.I,
+)
+
+_BENIGN_MARKUP_RE = re.compile(r"(?is)<(?:h[1-6]|p|a|img|span|div|code|pre|table|tr|td|th)\b")
+
+_URL_RE = re.compile(r"(?i)\bhttps?://[^\s<>'\"]+")
+
+_GITHUB_PAGES_LINK_RE = re.compile(r"(?i)\b[a-z0-9.-]+\.github\.io/[a-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*")
+
+_DEFAULT_BENIGN_LINK_DOMAINS_RELATIVE = Path("policies") / "scabbard_benign_link_domains.yaml"
+_DEFAULT_BENIGN_LINK_DOMAINS = ("github.com", "*.github.io", "huggingface.co", "arxiv.org", "example.invalid")
+
+_CONTACT_OUTPUT_RE = re.compile(r"(?i)^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$")
+
+_DOCUMENTED_ATTACK_SIGNAL_OUTPUT_RE = re.compile(
+    r"(?is)\b("
+    r"api|combined|dangerous|denied|docs?|documentation|example|fixture|"
+    r"pattern|readme|safe|source|taint(?:ed)?|test|web\s+content"
+    r")\b"
+)
 
 
 _QUOTE_RE = re.compile(r'("[^"]*"|\'[^\']*\'|`[^`]*`|\u201c[^\u201d]*\u201d)')
@@ -275,6 +354,41 @@ def _has_imperative_attack(text: str) -> bool:
     unquoted = _strip_quoted_content(text)
 
     return bool(_has_attack_signal_raw(unquoted))
+
+
+def _has_tool_output_imperative_attack(text: str) -> bool:
+    """True for command-like attack instructions in untrusted tool output.
+
+    Unlike ``_has_imperative_attack``, this does not treat every bare dangerous
+    shell token as imperative. Tool output can legitimately document commands
+    such as ``rm -rf /`` in scanner tables; the caller handles those with a
+    stricter documented-example gate.
+    """
+    if not text:
+        return False
+    unquoted = _strip_quoted_content(text)
+    if _EXFIL_RE.search(unquoted):
+        return True
+    adversarial = _ADVERSARIAL_IMPERATIVE_RE.search(unquoted)
+    if not adversarial:
+        return False
+    if _BARE_IT_IMPERATIVE_RE.search(unquoted):
+        without_bare_it = _BARE_IT_IMPERATIVE_RE.sub("", unquoted)
+        if not _ADVERSARIAL_IMPERATIVE_RE.search(without_bare_it) and _has_tool_doc_output_context(text):
+            return False
+    return True
+
+
+def _has_tool_output_attack_signal_raw(text: str) -> bool:
+    """Raw attack-signal check with the tool-output-only bare-"it" exception."""
+    raw = text
+    unquoted = _strip_quoted_content(text)
+    if _BARE_IT_IMPERATIVE_RE.search(unquoted) and _has_tool_doc_output_context(text):
+        raw = _BARE_IT_IMPERATIVE_RE.sub("", raw)
+        unquoted = _BARE_IT_IMPERATIVE_RE.sub("", unquoted)
+    return bool(
+        _ADVERSARIAL_IMPERATIVE_RE.search(unquoted) or _DANGEROUS_COMMAND_RE.search(raw) or _EXFIL_RE.search(raw)
+    )
 
 
 def _strip_quoted_content(text: str) -> str:
@@ -384,6 +498,126 @@ def _is_test_secret_fixture(text: str) -> bool:
     return all(_TEST_SECRET_FIXTURE_RE.match(line) for line in lines)
 
 
+def _is_documented_placeholder_secret(text: str) -> bool:
+    """True for docs that demonstrate secret scanner patterns with fake values."""
+    stripped = text.strip()
+    if not stripped or len(stripped) > MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN:
+        return False
+    if _LIVE_SECRET_PREFIX_RE.search(stripped):
+        return False
+    if not _PLACEHOLDER_SECRET_DOC_RE.search(stripped):
+        return False
+    if not _PLACEHOLDER_VALUE_RE.search(stripped):
+        return False
+    return bool(_TOOL_DOC_OUTPUT_HINT_RE.search(stripped) or _DESCRIPTION_RE.search(stripped))
+
+
+def _is_documented_attack_signal_output(text: str, scanner_has_findings: bool | None) -> bool:
+    """True for clean docs that quote/show attack-shaped payloads as examples."""
+    if scanner_has_findings is not False:
+        return False
+    stripped = text.strip()
+    if len(stripped) < 40 or len(stripped) > MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN:
+        return False
+    if _SENSITIVE_ARTIFACT_RE.search(stripped):
+        return False
+    if not _DOCUMENTED_ATTACK_SIGNAL_OUTPUT_RE.search(stripped):
+        return False
+    return bool(
+        _TOOL_DOC_OUTPUT_HINT_RE.search(stripped)
+        or _DESCRIPTION_RE.search(stripped)
+        or _QUOTE_RE.search(stripped)
+        or " = " in stripped
+        or " -- " in stripped
+        or "->" in stripped
+        or "\u2192" in stripped
+    )
+
+
+def _default_benign_link_domains_path() -> Path:
+    here = Path(__file__).resolve()
+    for ancestor in (here.parent.parent.parent.parent, here.parent.parent.parent):
+        candidate = ancestor / _DEFAULT_BENIGN_LINK_DOMAINS_RELATIVE
+        if candidate.is_file():
+            return candidate
+    return here.parent.parent.parent / _DEFAULT_BENIGN_LINK_DOMAINS_RELATIVE
+
+
+@lru_cache(maxsize=1)
+def _benign_link_domains() -> Tuple[str, ...]:
+    path = _default_benign_link_domains_path()
+    if not path.is_file():
+        return _DEFAULT_BENIGN_LINK_DOMAINS
+    try:
+        import yaml  # type: ignore[import-untyped]  # noqa: PLC0415
+
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return _DEFAULT_BENIGN_LINK_DOMAINS
+
+    configured = raw.get("domains") if isinstance(raw, dict) else raw
+    if not isinstance(configured, list):
+        return _DEFAULT_BENIGN_LINK_DOMAINS
+
+    domains: list[str] = []
+    for item in configured:
+        if not isinstance(item, str):
+            continue
+        domain = item.strip().lower().rstrip(".")
+        if not domain or "://" in domain or "/" in domain:
+            continue
+        if "*" in domain and not domain.startswith("*."):
+            continue
+        domains.append(domain)
+    return tuple(dict.fromkeys(domains)) or _DEFAULT_BENIGN_LINK_DOMAINS
+
+
+def _link_host(raw_link: str) -> str:
+    link = raw_link.rstrip(").,;")
+    parsed = urlsplit(link if "://" in link else f"https://{link}")
+    return (parsed.hostname or "").lower().rstrip(".")
+
+
+def _domain_is_allowed(host: str) -> bool:
+    if not host:
+        return False
+    for domain in _benign_link_domains():
+        if domain.startswith("*."):
+            suffix = domain[2:]
+            if host.endswith(f".{suffix}"):
+                return True
+        elif host == domain:
+            return True
+    return False
+
+
+def _link_hosts(text: str) -> list[str]:
+    hosts: list[str] = []
+    for regex in (_URL_RE, _GITHUB_PAGES_LINK_RE):
+        hosts.extend(_link_host(match.group(0)) for match in regex.finditer(text))
+    return [host for host in hosts if host]
+
+
+def _has_disallowed_link(text: str) -> bool:
+    return any(not _domain_is_allowed(host) for host in _link_hosts(text))
+
+
+def _has_benign_markup_or_link(text: str) -> bool:
+    if _BENIGN_MARKUP_RE.search(text):
+        return True
+    return any(_domain_is_allowed(host) for host in _link_hosts(text))
+
+
+def _has_tool_doc_output_context(text: str) -> bool:
+    stripped = text.strip()
+    if not _TOOL_DOC_OUTPUT_HINT_RE.search(stripped):
+        return False
+    if _DESCRIPTION_RE.search(stripped) or _has_benign_markup_or_link(stripped):
+        return True
+    hints = {match.group(0).lower() for match in _TOOL_DOC_OUTPUT_HINT_RE.finditer(stripped)}
+    return len(hints) >= 2
+
+
 def _is_routine_benign_query(text: str) -> bool:
     """True for simple trusted documentation/search queries with no attack shape."""
     stripped = text.strip()
@@ -405,6 +639,11 @@ def _is_routine_benign_query(text: str) -> bool:
 # length, the cosine-similarity softener (if enabled) takes over; below
 # it, this heuristic decides.
 MAX_SOFTEN_TEXT_LEN = 200
+
+# Tool-output snippets from web/search/read_file often include a whole README
+# sentence, badge row, or command paragraph. Keep this bounded so the output
+# softener does not become a broad replacement for classifier/scanner verdicts.
+MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN = 800
 
 
 def should_soften_short_text(
@@ -477,9 +716,85 @@ def should_soften_short_text(
     return False, "no_benign_structure"
 
 
+def should_soften_short_tool_output(
+    text: str,
+    top_category: str | None = None,
+    *,
+    scanner_has_findings: bool | None = None,
+) -> Tuple[bool, str]:
+    """Return (should_soften, reason) for short Scabbard-only tool-output FPs.
+
+    Tool output is untrusted, so this is intentionally narrower than
+    ``should_soften_short_text``. It is meant for the post-dispatch path after
+    the deterministic scanner has already had a chance to redact concrete
+    injection/secret/command findings. It only relaxes short documentation-like
+    text with no imperative attack shape or sensitive artifact signal.
+    """
+    if not text or not text.strip():
+        return False, "empty"
+
+    stripped = text.strip()
+    if len(stripped) > MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN:
+        return False, "too_long"
+
+    if _CREDENTIAL_SOLICITATION_RE.search(_strip_quoted_content(stripped)):
+        return False, "credential_solicitation"
+
+    if _has_tool_output_imperative_attack(stripped):
+        return False, "has_attack_signal"
+    if _has_tool_output_attack_signal_raw(stripped):
+        if _is_documented_attack_signal_output(stripped, scanner_has_findings):
+            return True, "documented_attack_signal_output"
+        return False, "has_attack_signal"
+
+    placeholder_secret = _is_documented_placeholder_secret(stripped)
+    if _SENSITIVE_ARTIFACT_RE.search(stripped) and not placeholder_secret:
+        return False, "sensitive_artifact"
+
+    if _has_disallowed_link(stripped):
+        return False, "untrusted_link"
+
+    if _CONTACT_OUTPUT_RE.fullmatch(stripped):
+        return True, "contact_output"
+
+    if scanner_has_findings is True:
+        return False, "scanner_findings"
+
+    if scanner_has_findings is not False:
+        return False, "scanner_unknown"
+
+    if placeholder_secret:
+        return True, "documented_placeholder_secret_output"
+
+    if _is_quoted_documentation(stripped):
+        return True, "quoted_documentation_output"
+
+    if _is_descriptive_security_note(stripped):
+        return True, "descriptive_security_output"
+
+    if _is_benign_code_or_config_fragment(stripped):
+        return True, "benign_code_or_config_output"
+
+    if len(stripped) <= MAX_SOFTEN_TEXT_LEN and _is_routine_benign_query(stripped):
+        return True, "routine_benign_output"
+
+    if _has_benign_markup_or_link(stripped) and _TOOL_DOC_OUTPUT_HINT_RE.search(stripped):
+        return True, "benign_doc_markup_or_link_output"
+
+    if _has_tool_doc_output_context(stripped):
+        return True, "benign_documentation_output"
+
+    if _SUSPICIOUS_SHORT_RE.search(stripped):
+        return False, "suspicious_short"
+
+    return False, "no_benign_output_structure"
+
+
 __all__ = [
     "should_soften_short_text",
+    "should_soften_short_tool_output",
     "_has_imperative_attack",
     "_is_quoted_documentation",
     "MAX_SOFTEN_TEXT_LEN",
+    "MAX_TOOL_OUTPUT_SOFTEN_TEXT_LEN",
 ]

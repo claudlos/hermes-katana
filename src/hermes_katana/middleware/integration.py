@@ -74,6 +74,7 @@ from typing import Any
 from hermes_katana.middleware.chain import CallContext, DispatchDecision, KatanaMiddleware, MiddlewareChain
 from hermes_katana.middleware.protectai_middleware import KatanaProtectAIMiddleware
 from hermes_katana.middleware.taint_middleware import KatanaTaintMiddleware
+from hermes_katana.scabbard.short_text_softener import should_soften_short_tool_output
 
 logger = logging.getLogger(__name__)
 
@@ -791,6 +792,13 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
         worst_result: dict[str, Any] | None = None
         by_path: dict[str, dict[str, Any]] = {}
         degraded_paths: list[dict[str, Any]] = []
+        softened_blocks: list[dict[str, Any]] = []
+        output_scan_result = ctx.extras.get("output_scan_result")
+        scanner_has_findings = (
+            bool(output_scan_result.has_findings)
+            if output_scan_result is not None and hasattr(output_scan_result, "has_findings")
+            else None
+        )
         for fragment in fragments:
             result = self._classify_with_timeout(fragment.text, "tool_output")
             self._record_shadow(fragment.text, "tool_output", result, ctx)
@@ -799,11 +807,29 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
             degraded = getattr(result, "degraded", None)
             if degraded:
                 degraded_paths.append({"path": fragment.path, "reason": degraded})
+            if result.decision == ScabbardDecision.BLOCK and degraded is None:
+                soften_output, soften_reason = should_soften_short_tool_output(
+                    fragment.text,
+                    result.top_category,
+                    scanner_has_findings=scanner_has_findings,
+                )
+                if soften_output:
+                    softened_blocks.append(
+                        {
+                            "path": fragment.path,
+                            "reason": soften_reason,
+                            "confidence": float(result.confidence),
+                            "top_category": result.top_category,
+                        }
+                    )
+                    continue
             if result.confidence > worst_confidence:
                 worst_confidence = result.confidence
                 worst_result = result_dict
 
         ctx.extras["scabbard_output_results_by_path"] = by_path
+        if softened_blocks:
+            ctx.extras["scabbard_output_softened_blocks"] = softened_blocks
         if degraded_paths:
             ctx.extras["scabbard_output_degraded"] = degraded_paths
         if worst_result is not None:
