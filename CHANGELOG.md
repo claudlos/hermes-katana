@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `_handle_katana_status` accepts the Hermes tool-registry dispatch contract `handler(args, **kwargs)` (was `**kwargs`-only, which raised a live TypeError when katana_status was invoked through the registry).
 - Regenerated `policies/scabbard_known_fps.yaml` against the deployed v15-ONNX backend (the prior hashes were generated against a different model/text and no longer matched), restoring the false-positive gate to zero blocks on the 154-case benign corpus.
-- Short-text FP softening now recognizes benign `persona-shift` detector documentation without softening direct persona-shift attack instructions.
+- Short-text FP softening now recognizes benign `persona-shift` detector documentation without softening direct persona-shift attack instructions. The imperative-attack gate was hardened to catch inflected/determiner-light attack verbs (`ignores … rules`, `exfiltrates`, `discloses`, `leak the system prompt`, `reveal hidden config`) so third-person attack phrasing around the new `persona-shift` security-context term cannot ride the descriptive-note softener.
 
 ## [3.1.0] - 2026-06-03
 
