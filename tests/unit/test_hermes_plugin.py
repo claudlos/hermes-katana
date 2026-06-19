@@ -169,6 +169,55 @@ class TestPluginSetup:
         assert captured["config"]["scan_block_threshold"] == 0.25
         assert "llm" not in captured["config"]
 
+    def test_setup_loads_nested_current_hermes_plugin_config(self, monkeypatch):
+        import sys
+        import types
+        from types import SimpleNamespace
+
+        captured: dict[str, Any] = {}
+        hermes_pkg = types.ModuleType("hermes_cli")
+        config_mod = types.ModuleType("hermes_cli.config")
+        config_mod.load_config = lambda: {
+            "plugins": {
+                "enabled": ["katana"],
+                "entries": {
+                    "katana": {
+                        "config": {
+                            "audit_enabled": False,
+                            "scabbard_block_threshold": 0.91,
+                        },
+                        "llm": {"model": "ignored"},
+                    }
+                },
+            }
+        }
+        monkeypatch.setitem(sys.modules, "hermes_cli", hermes_pkg)
+        monkeypatch.setitem(sys.modules, "hermes_cli.config", config_mod)
+
+        def fake_initialize_runtime(config):
+            captured["config"] = config
+            return None, None, None, None
+
+        monkeypatch.setattr(hermes_plugin, "_initialize_runtime", fake_initialize_runtime)
+
+        class CurrentHermesContext:
+            manifest = SimpleNamespace(name="katana", key="katana")
+
+            def __init__(self):
+                self.hooks = {}
+                self.tools = {}
+
+            def register_hook(self, hook_name: str, callback: Any) -> None:
+                self.hooks.setdefault(hook_name, []).append(callback)
+
+            def register_tool(self, **kwargs: Any) -> None:
+                self.tools[kwargs["name"]] = kwargs
+
+        hermes_plugin.setup(CurrentHermesContext())
+
+        assert captured["config"]["scabbard_block_threshold"] == 0.91
+        assert "llm" not in captured["config"]
+
     def test_plugin_metadata(self):
         assert hermes_plugin.plugin_name == "katana"
         assert hermes_plugin.plugin_version == "3.1.0"
@@ -275,6 +324,64 @@ class TestPluginSetup:
 
         assert captured["config"]["scabbard.config"].profile == "minimal"
 
+    @pytest.mark.parametrize("profile", ["minimal", "standard", "full"])
+    def test_initialize_runtime_applies_scabbard_block_threshold_to_basic_profiles(self, monkeypatch, profile):
+        captured: dict[str, Any] = {}
+        import hermes_katana.middleware.integration as integration_mod
+
+        monkeypatch.setattr(hermes_plugin, "_open_vault", lambda: None)
+        monkeypatch.setattr(hermes_plugin, "_open_audit", lambda _config: None)
+        monkeypatch.setattr(hermes_plugin, "_collect_vault_values", lambda _vault: set())
+        monkeypatch.setattr(integration_mod, "create_default_chain", lambda cfg: captured.setdefault("config", cfg))
+
+        hermes_plugin._initialize_runtime(
+            {
+                "audit_enabled": False,
+                "scabbard_profile": profile,
+                "scabbard_block_threshold": "0.91",
+            }
+        )
+
+        assert captured["config"]["scabbard.block_threshold"] == 0.91
+        assert captured["config"]["scabbard.config"].block_threshold == 0.91
+
+    def test_initialize_runtime_applies_scabbard_block_threshold_to_runtime_default(self, monkeypatch):
+        captured: dict[str, Any] = {}
+        import hermes_katana.middleware.integration as integration_mod
+        from hermes_katana.scabbard import ScabbardConfig
+
+        monkeypatch.setattr(hermes_plugin, "_open_vault", lambda: None)
+        monkeypatch.setattr(hermes_plugin, "_open_audit", lambda _config: None)
+        monkeypatch.setattr(hermes_plugin, "_collect_vault_values", lambda _vault: set())
+        monkeypatch.setattr(integration_mod, "create_default_chain", lambda cfg: captured.setdefault("config", cfg))
+        monkeypatch.setattr(ScabbardConfig, "runtime_default", classmethod(lambda cls: ScabbardConfig.minimal()))
+
+        hermes_plugin._initialize_runtime({"audit_enabled": False, "scabbard_block_threshold": 0.91})
+
+        assert captured["config"]["scabbard.block_threshold"] == 0.91
+        assert captured["config"]["scabbard.config"].block_threshold == 0.91
+
+    def test_initialize_runtime_passes_scabbard_block_threshold_for_katana_profile(self, monkeypatch):
+        captured: dict[str, Any] = {}
+        import hermes_katana.middleware.integration as integration_mod
+
+        monkeypatch.setattr(hermes_plugin, "_open_vault", lambda: None)
+        monkeypatch.setattr(hermes_plugin, "_open_audit", lambda _config: None)
+        monkeypatch.setattr(hermes_plugin, "_collect_vault_values", lambda _vault: set())
+        monkeypatch.setattr(integration_mod, "create_default_chain", lambda cfg: captured.setdefault("config", cfg))
+
+        hermes_plugin._initialize_runtime(
+            {
+                "audit_enabled": False,
+                "katana_profile": "fast_cpu",
+                "scabbard_block_threshold": 0.91,
+            }
+        )
+
+        assert captured["config"]["profile"] == "fast_cpu"
+        assert captured["config"]["scabbard.block_threshold"] == 0.91
+        assert "scabbard.config" not in captured["config"]
+
     @pytest.mark.parametrize(
         ("profile", "expected_version", "expected_backend", "expected_device"),
         [
@@ -339,6 +446,29 @@ class TestPluginSetup:
         scabbard_cfg = captured["config"]["scabbard.config"]
         assert scabbard_cfg.katana_v11_path == str(model_path)
         assert scabbard_cfg.katana_v11_backend == "onnx"
+
+    def test_initialize_runtime_applies_scabbard_block_threshold_to_named_model_profile(self, monkeypatch, tmp_path):
+        captured: dict[str, Any] = {}
+        import hermes_katana.middleware.integration as integration_mod
+
+        model_path = tmp_path / "custom-minilm" / "onnx"
+        monkeypatch.setattr(hermes_plugin, "_open_vault", lambda: None)
+        monkeypatch.setattr(hermes_plugin, "_open_audit", lambda _config: None)
+        monkeypatch.setattr(hermes_plugin, "_collect_vault_values", lambda _vault: set())
+        monkeypatch.setattr(integration_mod, "create_default_chain", lambda cfg: captured.setdefault("config", cfg))
+
+        hermes_plugin._initialize_runtime(
+            {
+                "audit_enabled": False,
+                "scabbard_profile": "katana_v15_minilm",
+                "scabbard_backend": "onnx",
+                "scabbard_model_path": str(model_path),
+                "scabbard_block_threshold": 0.91,
+            }
+        )
+
+        assert captured["config"]["scabbard.block_threshold"] == 0.91
+        assert captured["config"]["scabbard.config"].block_threshold == 0.91
 
     def test_setup_fails_closed_when_hermetic_ml_readiness_required(self, monkeypatch, caplog):
         ctx = MockPluginContext(config={"audit_enabled": False, "require_ml_ready": True})

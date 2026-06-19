@@ -27,6 +27,7 @@ Plugin config lives under ``katana:`` in Hermes ``config.yaml``::
       katana:
         policy_preset: balanced     # max | balanced | permissive
         scan_block_threshold: 0.7
+        scabbard_block_threshold: 0.7   # optional ML classifier block threshold override
         taint_enabled: true
         audit_enabled: true
         audit_log_allow: true
@@ -313,6 +314,15 @@ def _initialize_runtime(config: dict[str, Any]) -> tuple:
     _scabbard_backend = config.get("scabbard_backend")
     _scabbard_device = config.get("scabbard_device")
     _scabbard_model_path = config.get("scabbard_model_path")
+    # Optional override for the scabbard ML classifier internal block threshold.
+    # The plugin only used to expose scan_block_threshold (scan middleware),
+    # not the ML classifier. This wires the live config through.
+    _scabbard_block_threshold = config.get("scabbard_block_threshold")
+    _scabbard_kwargs = {}
+    if _scabbard_block_threshold is not None:
+        _scabbard_block_threshold = float(_scabbard_block_threshold)
+        _scabbard_kwargs["block_threshold"] = _scabbard_block_threshold
+        chain_config["scabbard.block_threshold"] = _scabbard_block_threshold
     if _scabbard_profile == "minimal":
         scabbard_cfg = ScabbardConfig.minimal()
     elif _scabbard_profile == "full":
@@ -324,23 +334,31 @@ def _initialize_runtime(config: dict[str, Any]) -> tuple:
             model_path=_scabbard_model_path,
             backend=_scabbard_backend or "torch",
             device=_scabbard_device,
+            **_scabbard_kwargs,
         )
     elif _scabbard_profile in {"katana_v15_minilm", "v15_minilm", "minilm"}:
         scabbard_cfg = ScabbardConfig.katana_v15_minilm(
             model_path=_scabbard_model_path,
             backend=_scabbard_backend or "onnx",
             device=_scabbard_device,
+            **_scabbard_kwargs,
         )
     elif _scabbard_profile in {"katana_v15_large", "v15_large", "v15"}:
         scabbard_cfg = ScabbardConfig.katana_v15_large(
             model_path=_scabbard_model_path,
             backend=_scabbard_backend or "torch",
             device=_scabbard_device,
+            **_scabbard_kwargs,
         )
     elif _katana_profile is None:
         scabbard_cfg = ScabbardConfig.runtime_default()
     else:
         scabbard_cfg = None
+
+    if scabbard_cfg is not None and _scabbard_block_threshold is not None:
+        from dataclasses import replace
+
+        scabbard_cfg = replace(scabbard_cfg, block_threshold=_scabbard_block_threshold)
 
     if scabbard_cfg is not None:
         chain_config["scabbard.config"] = scabbard_cfg

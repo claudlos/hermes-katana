@@ -184,6 +184,13 @@ def _resolve_chain_config(config: dict[str, Any] | None) -> dict[str, Any]:
     )
     resolved = _profile_defaults(profile)
     resolved.update(caller_config)
+    scabbard_block_threshold = resolved.get("scabbard.block_threshold")
+    if scabbard_block_threshold is not None:
+        scabbard_block_threshold = float(scabbard_block_threshold)
+        resolved["scabbard.block_threshold"] = scabbard_block_threshold
+        scabbard_config = resolved.get("scabbard.config")
+        if scabbard_config is not None:
+            resolved["scabbard.config"] = replace(scabbard_config, block_threshold=scabbard_block_threshold)
     resolved["profile"] = profile
     return resolved
 
@@ -197,8 +204,10 @@ def collect_chain_diagnostics(chain: Any) -> dict[str, Any]:
     ml: dict[str, Any] = {
         "scabbard_backend": None,
         "scabbard_device": None,
+        "scabbard_block_threshold": None,
         "model_version": None,
     }
+    resolved_config = getattr(chain, "resolved_config", {}) or {}
 
     middleware_by_name: dict[str, Any] = {}
     try:
@@ -224,7 +233,10 @@ def collect_chain_diagnostics(chain: Any) -> dict[str, Any]:
         device = getattr(scabbard_cfg, "katana_v11_device", None)
         ml["scabbard_backend"] = backend
         ml["scabbard_device"] = "cpu" if backend in {"onnx", "onnx_int8"} and not device else device
+        ml["scabbard_block_threshold"] = getattr(scabbard_cfg, "block_threshold", None)
         ml["model_version"] = getattr(scabbard_cfg, "model_version", None)
+    if isinstance(resolved_config, dict) and resolved_config.get("scabbard.block_threshold") is not None:
+        ml["scabbard_block_threshold"] = resolved_config["scabbard.block_threshold"]
 
     # Scabbard readiness: enforcement on the rule-based fallback is a degraded
     # deployment and must be visible here, not only in per-call extras
@@ -301,6 +313,7 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
         config: Optional :class:`ScabbardConfig`.  Defaults to ``minimal``
             profile (zero ML deps).
         enabled: Whether this middleware is active.
+        block_threshold: Optional override for ``ScabbardConfig.block_threshold``.
     """
 
     def __init__(
@@ -312,9 +325,11 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
         scan_outputs: bool = True,
         audit_routes: bool = True,
         enforce_output_blocks: bool = True,
+        block_threshold: float | None = None,
     ) -> None:
         super().__init__(name="katana.scabbard", enabled=enabled, priority=90)
         self._config = config
+        self._block_threshold_override = float(block_threshold) if block_threshold is not None else None
         self._classifier: Any | None = None
         self._route_mode = route_mode
         self._scan_outputs = scan_outputs
@@ -334,6 +349,8 @@ class KatanaScabbardMiddleware(KatanaMiddleware):
             from hermes_katana.scabbard import ScabbardClassifier, ScabbardConfig
 
             cfg = self._config or ScabbardConfig.runtime_default()
+            if self._block_threshold_override is not None:
+                cfg = replace(cfg, block_threshold=self._block_threshold_override)
             self._classifier = ScabbardClassifier(cfg)
         return self._classifier
 
@@ -2040,6 +2057,7 @@ def create_default_chain(
             - ``taint.enabled`` (bool, default True)
             - ``scabbard.enabled`` (bool, default True)
             - ``scabbard.config`` (ScabbardConfig instance, optional)
+            - ``scabbard.block_threshold`` (float, optional)
             - ``scabbard.secondary.enabled`` (bool, default True)
             - ``scabbard.secondary.config`` (ScabbardConfig instance, optional)
             - ``protectai.enabled`` (bool, default True)
@@ -2102,6 +2120,7 @@ def create_default_chain(
         scan_outputs=cfg.get("scabbard.scan_outputs", True),
         audit_routes=cfg.get("scabbard.audit_routes", True),
         enforce_output_blocks=cfg.get("scabbard.enforce_output_blocks", True),
+        block_threshold=cfg.get("scabbard.block_threshold"),
     )
     chain.add(scabbard_mw)
 

@@ -47,8 +47,8 @@ from hermes_katana.scabbard.similarity_allowlist import is_untrusted_origin
 _ADVERSARIAL_IMPERATIVE_RE = re.compile(
     r"\b("
     # Direct instruction-override forms
-    r"ignore\s+(?:all\s+)?previous|"
-    r"ignore\s+(?:all\s+)?(?:the\s+)?(?:above|instructions?|context|prompt|rules?)|"
+    r"ignores?\s+(?:all\s+)?previous|"
+    r"ignores?\s+(?:all\s+|every\s+|any\s+)?(?:the\s+)?(?:\w+\s+){0,2}?(?:above|instructions?|context|prompt|rules?|guardrails?|guidelines?|restrictions?|filters?|polic(?:y|ies))|"
     r"disregard\s+(?:all\s+)?previous|"
     r"disregard\s+(?:the|all|every|your)\s+(?:above|instructions?|context|prompt|rules?)|"
     r"forget\s+everything|"
@@ -62,8 +62,9 @@ _ADVERSARIAL_IMPERATIVE_RE = re.compile(
     r"act\s+as\s+(?:an?\s+)?(?:unrestricted|evil|developer|admin|root)|"
     r"act\s+as\s+(?:dan|do\s+anything\s+now)|"
     # Secret / data exfil
-    r"reveal\s+(?:your|all|every|the)\s+(?:\w+\s+)?(?:system|hidden|secret|original|prompt|instructions?)|"
+    r"reveals?\s+(?:your|all|every|the)?\s*(?:\w+\s+)?(?:system|hidden|secret|original|prompt|instructions?|config(?:uration)?)|"
     r"reveal\s+your\s+(?:system|hidden|original|configuration)|"
+    r"disclos(?:e|es|ing)\s+(?:your|all|every|the)?\s*(?:\w+\s+)?(?:system|hidden|secret|secrets|original|prompt|instructions?|config(?:uration)?|credentials?)|"
     r"(?:give|show|display|print|return|provide)\s+(?:me\s+)?(?:your|all|every|the)?\s*(?:system|secret|hidden|developer|original|env|environment|configuration|prompt|instructions?|message)|"
     r"tell\s+me\s+(?:all|every|the)?\s*(?:secrets?|passwords?|tokens?|keys?|system\s+prompt|hidden\s+instructions?)|"
     r"output\s+(?:all|every|the)?\s*(?:system|secret|hidden|env|environment|configuration|prompt|instructions?)|"
@@ -72,8 +73,8 @@ _ADVERSARIAL_IMPERATIVE_RE = re.compile(
     r"send\s+(?:the|all|every|this).{0,200}?(?:password|secret|credential|key|token|ssh|id_rsa)|"
     r"forward\s+(?:the|all|every|contents?)|"
     r"dump\s+(?:all|every|the)?\s*(?:secrets?|passwords?|keys?|tokens?|config)|"
-    r"(?:leak|steal)\s+(?:the\s+)?(?:secrets?|passwords?|keys?|tokens?|credentials?)|"
-    r"exfiltrate|"
+    r"(?:leaks?|steals?)\s+(?:the\s+)?(?:\w+\s+)?(?:system\s+prompt|secrets?|passwords?|keys?|tokens?|credentials?|config(?:uration)?)|"
+    r"exfiltrat(?:e|es|ed|ing)|"
     r"upload\s+(?:the|all|every).{0,80}?\s+(?:to|my)\s+(?:external|server|endpoint|attacker|webhook|exfil|email|gmail)|"
     # Reverse shell / dangerous command (also caught by dangerous_command_re
     # but listed here for clarity)
@@ -155,7 +156,7 @@ _DESCRIPTION_RE = re.compile(
 _SECURITY_CONTEXT_RE = re.compile(
     r"\b("
     r"hermeskatana|scabbard|classifier|scanner|detector|middleware|"
-    r"prompt[-\s]?injections?|injections?|jailbreak|persona[-\s]?hijack|evasion|"
+    r"prompt[-\s]?injections?|injections?|jailbreak|persona[-\s]?(?:hijack|shift)|evasion|"
     r"homoglyph|unicode|base64|threat\s+model|audit|false[-\s]?positives?|"
     r"allowlist|deny|denied|block(?:ed|ing)?|flag(?:s|ged)?|taint|"
     r"cve|cisa|owasp|llm01|advisory|rce|regex|fixture|eval|security|defen[cs]e|"
