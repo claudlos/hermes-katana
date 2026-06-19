@@ -836,6 +836,7 @@ plugins:
   katana:
     policy_preset: balanced
     scan_block_threshold: 0.7
+    scabbard_block_threshold: 0.7
     taint_enabled: true
     audit_enabled: true
     audit_log_allow: true

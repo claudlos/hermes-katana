@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Cosine-similarity false-positive softener (`hermes_katana.scabbard.similarity_allowlist`). On a Scabbard or pattern-scanner BLOCK, the verdict is softened to ALLOW when the classified text is cosine-close to a vetted benign exemplar (`policies/scabbard_benign_exemplars.yaml`) and carries no concrete-exploit finding (secret / dangerous command / unicode-evasion / binary payload). It generalises past the hash allowlist to the security-domain content a research agent writes (documentation that *quotes* attack strings). Torch-free: runs on an ONNX all-MiniLM-L6-v2 encoder via `onnxruntime` (install with `scripts/setup_similarity_embedder.py`); fails closed (no softening) when the encoder is absent. The threshold sits above the adversarial-corpus attack ceiling, so it never softens an attack — enforced by the evasion gate and `tests/smoke/test_similarity_allowlist_safety.py`. Untrusted-origin (tainted) content is never softened.
 - `scabbard.audit_blocked_text` config flag: records a truncated (≤200 char) preview of the exact classified text for softened and denied Scabbard blocks, so live false positives can be reviewed and allowlisted by call_id. Off by default (stores tool-argument plaintext).
+- `scabbard_block_threshold` plugin config: lets operators tune the Scabbard ML classifier BLOCK threshold independently from `scan_block_threshold`, including named Scabbard profiles, deployment profiles, and runtime-default selection.
 
 ### Changed
 - Capability-aware Scabbard backend selection. The v17/v14 production checkpoints are PyTorch models; in a torch-free deployment they failed to load and Scabbard ran DEGRADED — every call fail-closed to BLOCK and unsoftenable, so the security tool blocked its own benign tool calls. `ScabbardConfig.runtime_default()` and the `fast_cpu` profile now fall back to the v15 ONNX MiniLM (run via `onnxruntime`) when torch is unavailable, instead of degrading.
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `_handle_katana_status` accepts the Hermes tool-registry dispatch contract `handler(args, **kwargs)` (was `**kwargs`-only, which raised a live TypeError when katana_status was invoked through the registry).
 - Regenerated `policies/scabbard_known_fps.yaml` against the deployed v15-ONNX backend (the prior hashes were generated against a different model/text and no longer matched), restoring the false-positive gate to zero blocks on the 154-case benign corpus.
+- Short-text FP softening now recognizes benign `persona-shift` detector documentation without softening direct persona-shift attack instructions.
 
 ## [3.1.0] - 2026-06-03
 

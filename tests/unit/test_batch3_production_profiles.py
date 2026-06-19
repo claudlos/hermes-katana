@@ -14,6 +14,7 @@ from hermes_katana.artifacts import ArtifactNotFoundError
 from hermes_katana.middleware.chain import CallContext, DispatchDecision
 from hermes_katana.middleware.integration import KatanaScanMiddleware
 from hermes_katana.middleware.integration import create_default_chain
+from hermes_katana.scabbard import ScabbardConfig
 
 
 def _write_minilm_artifact(path: Path) -> None:
@@ -107,6 +108,40 @@ def test_profile_defaults_are_applied_before_explicit_overrides(monkeypatch, tmp
     assert middleware["katana.scabbard"]._route_mode == "strict"
 
 
+def test_scabbard_block_threshold_override_applies_to_profile_scabbard_config(monkeypatch, tmp_path):
+    monkeypatch.delenv("KATANA_MINILM_ONNX_DIR", raising=False)
+    monkeypatch.setenv("KATANA_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+    _write_minilm_artifact(artifact_path(minilm_onnx_spec()))
+
+    class FakeScabbardClassifier:
+        def __init__(self, config):
+            self.config = config
+
+    monkeypatch.setattr("hermes_katana.scabbard.ScabbardClassifier", FakeScabbardClassifier)
+
+    chain = create_default_chain({"profile": "fast_cpu", "scabbard.block_threshold": "0.91"})
+    scabbard = _middleware_by_name(chain)["katana.scabbard"]
+
+    assert chain.resolved_config["scabbard.config"].block_threshold == 0.91
+    assert scabbard.classifier.config.block_threshold == 0.91
+    assert scabbard.classifier.config.classifier_timeout_decision == "escalate"
+
+
+def test_scabbard_block_threshold_override_applies_to_lazy_runtime_default(monkeypatch):
+    class FakeScabbardClassifier:
+        def __init__(self, config):
+            self.config = config
+
+    monkeypatch.setattr("hermes_katana.scabbard.ScabbardClassifier", FakeScabbardClassifier)
+    monkeypatch.setattr(ScabbardConfig, "runtime_default", classmethod(lambda cls: ScabbardConfig.minimal()))
+
+    chain = create_default_chain({"profile": "balanced", "scabbard.block_threshold": 0.91})
+    scabbard = _middleware_by_name(chain)["katana.scabbard"]
+
+    assert scabbard.classifier.config.block_threshold == 0.91
+    assert scabbard.classifier.config.profile == "minimal"
+
+
 def test_plugin_runtime_passes_katana_profile_to_chain(monkeypatch):
     captured = {}
     import hermes_katana.middleware.integration as integration_mod
@@ -132,7 +167,7 @@ def test_katana_status_includes_readiness_diagnostics_for_fast_cpu(monkeypatch, 
     _write_minilm_artifact(artifact_path(minilm_onnx_spec()))
 
     class Context:
-        config = {"katana_profile": "fast_cpu", "audit_enabled": False}
+        config = {"katana_profile": "fast_cpu", "audit_enabled": False, "scabbard_block_threshold": 0.91}
 
         def __init__(self):
             self.hooks = {}
@@ -164,6 +199,7 @@ def test_katana_status_includes_readiness_diagnostics_for_fast_cpu(monkeypatch, 
     assert "katana.scabbard_secondary" in diagnostics["scanners"]["inactive"]
     assert diagnostics["ml"]["scabbard_backend"] == "onnx"
     assert diagnostics["ml"]["scabbard_device"] == "cpu"
+    assert diagnostics["ml"]["scabbard_block_threshold"] == 0.91
     assert diagnostics["ml"]["model_version"] == "katana_v15_distill_minilm"
     assert isinstance(diagnostics["unavailable_optional_scanners"], dict)
 

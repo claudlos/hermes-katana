@@ -22,6 +22,7 @@ plugins:
     scabbard_enabled: true
     scabbard_profile: katana_v15_minilm
     scabbard_backend: onnx
+    scabbard_block_threshold: 0.7
     scabbard_route_mode: balanced     # off | content_only | balanced | max
     scabbard_scan_outputs: true
     scabbard_audit_routes: true

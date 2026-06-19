@@ -155,7 +155,7 @@ _DESCRIPTION_RE = re.compile(
 _SECURITY_CONTEXT_RE = re.compile(
     r"\b("
     r"hermeskatana|scabbard|classifier|scanner|detector|middleware|"
-    r"prompt[-\s]?injections?|injections?|jailbreak|persona[-\s]?hijack|evasion|"
+    r"prompt[-\s]?injections?|injections?|jailbreak|persona[-\s]?(?:hijack|shift)|evasion|"
     r"homoglyph|unicode|base64|threat\s+model|audit|false[-\s]?positives?|"
     r"allowlist|deny|denied|block(?:ed|ing)?|flag(?:s|ged)?|taint|"
     r"cve|cisa|owasp|llm01|advisory|rce|regex|fixture|eval|security|defen[cs]e|"
