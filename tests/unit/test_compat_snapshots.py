@@ -218,7 +218,7 @@ class TestCompatSnapshots:
 
 
 _CURRENT_SNAPSHOT_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "hermes_compat" / "hermes-current-snapshot"
-_EXPECTED_HERMES_COMMIT = "57775e9e161087dbe55e096c038f512233c03381"
+_EXPECTED_HERMES_COMMIT = "cf64ca20c5ab99ebf7e8ca272c69edc7ea0636ed"
 _EXPECTED_FILES = [
     "model_tools.py",
     "tools/registry.py",
