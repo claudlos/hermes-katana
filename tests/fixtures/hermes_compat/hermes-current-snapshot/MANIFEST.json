@@ -1,42 +1,42 @@
 {
-  "hermes_commit": "57775e9e161087dbe55e096c038f512233c03381",
-  "captured_at": "2026-06-09T23:40:58+00:00",
+  "hermes_commit": "ea0c2b820bd30bace020a3791d8aef0b44002e0d",
+  "captured_at": "2026-09-21T12:23:06+00:00",
   "files": {
     "gateway/platforms/base.py": {
-      "sha256": "1cafcf46f72330a4218bed7f30788f1b427b2a872021da57806edd7b04567abd",
-      "size": 207206
+      "sha256": "eebe8073d62e35ed69e3716f362edaae0d5aeab07c7528b86e2233f8f5c105dd",
+      "size": 264120
     },
     "gateway/run.py": {
-      "sha256": "92c77921759632c1f52e1e1ddf4c5ad2ea3d877de7eab18f26583d2f3371ea7a",
-      "size": 757326
+      "sha256": "18231075e798dedafd0e5e9414e96e357c2347570d55c406d9ee98e7a9263895",
+      "size": 318073
     },
     "hermes_cli/__init__.py": {
-      "sha256": "afa14ed30f6a1f4454e5740dca24b7e37c4d6e45c875026eafa89ae057d958c2",
-      "size": 1501
+      "sha256": "0d78a58a9f27f32adfdac959e89767cecde93a424bcfbd39d64fb95f6cf13e6c",
+      "size": 1843
     },
     "hermes_cli/banner.py": {
-      "sha256": "e00aad1540ce0be573535b066fbaa508eb0cb6a020e225c2c620c09e66770018",
-      "size": 31946
+      "sha256": "4e3cb4cdb32c0ab00281de26fb3980981cd47f7cb95961eb28d8408a5af54bad",
+      "size": 50422
     },
     "model_tools.py": {
-      "sha256": "efe7382a4e113412a2b9a82931bc02f8b14c1d56758d5c8250ff7391c8b8079a",
-      "size": 55913
+      "sha256": "432ab8bcf79bbac321e76385aaa15ad6056999cbf372917f0dbf0ab13e2679dc",
+      "size": 49844
     },
     "pyproject.toml": {
-      "sha256": "c680666e918a39067c789889552aa147dd65bcc2a63c59c28d54cac53e8b7413",
-      "size": 17041
+      "sha256": "1cc8f282c7b77cd3f9ea7ea45be3eb58baa391f06dc8faff106682fb8d803744",
+      "size": 36156
     },
     "tools/environments/docker.py": {
-      "sha256": "b388581f2240031868c8058c6102707b3f17b445ed33069f0cbad407fa478412",
-      "size": 57250
+      "sha256": "01b0925d44ddd1b293f6061c5ae3df8abad5f02174c2bc2f0a387330996fccf7",
+      "size": 57195
     },
     "tools/registry.py": {
-      "sha256": "1fff28948e5714763c26279f40a0188b657243942f8ad8e157a672c453515aef",
-      "size": 24759
+      "sha256": "08ffd01f156a9b9ce0c4df73686649ca3cdd7918aa9d282c2b60a1a0b394c399",
+      "size": 50001
     },
     "tools/terminal_tool.py": {
-      "sha256": "c4d053433aa66c26a3d5ddfd092343c92da3cfb32147afb401b4f8187e4a8ab1",
-      "size": 117279
+      "sha256": "f75f50fc916cd19331a3bc55044a1096f9a287e6782cb8effb32dc5fc57f3c5b",
+      "size": 71349
     }
   }
 }
